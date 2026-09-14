@@ -1,6 +1,6 @@
 # AIBI Design-First Accelerator
 
-![AIBI Design-First Accelerator architecture](docs/images/architecture-diagram.png)
+![AIBI Design-First Accelerator architecture](docs/images/architecture-diagram.drawio.png)
 
 ## Design-first AI/BI on Databricks — greenfield or brownfield
 

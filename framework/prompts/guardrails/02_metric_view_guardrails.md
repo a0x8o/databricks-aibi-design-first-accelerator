@@ -77,6 +77,14 @@ All planned intermediate views must exist in catalog. HALT if any are missing.
 18. DO NOT create metric views for KPIs that require HAVING/window functions
 19. DO NOT skip intermediate view creation when metric views require joins
 20. DO NOT proceed to dashboards without GATE 10.1 passing
+21. DO NOT reference source table columns in measure/field expressions without verifying they exist in the actual DESCRIBE TABLE output — the template's Gate 2b validates this automatically and halts with the exact missing column
+
+---
+
+### AP-MV-4: Join Entry Missing 'on' Field
+**Pattern:** Metric view YAML spec contains a join entry with `name` and `source` but no `'on'` field. Gate 1 structural validation asserts `assert 'on' in j` and halts the pipeline.
+**Root cause:** The prompt showed `'on'` only by example, not as an explicit required field. The LLM also failed to single-quote `on` (a YAML reserved keyword) or omitted it entirely when the join seemed optional.
+**Fix:** Step 8 now includes a 'Required Join Fields' table listing `name`, `source`, `'on'` (single-quoted), and `rely` as mandatory/recommended fields. The prompt also states: if no joins are needed, omit the `joins` key entirely — do NOT include partial join entries.
 
 ---
 
@@ -90,6 +98,11 @@ All planned intermediate views must exist in catalog. HALT if any are missing.
 ### AP-MV-2: Column Name Mismatch
 **Pattern:** Metric view aliases differ from source table columns (e.g., `clm_dtl_claim_type` → `claim_type`). Dashboard SQL uses source names → fails.
 **Fix:** Column Name Authority rule (G-3). Always DESCRIBE the metric view, not the source table.
+
+### AP-MV-4: UNRESOLVED_COLUMN in Metric View Deployment
+**Pattern:** `UNRESOLVED_COLUMN.WITH_SUGGESTION` at CREATE VIEW time. Column name from ERD/spec doesn't match actual table column.
+**Root cause:** LLM references column names from `erd_parsed.yaml` or `table_spec.yaml` in measure expressions without verifying they exist in the deployed table. Column names can differ between ERD parse runs.
+**Fix:** Template now includes Gate 2b: after DESCRIBE TABLE, every column reference in every field/measure expression is validated against the actual schema. Missing columns halt before compilation with the exact column name and expression.
 
 ### AP-MV-3: Premature NOT_IMPLEMENTED
 **Pattern:** Agent classifies KPI as NOT_IMPLEMENTED at planning stage because it thinks "only 1 KPI per grain is insufficient." The KPI was actually implementable.

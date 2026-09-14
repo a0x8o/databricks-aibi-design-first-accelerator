@@ -1,0 +1,179 @@
+# Databricks notebook source
+# DBTITLE 1,Genie Space Configuration Tool
+# MAGIC %md
+# MAGIC # Genie Space Configuration — member_claims
+# MAGIC Template-derived deterministic Genie deployment notebook with corrected Python syntax for runtime execution.
+
+# COMMAND ----------
+
+# DBTITLE 1,Space Configuration
+SPACE_TITLE = "member_claims_analytics_genie_v3"
+SPACE_DESCRIPTION = "Production Genie Space for validated Member Claims analytics across claim-detail and enrollment-grain Metric Views, covering claim volume, paid/billed/allowed amounts, denial and clean-claim rates, provider participation, active members, enrollment trends, line of business, product, and geography."
+SPACE_ID = ""
+WAREHOUSE_ID = "2d8e531640ffa469"
+PARENT_PATH = "/Workspace/Users/arun.wagle@databricks.com/databricks-aibi-design-first-accelerator/kpi_domains/member_claims/generated_outputs/v3/genie_space"
+TABLE_IDENTIFIERS = ['aw_serverless_stable_catalog.aibi_member_claims.member_claims_metric_view_v3', 'aw_serverless_stable_catalog.aibi_member_claims.member_claims_enrollment_metric_view_v3']
+print(f"Space: {SPACE_TITLE}")
+print(f"Mode: {'UPDATE existing' if SPACE_ID else 'CREATE new'}")
+
+# COMMAND ----------
+
+# DBTITLE 1,General Instructions
+GENERAL_INSTRUCTIONS = """## Domain
+This Genie Space provides validated healthcare member claims and enrollment analytics for financial performance, claim volume, denial operations, clean-claim processing, provider participation, and member enrollment distribution. Query only the attached Metric Views; do not reconstruct KPIs from raw source tables or join facts inside Genie.
+
+## Authoritative Metric Views
+- `aw_serverless_stable_catalog.aibi_member_claims.member_claims_metric_view_v3`: claim-detail grain metrics for claim counts, paid/billed/allowed dollars, denials, clean claims, claim/member ratios, inpatient/outpatient paid amount, and participating provider metrics.
+- `aw_serverless_stable_catalog.aibi_member_claims.member_claims_enrollment_metric_view_v3`: enrollment grain metrics for new member enrollments, active members, enrollment records, and member geography.
+- Do not mix measures from different Metric Views in one SQL query. Use shared `service_month` only for separate, comparable time filtering.
+
+## Measures (always query with MEASURE(`measure_name`))
+- Claims: `total_claims`, `total_claim_lines`, `total_paid_amount`, `total_billed_amount`, `total_allowed_amount`, `inpatient_paid_amount`, `outpatient_paid_amount`, `denied_lines`, `clean_lines`, `unique_members`, `participating_provider_paid`.
+- Ratios/non-additive measures: `average_paid_per_claim`, `denial_rate`, `clean_claim_rate`, `payment_to_billed_ratio`, `payment_to_allowed_ratio`, `average_paid_per_member`, `claims_per_member`, `lines_per_claim`, `participating_provider_rate`. Never SUM these ratios; group by dimensions and let `MEASURE()` recompute at the requested grain.
+- Enrollment: `new_member_enrollments`, `active_members`, `enrollment_records`, `members_by_geography`. Member counts are distinct/semi-additive; do not sum them across months.
+
+## Dimensions
+- Claim dimensions: `service_date`, `service_month`, `claim_type` (Institutional, Vision, Dental, Pharmacy, Professional), `line_status` (Adjusted, Paid, Denied, Pending, Reversed), `clean_claim_indicator`, `place_of_service`, `procedure_code`, `participating_provider`, `rendering_provider_specialty`, `adjudication_status`.
+- Enrollment dimensions: `service_date`, `service_month`, `line_of_business` (COMMERCIAL, MEDICARE, TRICARE, MEDICAID, EXCHANGE), `enrollment_status`, `product_id`, `termination_reason`, `member_state`, `member_zip_code`, `member_sex`.
+
+## Query Rules and Terminology
+Always use Databricks Metric View syntax such as MEASURE(`total_paid_amount`) against the attached Metric View. Use `GROUP BY ALL` for grouped queries and `ORDER BY` for trends or rankings. Interpret “LOB” as `line_of_business`, “paid” or “spend” as `total_paid_amount`, “denials” as `denial_rate` or `denied_lines`, and “month” as `service_month`. Exclude PMPM, claims per 1,000 members, utilization rate, high-cost member count, rolling 3-month PMPM, and MoM active member growth because they are not implemented as validated Metric View measures."""
+print(f"General instructions: {len(GENERAL_INSTRUCTIONS):,} chars")
+
+# COMMAND ----------
+
+# DBTITLE 1,Metric View Descriptions
+METRIC_VIEW_DESCRIPTIONS = {'aw_serverless_stable_catalog.aibi_member_claims.member_claims_enrollment_metric_view_v3': 'Enrollment-grain Metric View for member coverage analytics. It supports active member, new enrollment, enrollment record, product, line-of-business, status, geography, and demographic slicing questions at the enrollment event grain.', 'aw_serverless_stable_catalog.aibi_member_claims.member_claims_metric_view_v3': 'Claim-detail grain Metric View for claims financial, utilization, operational, denial, clean-claim, inpatient/outpatient, and provider participation analytics. It supports service-date and service-month trends plus claim type, status, place of service, procedure, specialty, and provider participation breakdowns.'}
+print(f"Metric views: {len(METRIC_VIEW_DESCRIPTIONS)}")
+
+# COMMAND ----------
+
+# DBTITLE 1,Sample Questions
+SAMPLE_QUESTIONS = ['What is the total paid amount across all claims?', 'How many distinct claims and claim lines are in the dataset?', 'How has total paid amount trended by service month?', 'Which claim types have the highest paid amount?', 'Compare denial rate across claim types.', 'What is the clean claim rate for Institutional claims?', 'Which rendering provider specialties have the highest paid amount?', 'Show payment-to-billed and payment-to-allowed ratios by line status.', 'How do inpatient and outpatient paid amounts trend by month?', 'What is the participating provider rate by provider participation category?', 'Show average paid per member and claims per member by claim type.', 'Which line statuses have the most lines per claim?', 'How many active members are there by line of business?', 'What is the monthly trend in new member enrollments?', 'Which member states have the largest enrolled member population?', 'For MEDICARE, how are active members distributed by product?']
+print(f"Sample questions: {len(SAMPLE_QUESTIONS)}")
+
+# COMMAND ----------
+
+# DBTITLE 1,Example Question SQLs
+EXAMPLE_QUESTION_SQLS = [('What is the total paid amount across all claims?', 'SELECT MEASURE(`total_paid_amount`) AS total_paid_amount FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v3`'), ('How many distinct claims and claim lines are in the dataset?', 'SELECT MEASURE(`total_claims`) AS total_claims, MEASURE(`total_claim_lines`) AS total_claim_lines FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v3`'), ('How has total paid amount trended by service month?', 'SELECT service_month, MEASURE(`total_paid_amount`) AS total_paid_amount FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v3` GROUP BY ALL ORDER BY service_month'), ('Which claim types have the highest paid amount?', 'SELECT claim_type, MEASURE(`total_paid_amount`) AS total_paid_amount FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v3` GROUP BY ALL ORDER BY total_paid_amount DESC'), ('Compare denial rate across claim types.', 'SELECT claim_type, MEASURE(`denial_rate`) AS denial_rate FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v3` GROUP BY ALL ORDER BY denial_rate DESC'), ('What is the clean claim rate for Institutional claims?', "SELECT MEASURE(`clean_claim_rate`) AS clean_claim_rate FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v3` WHERE claim_type = 'Institutional'"), ('Which rendering provider specialties have the highest paid amount?', 'SELECT rendering_provider_specialty, MEASURE(`total_paid_amount`) AS total_paid_amount FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v3` WHERE rendering_provider_specialty IS NOT NULL GROUP BY ALL ORDER BY total_paid_amount DESC LIMIT 5'), ('Show payment-to-billed and payment-to-allowed ratios by line status.', 'SELECT line_status, MEASURE(`payment_to_billed_ratio`) AS payment_to_billed_ratio, MEASURE(`payment_to_allowed_ratio`) AS payment_to_allowed_ratio FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v3` GROUP BY ALL'), ('How do inpatient and outpatient paid amounts trend by month?', 'SELECT service_month, MEASURE(`inpatient_paid_amount`) AS inpatient_paid_amount, MEASURE(`outpatient_paid_amount`) AS outpatient_paid_amount FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v3` GROUP BY ALL ORDER BY service_month'), ('What is the participating provider rate by provider participation category?', 'SELECT participating_provider, MEASURE(`participating_provider_rate`) AS participating_provider_rate FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v3` GROUP BY ALL ORDER BY participating_provider_rate DESC'), ('Show average paid per member and claims per member by claim type.', 'SELECT claim_type, MEASURE(`average_paid_per_member`) AS average_paid_per_member, MEASURE(`claims_per_member`) AS claims_per_member FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v3` GROUP BY ALL'), ('Which line statuses have the most lines per claim?', 'SELECT line_status, MEASURE(`lines_per_claim`) AS lines_per_claim FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v3` GROUP BY ALL ORDER BY lines_per_claim DESC'), ('How many active members are there by line of business?', 'SELECT line_of_business, MEASURE(`active_members`) AS active_members FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_enrollment_metric_view_v3` GROUP BY ALL ORDER BY active_members DESC'), ('What is the monthly trend in new member enrollments?', 'SELECT service_month, MEASURE(`new_member_enrollments`) AS new_member_enrollments FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_enrollment_metric_view_v3` GROUP BY ALL ORDER BY service_month'), ('Which member states have the largest enrolled member population?', 'SELECT member_state, MEASURE(`members_by_geography`) AS members_by_geography FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_enrollment_metric_view_v3` GROUP BY ALL ORDER BY members_by_geography DESC'), ('For MEDICARE, how are active members distributed by product?', "SELECT product_id, MEASURE(`active_members`) AS active_members FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_enrollment_metric_view_v3` WHERE line_of_business = 'MEDICARE' GROUP BY ALL ORDER BY active_members DESC")]
+print(f"Example question SQLs: {len(EXAMPLE_QUESTION_SQLS)}")
+
+# COMMAND ----------
+
+# DBTITLE 1,Benchmark Questions
+BENCHMARK_QUESTIONS = [('Give me the overall claim paid dollars.', 'SELECT MEASURE(`total_paid_amount`) AS total_paid_amount FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v3`'), ('What are total claims versus total service lines?', 'SELECT MEASURE(`total_claims`) AS total_claims, MEASURE(`total_claim_lines`) AS total_claim_lines FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v3`'), ('Show paid spend each month.', 'SELECT service_month, MEASURE(`total_paid_amount`) AS total_paid_amount FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v3` GROUP BY ALL ORDER BY service_month'), ('Break out paid amount for each claim type.', 'SELECT claim_type, MEASURE(`total_paid_amount`) AS total_paid_amount FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v3` GROUP BY ALL ORDER BY total_paid_amount DESC'), ('Which claim category has the worst denial percentage?', 'SELECT claim_type, MEASURE(`denial_rate`) AS denial_rate FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v3` GROUP BY ALL ORDER BY denial_rate DESC'), ('What share of Professional claim lines are clean?', "SELECT MEASURE(`clean_claim_rate`) AS clean_claim_rate FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v3` WHERE claim_type = 'Professional'"), ('List the top five specialties by paid claims cost.', 'SELECT rendering_provider_specialty, MEASURE(`total_paid_amount`) AS total_paid_amount FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v3` WHERE rendering_provider_specialty IS NOT NULL GROUP BY ALL ORDER BY total_paid_amount DESC LIMIT 5'), ('Compare paid-to-billed and paid-to-allowed percentages by status.', 'SELECT line_status, MEASURE(`payment_to_billed_ratio`) AS payment_to_billed_ratio, MEASURE(`payment_to_allowed_ratio`) AS payment_to_allowed_ratio FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v3` GROUP BY ALL'), ('Trend institutional and professional paid amounts over time.', 'SELECT service_month, MEASURE(`inpatient_paid_amount`) AS inpatient_paid_amount, MEASURE(`outpatient_paid_amount`) AS outpatient_paid_amount FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v3` GROUP BY ALL ORDER BY service_month'), ('How much paid amount is associated with participating providers by category?', 'SELECT participating_provider, MEASURE(`participating_provider_paid`) AS participating_provider_paid FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v3` GROUP BY ALL ORDER BY participating_provider_paid DESC'), ('Compare member cost and claim frequency by type of claim.', 'SELECT claim_type, MEASURE(`average_paid_per_member`) AS average_paid_per_member, MEASURE(`claims_per_member`) AS claims_per_member FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v3` GROUP BY ALL'), ('Show lines per claim for each processing status.', 'SELECT line_status, MEASURE(`lines_per_claim`) AS lines_per_claim FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v3` GROUP BY ALL ORDER BY lines_per_claim DESC'), ('Count active members for each LOB.', 'SELECT line_of_business, MEASURE(`active_members`) AS active_members FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_enrollment_metric_view_v3` GROUP BY ALL ORDER BY active_members DESC'), ('How did new enrollments vary month by month?', 'SELECT service_month, MEASURE(`new_member_enrollments`) AS new_member_enrollments FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_enrollment_metric_view_v3` GROUP BY ALL ORDER BY service_month'), ('Rank states by enrolled member population.', 'SELECT member_state, MEASURE(`members_by_geography`) AS members_by_geography FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_enrollment_metric_view_v3` GROUP BY ALL ORDER BY members_by_geography DESC'), ('For COMMERCIAL coverage, show active members by product.', "SELECT product_id, MEASURE(`active_members`) AS active_members FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_enrollment_metric_view_v3` WHERE line_of_business = 'COMMERCIAL' GROUP BY ALL ORDER BY active_members DESC")]
+print(f"Benchmark questions: {len(BENCHMARK_QUESTIONS)}")
+
+# COMMAND ----------
+
+# DBTITLE 1,Validate Configuration (DETERMINISM GATE)
+import json, os, sys, uuid
+from databricks.sdk import WorkspaceClient
+w = WorkspaceClient()
+_gate_checks_loaded = False
+try:
+    _templates_dir = os.getcwd()
+    if _templates_dir not in sys.path:
+        sys.path.insert(0, _templates_dir)
+    from gate_checks import run_genie_predeploy_gates, validate_genie_from_api, GateCheckError
+    _gate_checks_loaded = True
+    print("✅ gate_checks loaded — programmatic Genie enforcement active")
+except Exception as e:
+    print(f"⚠️ gate_checks unavailable: {e}; using built-in assertions")
+
+def validate_genie_config(table_identifiers, example_sqls, general_instructions, sample_questions):
+    issues, sql_results = [], []
+    for tbl in table_identifiers:
+        try:
+            spark.sql(f"DESCRIBE TABLE {tbl}").limit(1).collect()
+            print(f"✓ table accessible: {tbl}")
+        except Exception as e:
+            issues.append(f"Table '{tbl}' not accessible: {e}")
+    for i, (question, sql) in enumerate(example_sqls, 1):
+        try:
+            result = spark.sql(f"SELECT * FROM ({sql}) _t LIMIT 1")
+            sql_results.append({"idx": i, "question": question, "status": "PASS", "columns": [f.name for f in result.schema.fields]})
+            print(f"✓ SQL {i}: {question[:70]}")
+        except Exception as e:
+            issues.append(f"Example SQL #{i} failed: {question[:50]} Error: {e}")
+            sql_results.append({"idx": i, "question": question, "status": "FAIL", "error": str(e)})
+    if len(sample_questions) < 15:
+        issues.append(f"Only {len(sample_questions)} sample questions (need >= 15)")
+    if len(set(sample_questions)) != len(sample_questions):
+        issues.append("Duplicate sample questions detected")
+    if len(general_instructions) < 500:
+        issues.append(f"Instructions too short ({len(general_instructions)} chars) — need >= 500")
+    status = "PASS" if not issues else "FAIL"
+    marker = "✅" if status == "PASS" else "❌"
+    print(f"\n{marker} Genie config validation: {status}")
+    return {"status": status, "issues": issues, "sql_results": sql_results}
+validation_result = validate_genie_config(TABLE_IDENTIFIERS, EXAMPLE_QUESTION_SQLS, GENERAL_INSTRUCTIONS, SAMPLE_QUESTIONS)
+assert validation_result["status"] == "PASS", "Genie config validation FAILED:\n" + "\n".join(validation_result["issues"])
+
+# COMMAND ----------
+
+# DBTITLE 1,Helper Functions
+def _sorted_hex_ids(n: int) -> list[str]:
+    return sorted(uuid.uuid4().hex for _ in range(n))
+
+def build_serialized_space(general_instructions: str, metric_view_descriptions: dict[str, str], sample_questions: list[str], example_question_sqls: list[tuple[str, str]], benchmark_questions: list[tuple[str, str]]) -> str:
+    assert len(general_instructions) >= 500
+    assert len(metric_view_descriptions) >= 1
+    assert len(sample_questions) >= 15
+    assert len(example_question_sqls) >= 10
+    assert len(benchmark_questions) >= 15
+    sq_ids = _sorted_hex_ids(len(sample_questions)); eq_ids = _sorted_hex_ids(len(example_question_sqls)); bm_ids = _sorted_hex_ids(len(benchmark_questions)); ti_id = uuid.uuid4().hex
+    all_ids = sq_ids + eq_ids + bm_ids + [ti_id]
+    assert len(all_ids) == len(set(all_ids))
+    config_sq = [{"id": sq_ids[i], "question": [q]} for i, q in enumerate(sample_questions)]
+    mv_list = [{"identifier": k, "description": [v], "column_configs": []} for k, v in sorted(metric_view_descriptions.items())]
+    text_instr = sorted([{"id": ti_id, "content": [general_instructions]}], key=lambda x: x["id"])
+    ex_sqls = sorted([{"id": eq_ids[i], "question": [q], "sql": [sql]} for i, (q, sql) in enumerate(example_question_sqls)], key=lambda x: x["id"])
+    bm_list = sorted([{"id": bm_ids[i], "question": [q], "answer": [{"format": "SQL", "content": [sql]}]} for i, (q, sql) in enumerate(benchmark_questions)], key=lambda x: x["id"])
+    return json.dumps({"version": 2, "config": {"sample_questions": config_sq}, "data_sources": {"tables": mv_list}, "instructions": {"text_instructions": text_instr, "example_question_sqls": ex_sqls}, "benchmarks": {"questions": bm_list}})
+print("✅ Helper functions loaded: build_serialized_space")
+
+# COMMAND ----------
+
+# DBTITLE 1,Create or Update Space
+post_deploy_result = None
+if _gate_checks_loaded:
+    run_genie_predeploy_gates(title=SPACE_TITLE, description=SPACE_DESCRIPTION, table_identifiers=TABLE_IDENTIFIERS, general_instructions=GENERAL_INSTRUCTIONS, sample_questions=SAMPLE_QUESTIONS, example_sqls=EXAMPLE_QUESTION_SQLS)
+    print("Pre-deploy gates PASSED")
+serialised = build_serialized_space(GENERAL_INSTRUCTIONS, METRIC_VIEW_DESCRIPTIONS, SAMPLE_QUESTIONS, EXAMPLE_QUESTION_SQLS, BENCHMARK_QUESTIONS)
+if not SPACE_ID:
+    try:
+        list_resp = w.api_client.do("GET", "/api/2.0/genie/spaces")
+        for existing in (list_resp or {}).get("spaces", []):
+            if existing.get("title") == SPACE_TITLE:
+                SPACE_ID = existing["space_id"]
+                print(f"Found existing space: {SPACE_ID} — will UPDATE")
+                break
+    except Exception as e:
+        print(f"List spaces unavailable: {str(e)[:120]}")
+if SPACE_ID:
+    result = w.api_client.do("PATCH", f"/api/2.0/genie/spaces/{SPACE_ID}", body={"title": SPACE_TITLE, "description": SPACE_DESCRIPTION, "warehouse_id": WAREHOUSE_ID, "serialized_space": serialised})
+else:
+    result = w.api_client.do("POST", "/api/2.0/genie/spaces", body={"title": SPACE_TITLE, "description": SPACE_DESCRIPTION, "warehouse_id": WAREHOUSE_ID, "table_identifiers": TABLE_IDENTIFIERS, "serialized_space": serialised})
+new_id = result.get("space_id", SPACE_ID)
+print(f"✅ SUCCESS Space ID: {new_id}")
+if _gate_checks_loaded:
+    post_deploy_result = validate_genie_from_api(new_id, SPACE_TITLE)
+    print("✅ Post-deploy gate PASSED — API readback verified")
+else:
+    data = w.api_client.do("GET", f"/api/2.0/genie/spaces/{new_id}", query={"include_serialized_space": "true"})
+    ss = json.loads(data.get("serialized_space", "{}"))
+    sqs = ss.get("config", {}).get("sample_questions", [])
+    mvs = ss.get("data_sources", {}).get("metric_views", []) or ss.get("data_sources", {}).get("tables", [])
+    tis = ss.get("instructions", {}).get("text_instructions", [])
+    eqs = ss.get("instructions", {}).get("example_question_sqls", [])
+    bms = ss.get("benchmarks", {}).get("questions", [])
+    instr_chars = sum(len(''.join(t.get('content', []))) for t in tis)
+    assert instr_chars >= 500 and len(sqs) >= 15 and len(eqs) >= 10 and len(bms) >= 15 and len(mvs) >= 1
+    post_deploy_result = {"status": "PASS", "space_id": new_id, "title": data.get("title", SPACE_TITLE), "sample_questions_count": len(sqs), "example_sqls_count": len(eqs), "benchmarks_count": len(bms), "instruction_chars": instr_chars, "tables_count": len(mvs), "source": "api_readback"}
+dbutils.notebook.exit(json.dumps({"space_id": new_id, "title": result.get("title", SPACE_TITLE), "post_deploy_result": post_deploy_result}))
+
+# COMMAND ----------
+
+# DBTITLE 1,Validate Space
+print("Validation handled by create/update cell via API readback and notebook exit payload.")

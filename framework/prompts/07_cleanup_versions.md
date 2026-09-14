@@ -78,7 +78,7 @@ For the target version(s), discover ALL associated assets:
 ### 3.1 Unity Catalog Tables
 
 ```sql
-SHOW TABLES IN {catalog}.{schema} LIKE '%_v{N}'
+SHOW TABLES IN {catalog}.{schema} LIKE '*_v{N}'
 ```
 
 Expected pattern: `dim_member_v1`, `fact_claim_header_v1`, etc.
@@ -86,7 +86,7 @@ Expected pattern: `dim_member_v1`, `fact_claim_header_v1`, etc.
 ### 3.2 Unity Catalog Metric Views
 
 ```sql
-SHOW VIEWS IN {catalog}.{schema} LIKE '%_v{N}'
+SHOW VIEWS IN {catalog}.{schema} LIKE '*_v{N}'
 ```
 
 Expected pattern: `member_claims_metric_view_v1`
@@ -330,11 +330,11 @@ This ensures the next pipeline run starts fresh at v1.
 
 ```sql
 -- Tables should be gone
-SHOW TABLES IN {catalog}.{schema} LIKE '%_v{N}'
+SHOW TABLES IN {catalog}.{schema} LIKE '*_v{N}'
 -- Expected: empty result
 
 -- Views should be gone
-SHOW VIEWS IN {catalog}.{schema} LIKE '%_v{N}'
+SHOW VIEWS IN {catalog}.{schema} LIKE '*_v{N}'
 -- Expected: empty result
 ```
 
@@ -444,8 +444,8 @@ At the END of this step:
 
 | Artifact | Location | Validation Check |
 |----------|----------|-----------------|
-| No tables with target suffix | `{catalog}.{schema}` | SHOW TABLES LIKE '%_v{N}' returns empty |
-| No views with target suffix | `{catalog}.{schema}` | SHOW VIEWS LIKE '%_v{N}' returns empty |
+| No tables with target suffix | `{catalog}.{schema}` | SHOW TABLES LIKE '*_v{N}' returns empty |
+| No views with target suffix | `{catalog}.{schema}` | SHOW VIEWS LIKE '*_v{N}' returns empty |
 | No dashboards with target names | Workspace | GET /api returns 404 for each dashboard_id |
 | No Genie spaces with target names | Workspace | GET /api returns 404 for each space_id |
 | No output folder for target version | Workspace | Folder does not exist |

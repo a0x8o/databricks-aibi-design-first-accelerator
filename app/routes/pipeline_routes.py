@@ -4,6 +4,7 @@ Handles pipeline run, status polling, cancellation, and SSE streaming.
 See docs/design_phase2.md Section 5.1.
 """
 
+import os
 import uuid
 import json
 import time
@@ -440,14 +441,16 @@ def _run_pipeline_background(run_id: str, domain: str, steps: list, run_mode: st
             # Add/update phase in step_data
             if step in run['step_data']:
                 phases = run['step_data'][step].get('phases', [])
-                # Find existing phase entry or create new
-                existing = next((p for p in phases if p.get('phase_name') == phase), None)
+                # Find existing phase entry by phase_name OR phase_id
+                existing = next((p for p in phases
+                                 if p.get('phase_name') == phase or p.get('phase_id') == phase), None)
                 if existing:
                     existing['status'] = phase_status
                     if duration_ms is not None:
                         existing['duration_ms'] = duration_ms
                 else:
-                    phases.append({'phase_name': phase, 'status': phase_status, 'duration_ms': duration_ms})
+                    # Set both phase_name and phase_id so phase_update can find it
+                    phases.append({'phase_id': phase, 'phase_name': phase, 'status': phase_status, 'duration_ms': duration_ms})
                 run['step_data'][step]['phases'] = phases
         elif event.event_type == "phase_update":
             # Rich phase progress from LLM's report_progress tool
@@ -577,7 +580,13 @@ def _run_pipeline_background(run_id: str, domain: str, steps: list, run_mode: st
         run['current_step'] = 'load_configuration'
         run['status'] = 'running'
         run['step_data']['load_configuration'] = {
-            'step_name': 'load_configuration', 'status': 'running', 'duration_s': None, 'phases': []
+            'step_name': 'load_configuration', 'status': 'running', 'duration_s': None,
+            'phases': [
+                {'phase_id': 'load_yaml', 'phase_name': 'Load Configuration', 'status': 'running',
+                 'current_task': 'Reading accelerator.yaml and resolving paths',
+                 'happenings': ['Reading accelerator.yaml', 'Resolving workspace paths'],
+                 'findings': [], 'stats': {}},
+            ]
         }
         q = _event_queues.get(run_id)
         if q:
@@ -643,6 +652,31 @@ def _run_pipeline_background(run_id: str, domain: str, steps: list, run_mode: st
             run['version'] = version_info.version
             run['version_suffix'] = version_info.suffix
 
+        # Update config phase as completed with rich detail
+        config_phases = run['step_data']['load_configuration']['phases']
+        data_source_type = getattr(config, 'data_source', None)
+        ds_type_str = getattr(data_source_type, 'type', 'unknown') if data_source_type else 'unknown'
+        config_phases[0]['status'] = 'completed'
+        config_phases[0]['happenings'] = [
+            'Reading accelerator.yaml',
+            'Resolving workspace paths',
+            f'Detected data source type: {ds_type_str}',
+            f'Version resolution: v{run.get("version", "?")} ({run.get("version_suffix", "")})',
+        ]
+        config_phases[0]['findings'] = [
+            f"Domain: {domain}",
+            f"Version: v{run.get('version', '?')} ({run.get('version_suffix', '')})",
+            f"Data source: {ds_type_str}",
+            f"Output: {getattr(config, 'output_folder', '?').split('/')[-1]}",
+        ]
+        config_phases[0]['stats'] = {}
+        config_phases.append({
+            'phase_id': 'validate_config', 'phase_name': 'Validate Configuration',
+            'status': 'running', 'current_task': 'Validating config and resolving assets',
+            'happenings': ['Checking required fields', 'Verifying catalog/schema references'],
+            'findings': [], 'stats': {},
+        })
+
         # Populate run metadata for UI status bar
         catalog_target = getattr(config.catalog, 'target', '') or '' if hasattr(config, 'catalog') else ''
         if '.' in catalog_target:
@@ -681,6 +715,37 @@ def _run_pipeline_background(run_id: str, domain: str, steps: list, run_mode: st
 
         # ── Step 0 complete ──
         config_duration = round(time.time() - config_start, 1)
+        # Mark validate phase completed with rich summary
+        config_phases = run['step_data']['load_configuration']['phases']
+        for ph in config_phases:
+            if ph.get('status') not in ('completed', 'failed'):
+                ph['status'] = 'completed'
+        # Enrich the validate phase with full config detail
+        if config_phases:
+            catalog_str = f"{run.get('catalog', '?')}.{run.get('schema', '?')}"
+            warehouse_id = getattr(config, 'sql_warehouse_id', '?') or '?'
+            clean_start = getattr(getattr(config, 'pipeline', None), 'clean_start', False)
+            run_mode_str = run_mode or 'clean'
+            steps_enabled = getattr(getattr(config, 'pipeline', None), 'steps', None)
+            steps_list = [s.get('name', s) if isinstance(s, dict) else str(s)
+                          for s in (steps_enabled or [])] if steps_enabled else ['all']
+            config_phases[-1]['happenings'] = [
+                'Checking required fields',
+                'Verifying catalog/schema references',
+                f'Resolved catalog target: {catalog_str}',
+                f'Warehouse ID: {warehouse_id[:8]}...',
+                f'Clean start: {"yes" if clean_start else "no"}',
+            ]
+            config_phases[-1]['findings'] = [
+                f"Catalog: {catalog_str}",
+                f"Warehouse: {warehouse_id}",
+                f"Run mode: {run_mode_str}",
+                f"Steps: {', '.join(steps_list)}",
+                f"Config loaded in {config_duration}s",
+            ]
+            config_phases[-1]['stats'] = {
+                'duration_s': config_duration,
+            }
         run['step_data']['load_configuration']['status'] = 'completed'
         run['step_data']['load_configuration']['duration_s'] = config_duration
         run['steps_completed'].append('load_configuration')
@@ -707,6 +772,15 @@ def _run_pipeline_background(run_id: str, domain: str, steps: list, run_mode: st
         else:
             # Increment retry_count on the run record
             run_store.increment_retry(run_id)
+
+        # Persist Config step + phases to Lakebase so they survive app restarts
+        try:
+            run_store.upsert_step(run_id, 'load_configuration', step_index=0,
+                                  status='completed', duration_s=config_duration)
+            for ph in run['step_data']['load_configuration'].get('phases', []):
+                run_store.persist_phase_update(run_id, 'load_configuration', ph)
+        except Exception as persist_err:
+            logger.warning(f"Failed to persist config step to Lakebase: {persist_err}")
 
         # Pass run_id so PipelineRunner reuses it (critical for phase-level resume
         # to match phase records already in pipeline_run_phases table)
@@ -773,6 +847,10 @@ def start_run():
     run_id = str(uuid.uuid4())
     steps = data.get('steps')  # None means all enabled steps
 
+    # Capture model names from environment for UI display
+    _llm_model = os.environ.get('LLM_ENDPOINT_NAME', 'databricks-gpt-5-5')
+    _vision_model = os.environ.get('VISION_ENDPOINT_NAME', 'databricks-gpt-5-5')
+
     # Initialize run state
     _runs[run_id] = {
         'run_id': run_id,
@@ -790,6 +868,8 @@ def start_run():
         'started_at': datetime.utcnow().isoformat(),
         'error': None,
         'duration_s': None,
+        'llm_model': _llm_model,
+        'vision_model': _vision_model,
     }
 
     # Create SSE event queue for this run
@@ -1050,6 +1130,16 @@ def get_run_status(run_id):
                 {**ph, 'status': 'completed'} if ph.get('status') not in ('completed', 'failed') else ph
                 for ph in phases
             ]
+        # Normalize: if step FAILED, no phase should still show 'running'.
+        # This happens when the app crashes mid-step — phases stay 'running'
+        # in Lakebase but the step itself was marked 'failed' by zombie
+        # detection. Without this, the UI shows all phases as "In Progress"
+        # simultaneously, which looks like parallel execution.
+        elif step_status == 'failed':
+            phases = [
+                {**ph, 'status': 'failed'} if ph.get('status') == 'running' else ph
+                for ph in phases
+            ]
         steps.append({
             "step_name": step_name,
             "status": step_status,
@@ -1072,12 +1162,29 @@ def get_run_status(run_id):
         except Exception:
             elapsed_s = None
 
+    # Compute duration_s for terminal states
+    duration_s = run.get('duration_s')
+    if not duration_s and run.get('status') in ('completed', 'failed', 'cancelled'):
+        # Compute from started_at/completed_at
+        completed_at = run.get('completed_at')
+        if started_at and completed_at:
+            try:
+                from datetime import datetime, timezone
+                start_dt = datetime.fromisoformat(str(started_at).replace('Z', '+00:00')) if isinstance(started_at, str) else started_at
+                end_dt = datetime.fromisoformat(str(completed_at).replace('Z', '+00:00')) if isinstance(completed_at, str) else completed_at
+                duration_s = round((end_dt - start_dt).total_seconds(), 1)
+            except Exception:
+                pass
+        elif elapsed_s:
+            duration_s = elapsed_s
+
     return jsonify({
         "run_id": run_id,
         "status": run.get('status', 'unknown'),
         "progress_pct": run.get('progress_pct', 0),
         "current_step": run.get('current_step'),
         "elapsed_s": elapsed_s,
+        "duration_s": duration_s,
         "started_at": started_at,
         "error": run.get('error'),
         "domain": run.get('domain'),
@@ -1085,6 +1192,8 @@ def get_run_status(run_id):
         "version_suffix": run.get('version_suffix', ''),
         "catalog": run.get('catalog', ''),
         "schema": run.get('schema', ''),
+        "llm_model": run.get('llm_model', os.environ.get('LLM_ENDPOINT_NAME', 'databricks-gpt-5-5')),
+        "vision_model": run.get('vision_model', os.environ.get('VISION_ENDPOINT_NAME', 'databricks-gpt-5-5')),
         "steps": steps,
     })
 
@@ -1331,7 +1440,7 @@ def rerun_from_failure(run_id):
     # Insert step records for any steps that were never reached in the
     # original run (they won't exist in the steps table). Without this,
     # the pipeline runner can't update their status via update_step.
-    from app.services.run_store import STEP_ORDER
+    from services.run_store import STEP_ORDER
     existing_steps = {s.get('step_name') or s.get('name') for s in (original_run.get('steps') or [])}
     max_idx = max((s.get('step_index', 0) for s in (original_run.get('steps') or [])), default=-1)
     for step_name in resume_steps:

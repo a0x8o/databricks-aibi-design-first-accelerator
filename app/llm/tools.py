@@ -238,11 +238,65 @@ TOOL_DEFINITIONS = [
     {
         "type": "function",
         "function": {
+            "name": "deploy_from_template",
+            "description": (
+                "Deploy a notebook from a template file with placeholder substitution (G-16). "
+                "This is the REQUIRED tool for creating deployment notebooks: DDL, dbldatagen, "
+                "metric_view, dashboard, and genie_space notebooks. The tool reads the template "
+                "verbatim, replaces only the declared placeholders you provide, and "
+                "imports the result as a notebook. You MUST NOT use import_notebook for these — "
+                "it will reject template-based notebook paths. Use this tool instead of "
+                "read_workspace_file + string manipulation + import_notebook."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "template_path": {
+                        "type": "string",
+                        "description": (
+                            "Absolute workspace path to the .py.template file "
+                            "(e.g. /Workspace/.../framework/templates/ddl_notebook.py.template)"
+                        )
+                    },
+                    "output_path": {
+                        "type": "string",
+                        "description": (
+                            "Absolute workspace path where the notebook will be created "
+                            "(e.g. /Workspace/.../generated_outputs/v1/notebooks/ddl_member_claims.py)"
+                        )
+                    },
+                    "placeholders": {
+                        "type": "object",
+                        "description": (
+                            "Dictionary of placeholder keys to values. Keys are the placeholder "
+                            "names WITHOUT the double braces (e.g. DOMAIN_NAME not the braced version). "
+                            "Values are the substitution strings. ALL placeholders in the template "
+                            "must be provided — the tool will error if any remain unreplaced."
+                        ),
+                        "additionalProperties": {"type": "string"}
+                    },
+                    "language": {
+                        "type": "string",
+                        "enum": ["PYTHON", "SQL"],
+                        "description": "Notebook language. Default: PYTHON."
+                    }
+                },
+                "required": ["template_path", "output_path", "placeholders"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "import_notebook",
             "description": (
                 "Import a Python or SQL notebook to the workspace. Creates a notebook file "
-                "that can later be executed via execute_notebook. Use this for generated "
-                "DDL scripts, synthetic data generators, or any multi-cell notebook content. "
+                "that can later be executed via execute_notebook. "
+                "IMPORTANT: Do NOT use this for template-based deployment notebooks "
+                "(DDL, dbldatagen, metric_view, dashboard, genie_space). Those MUST use "
+                "deploy_from_template instead (G-16 enforcement). This tool will reject "
+                "notebook paths containing those template stems. Use import_notebook only "
+                "for non-template notebooks (e.g. custom validation scripts). "
                 "Content should be in Databricks notebook source format (# COMMAND ---------- separators)."
             ),
             "parameters": {
@@ -315,6 +369,32 @@ TOOL_DEFINITIONS = [
                     }
                 },
                 "required": ["path"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "copy_workspace_file",
+            "description": (
+                "Copy a file from one workspace path to another via the Workspace API. "
+                "Use this instead of shutil.copy/copy2 which CANNOT access /Workspace paths "
+                "(they are API paths, not local filesystem). Creates parent directories "
+                "automatically. Works for any text file (YAML, JSON, SQL, Python, Markdown)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "src": {
+                        "type": "string",
+                        "description": "Source absolute workspace path."
+                    },
+                    "dst": {
+                        "type": "string",
+                        "description": "Destination absolute workspace path."
+                    }
+                },
+                "required": ["src", "dst"]
             }
         }
     },

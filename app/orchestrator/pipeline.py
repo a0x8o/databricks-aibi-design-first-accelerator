@@ -138,6 +138,55 @@ class PipelineRun:
 
 
 # ---------------------------------------------------------------------------
+# Phase-to-Artifact Mapping (Artifact-Gated Phase Skip)
+# ---------------------------------------------------------------------------
+# Each phase within a step maps to its completion artifact (relative to OUTPUT_FOLDER).
+# If the artifact exists on disk and is non-empty, the phase is considered complete.
+# Used for intra-step resume: on app restart, only the in-flight phase re-executes.
+#
+# Convention: keys are step names, values are ordered lists of (phase_id, artifact_path).
+# artifact_path is relative to OUTPUT_FOLDER. None means no artifact (always re-execute).
+
+PHASE_ARTIFACT_MAP = {
+    "create_data_layer": [
+        ("load_config",             None),                                  # transient: reads YAML
+        ("parse_erd",               "erd_parsed.yaml"),
+        ("build_semantic_model",    "semantic_model.yaml"),
+        ("generate_ddl",            "data_layer/ddl_notebook.py"),
+        ("generate_synthetic_data", "data_layer/synthetic_data_notebook.py"),
+        ("validate_data",           "data_layer_validation.yaml"),
+    ],
+    "create_metric_views": [
+        ("load_config",             None),
+        ("profile_schema",          "metric_views/schema_profile.yaml"),
+        ("cross_check_profile",     None),  # GATE 2.2: DESCRIBE TABLE vs profile (always re-run, cheap)
+        ("map_kpis",                "metric_views/kpi_metric_mapping.yaml"),
+        ("design_metric_views",     "metric_views/metric_view_design.yaml"),
+        ("deploy_metric_views",     "metric_views/metric_view_notebook.py"),
+        ("validate_metric_views",   "metric_views/metric_view_validation.yaml"),
+    ],
+    "create_dashboards": [
+        ("load_config",             None),
+        ("design_dashboard",        "dashboards/dashboard_design.yaml"),
+        ("validate_datasets",       "dashboards/dashboard_dataset_validation.yaml"),
+        ("deploy_dashboard",        "dashboards/dashboard_deployment.py"),
+        ("validate_dashboard",      "dashboards/dashboard_validation.yaml"),
+    ],
+    "create_genie_space": [
+        ("load_config",             None),
+        ("build_semantic_inventory", "genie_semantic_inventory.yaml"),
+        ("deploy_genie_space",      "genie_space/genie_deployment.py"),
+        ("validate_genie",          "genie_validation.yaml"),
+    ],
+    "generate_documentation": [
+        ("gather_artifacts",        None),
+        ("generate_readme",         "documentation/readme.md"),
+        ("generate_manifest",       "documentation/run_manifest.json"),
+    ],
+}
+
+
+# ---------------------------------------------------------------------------
 # Pipeline Runner
 # ---------------------------------------------------------------------------
 
@@ -307,9 +356,24 @@ class PipelineRunner:
                         })
                         continue
 
-                # On rerun, always re-execute the full step from scratch.
-                # Phase-level resume is intentionally disabled — partial phase
-                # outputs may leave data in an inconsistent state.
+                # ── Artifact-gated phase skip ──
+                # Before executing, check which phases have durable artifacts.
+                # If some phases already completed (e.g., app restart mid-step),
+                # inject RESUME_CONTEXT so the agent skips them.
+                phase_states = self._check_phase_artifacts(step_name)
+                artifact_resume = self._build_artifact_resume_context(step_name, phase_states)
+                if artifact_resume:
+                    # Merge into domain context so AgentStep passes it to AgentLoop
+                    self._domain_context['RESUME_CONTEXT'] = artifact_resume
+                    completed_ids = [p['phase_id'] for p in artifact_resume['completed_phases']]
+                    logger.info(
+                        f"Artifact-gated resume for {step_name}: "
+                        f"skipping {completed_ids}, "
+                        f"resuming from '{artifact_resume['resume_from_phase']}'"
+                    )
+                else:
+                    # Fresh run — clear any stale resume context from prior step
+                    self._domain_context.pop('RESUME_CONTEXT', None)
 
                 # Execute step
                 run.current_step = step_name
@@ -396,13 +460,11 @@ class PipelineRunner:
         start = time.time()
         phase_results = []
 
-        # Get phase config from RunStore, falling back to step's PHASE_HANDLERS
+        # Derive phases from the step's PHASE_HANDLERS (source of truth for
+        # phase names and dispatch).  The RunStore config table may have stale
+        # phase names after code changes, so PHASE_HANDLERS always wins.
         phases = None
-        if self._run_store:
-            phases = self._run_store.get_phase_config(step_name)
-
-        # If config table has nothing, derive phases from the step's own PHASE_HANDLERS
-        if not phases and hasattr(step, 'PHASE_HANDLERS'):
+        if hasattr(step, 'PHASE_HANDLERS'):
             handlers = step.PHASE_HANDLERS
             # PHASE_HANDLERS can be a dict {name: method} or list [(name, method)]
             if isinstance(handlers, dict):
@@ -414,6 +476,10 @@ class PipelineRunner:
                 for i, (name, _method) in enumerate(handler_items)
             ]
 
+        # Fall back to RunStore config table only for non-PHASE_HANDLERS steps
+        if not phases and self._run_store:
+            phases = self._run_store.get_phase_config(step_name)
+
         # Build phase callback that emits SSE events and persists to RunStore
         def phase_callback(phase_name, event, **kwargs):
             if event == "started":
@@ -421,6 +487,20 @@ class PipelineRunner:
                     "step": step_name,
                     "phase": phase_name,
                 })
+                # If the step provided a current_task, emit phase_update
+                # so the UI shows what this phase is doing while running.
+                current_task = kwargs.get("current_task", "")
+                if current_task:
+                    self._emit(callback, "phase_update", {
+                        "step": step_name,
+                        "phase_name": phase_name,
+                        "phase_id": phase_name,
+                        "status": "running",
+                        "current_task": current_task,
+                        "happenings": kwargs.get("happenings", []),
+                        "findings": [],
+                        "stats": {},
+                    })
                 if self._run_store:
                     self._run_store.update_phase(
                         run_id=self._current_run_id,
@@ -443,6 +523,23 @@ class PipelineRunner:
                     "phase": phase_name,
                     "duration_ms": duration_ms,
                 })
+                # If the step provided rich detail, emit as phase_update
+                # so the UI accordion can render happenings/findings/stats.
+                happenings = kwargs.get("happenings")
+                findings = kwargs.get("findings")
+                stats = kwargs.get("stats")
+                current_task = kwargs.get("current_task")
+                if happenings or findings or stats or current_task:
+                    self._emit(callback, "phase_update", {
+                        "step": step_name,
+                        "phase_name": phase_name,
+                        "phase_id": phase_name,
+                        "status": "completed",
+                        "current_task": current_task or '',
+                        "happenings": happenings or [],
+                        "findings": findings or [],
+                        "stats": stats or {},
+                    })
                 if self._run_store:
                     self._run_store.update_phase(
                         run_id=self._current_run_id,
@@ -582,6 +679,17 @@ class PipelineRunner:
                         else:
                             # Pass through other events (step_started, etc.)
                             self._emit(callback, event_type, d)
+
+                    # Set frozen artifacts for idempotent write guard
+                    resume_ctx = self._domain_context.get('RESUME_CONTEXT')
+                    if resume_ctx and hasattr(step, 'set_frozen_artifacts'):
+                        frozen_paths = set()
+                        for p in resume_ctx.get('completed_phases', []):
+                            artifact = p.get('artifact')
+                            if artifact:
+                                full = f"{self._config.output_folder}/{artifact}"
+                                frozen_paths.add(full)
+                        step.set_frozen_artifacts(frozen_paths)
 
                     result = step.execute(
                         callback=agent_event_bridge,
@@ -729,6 +837,119 @@ class PipelineRunner:
         except Exception as e:
             logger.warning(f"Failed to build RESUME_CONTEXT: {e}")
             return None
+
+    def _check_phase_artifacts(self, step_name: str) -> dict:
+        """Check which phases have existing completion artifacts on disk.
+
+        Scans the output folder for each phase's completion artifact as defined
+        in PHASE_ARTIFACT_MAP.  Returns a dict describing the state of each phase:
+
+            {
+                "phase_id": {
+                    "artifact_path": "relative/path.yaml",  # or None
+                    "exists": True/False,
+                    "size": 1234,           # bytes, 0 if missing
+                    "full_path": "/Workspace/.../path.yaml",
+                },
+                ...
+            }
+
+        Phases whose artifact is None are always marked exists=False (must run).
+        """
+        phase_artifacts = PHASE_ARTIFACT_MAP.get(step_name, [])
+        if not phase_artifacts:
+            return {}
+
+        output_folder = self._config.output_folder
+        ws = self._services.get("workspace")
+        result = {}
+
+        for phase_id, artifact_rel in phase_artifacts:
+            if artifact_rel is None:
+                result[phase_id] = {
+                    "artifact_path": None,
+                    "exists": False,
+                    "size": 0,
+                    "full_path": None,
+                }
+                continue
+
+            full_path = f"{output_folder}/{artifact_rel}"
+            exists = False
+            size = 0
+
+            if ws:
+                try:
+                    exists = ws.file_exists(full_path)
+                    if exists:
+                        # Read content to get size (lightweight — most artifacts are < 50KB)
+                        try:
+                            content = ws.read_file(full_path)
+                            size = len(content) if content else 0
+                            # Empty files don't count as complete
+                            if size == 0:
+                                exists = False
+                        except Exception:
+                            size = 0
+                except Exception as e:
+                    logger.debug(f"Artifact check failed for {full_path}: {e}")
+                    exists = False
+
+            result[phase_id] = {
+                "artifact_path": artifact_rel,
+                "exists": exists,
+                "size": size,
+                "full_path": full_path,
+            }
+
+        return result
+
+    def _build_artifact_resume_context(self, step_name: str, phase_states: dict) -> dict:
+        """Build an artifact-based RESUME_CONTEXT for a step.
+
+        Uses the deterministic artifact checks (not Lakebase phase records) to
+        decide which phases can be skipped.  This is the primary mechanism for
+        intra-step resume after an app restart.
+
+        Args:
+            step_name: The step about to execute.
+            phase_states: Output of _check_phase_artifacts().
+
+        Returns:
+            Dict suitable for injection into context_vars['RESUME_CONTEXT'].
+            None if no phases are complete (fresh run).
+        """
+        if not phase_states:
+            return None
+
+        completed_phases = []
+        first_incomplete = None
+
+        for phase_id, state in phase_states.items():
+            if state["exists"]:
+                completed_phases.append({
+                    "phase_id": phase_id,
+                    "artifact": state["artifact_path"],
+                    "size": state["size"],
+                })
+            elif first_incomplete is None:
+                first_incomplete = phase_id
+
+        if not completed_phases:
+            return None  # Nothing to skip — fresh run
+
+        return {
+            "run_id": self._current_run_id,
+            "step_name": step_name,
+            "completed_phases": completed_phases,
+            "resume_from_phase": first_incomplete,
+            "artifacts_written": [p["artifact"] for p in completed_phases],
+            "instruction": (
+                f"The following phases already have valid artifacts on disk. "
+                f"DO NOT re-execute them. Skip directly to '{first_incomplete or 'validation'}'. "
+                f"The artifacts are immutable — read them if needed, but do not overwrite."
+            ),
+        }
 
     def _emit(self, callback, event_type: str, data: dict) -> None:
         """Emit a pipeline event via callback (if provided)."""

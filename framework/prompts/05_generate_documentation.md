@@ -171,26 +171,18 @@ ground_truth_validation.yaml
 `ground_truth_validation.yaml` is the **highest-authority** validation artifact. It MUST exist before documentation can be written. It was produced by `gate_checks.py` via API readback (not agent self-reporting) and reflects the actual deployed state of every asset.
 
 **If `ground_truth_validation.yaml` does NOT exist:**
-1. Run the cross-validation sweep BEFORE generating documentation. Use this EXACT code for both App (`execute_python`) and Genie Code contexts:
-    ```python
-    import sys, os, shutil
 
-    deploy_root = os.environ.get("DEPLOY_ROOT", "/Workspace/Users/{username}/databricks-aibi-design-first-accelerator")
-    templates_dir = f"{deploy_root}/framework/templates"
+This means Step 5.3 (cross-validation sweep) either failed or was skipped. The documentation step does NOT re-run the sweep. Instead:
 
-    # For execute_python subprocess: copy gate_checks.py to a writable location
-    tmp_dir = "/tmp/pipeline_python"
-    os.makedirs(tmp_dir, exist_ok=True)
-    shutil.copy2(f"{templates_dir}/gate_checks.py", f"{tmp_dir}/gate_checks.py")
-    sys.path.insert(0, tmp_dir)
+1. Document the gap: note that `ground_truth_validation.yaml` is missing and the cross-validation sweep did not complete.
+2. Use available manifests (`ddl_manifest.json`, `synthetic_data_manifest.json`, `metric_view_manifest.json`, dashboard manifests, `data_layer_validation.yaml`) as the data source instead. These are less authoritative than a cross-validation sweep but sufficient for documentation.
+3. In the README, clearly state: "Cross-validation sweep did not complete. Asset status below is based on individual step manifests, not an independent terminal audit."
 
-    from gate_checks import run_cross_validation, write_ground_truth_validation
-    report = run_cross_validation(OUTPUT_FOLDER, quality_gates=quality_gates)
-    write_ground_truth_validation(f"{OUTPUT_FOLDER}/ground_truth_validation.yaml", report, source="cross_validation_sweep")
-    ```
-2. If the sweep fails, the documentation MUST record the failure — do NOT report assets as successfully deployed.
-3. **DO NOT re-execute earlier pipeline stages** (data layer, metric views, dashboards, Genie) to produce `ground_truth_validation.yaml`. The sweep reads EXISTING manifests and calls EXISTING APIs — it creates nothing new. If earlier stages failed, their failures should be documented, not retried during the documentation step.
-4. **DO NOT run any notebook that imports `dbldatagen`** — that is exclusively a Step 2 (data layer) dependency. If the agent encounters a `dbldatagen` import error during documentation or cross-validation, it means the wrong notebook is being executed. HALT and report the error.
+**DO NOT:**
+- Run Python code to load `gate_checks.py` or execute a cross-validation sweep during the documentation step. The sweep is Step 5.3's responsibility (master prompt), not the doc step's.
+- Re-execute earlier pipeline stages (data layer, metric views, dashboards, Genie).
+- Run any notebook that imports `dbldatagen` — that is exclusively a Step 2 dependency.
+- Halt the documentation step because `ground_truth_validation.yaml` is missing. Produce documentation from available artifacts.
 
 **Validation source hierarchy** (most trustworthy first):
 
@@ -364,8 +356,12 @@ If a required artifact cannot be read (workspace IO error), classify as `DOCUMEN
 Create:
 
 ```text
-{workspace.output_folder}/readme.md
+{workspace.output_folder}/documentation/readme.md
 ```
+
+All documentation files MUST be written under `{OUTPUT_FOLDER}/documentation/`. Never write documentation to the project root or user home directory.
+
+**Directory creation:** Before writing any documentation file, ensure the `documentation/` subdirectory exists. If it does not (e.g., Step 0 did not create it), create it using Workspace API `mkdirs` or agent tooling. In Genie Code context, `os.makedirs(f"{OUTPUT_FOLDER}/documentation", exist_ok=True)` is acceptable. Do NOT halt the documentation step because the directory is missing — create it and proceed.
 
 using Workspace API / agent tools defined by:
 
@@ -1193,7 +1189,7 @@ only when:
 | Artifact | Location | Validation Check |
 |----------|----------|-----------------|
 | run_manifest.json | `{OUTPUT_FOLDER}/` | Contains all section keys: config, data_layer, metric_views, dashboards, genie, validation |
-| README.md or summary notebook | `{OUTPUT_FOLDER}/` | Human-readable summary of the run |
+| README.md or summary notebook | `{OUTPUT_FOLDER}/documentation/` | Human-readable summary of the run |
 | run_context.yaml | `{OUTPUT_FOLDER}/` | `status: completed`, all phases listed |
 
 If `run_manifest.json` is missing, the entire pipeline run is incomplete.

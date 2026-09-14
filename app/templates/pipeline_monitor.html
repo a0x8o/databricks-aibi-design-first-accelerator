@@ -9,7 +9,6 @@
 
 {% block top_bar_right %}
 <span class="status-badge running" id="run-status-badge">Running</span>
-<span class="timer" id="elapsed-timer">00:00:00</span>
 {% endblock %}
 
 {% block head %}
@@ -240,6 +239,48 @@
     #cancel-btn:hover { background: #dc2626; }
     #cancel-btn.resume { background: var(--success); }
     #cancel-btn.resume:hover { background: #16a34a; }
+
+    /* Model badges in status bar */
+    .model-badge {
+        display: inline-flex; align-items: center; gap: 4px;
+        font-size: 0.68rem; font-weight: 500; font-family: var(--font-mono);
+        padding: 2px 8px; border-radius: 4px;
+        background: rgba(139,92,246,0.1); color: #8b5cf6;
+        white-space: nowrap;
+    }
+    .model-badge .badge-label {
+        font-size: 0.6rem; font-weight: 600; text-transform: uppercase;
+        letter-spacing: 0.3px; color: var(--text-muted); margin-right: 2px;
+    }
+
+    /* Expandable stat details */
+    .phase-stat.has-items { cursor: pointer; position: relative; }
+    .phase-stat.has-items:hover { background: var(--bg-subtle); border-radius: 6px; }
+    .phase-stat.has-items .phase-stat-value { text-decoration-style: dotted; text-decoration-line: underline; text-underline-offset: 3px; text-decoration-color: var(--text-muted); }
+    .stat-tooltip {
+        display: none; position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+        background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
+        padding: 10px 14px; min-width: 180px; max-width: 300px; max-height: 240px; overflow-y: auto;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.15); z-index: 100;
+        font-size: 0.78rem; line-height: 1.5;
+    }
+    .phase-stat.has-items:hover .stat-tooltip { display: block; }
+    .stat-tooltip-title { font-weight: 600; font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 6px; }
+    .stat-tooltip-item { padding: 2px 0; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; }
+    .stat-tooltip-item::before { content: '\2022'; color: var(--primary); font-size: 10px; flex-shrink: 0; }
+
+    /* Step tool summary in accordion */
+    .step-tool-summary {
+        display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px;
+    }
+    .tool-chip {
+        font-size: 0.65rem; font-weight: 500; padding: 1px 7px;
+        border-radius: 3px; background: var(--bg-subtle); color: var(--text-muted);
+        white-space: nowrap;
+    }
+    .tool-chip.model { background: rgba(139,92,246,0.1); color: #8b5cf6; }
+    .tool-chip.sql { background: rgba(59,130,246,0.1); color: var(--primary); }
+    .tool-chip.notebook { background: rgba(34,197,94,0.1); color: var(--success-text); }
 </style>
 {% endblock %}
 
@@ -286,8 +327,12 @@
             <span class="status-bar-value" style="font-family:monospace;font-size:0.72rem;">{{ run_id[:8] }}</span>
         </div>
         <div class="status-bar-item">
+            <span class="status-bar-label">LLM</span>
+            <span class="model-badge" id="llm-model-badge">detecting&hellip;</span>
+        </div>
+        <div class="status-bar-item" id="duration-item" style="display:none;">
             <span class="status-bar-label">Duration</span>
-            <span class="status-bar-value" id="started-time">&mdash;</span>
+            <span class="status-bar-value" id="duration-value">&mdash;</span>
         </div>
         <div class="status-bar-progress">
             <span class="status-bar-label">Run Progress</span>
@@ -324,6 +369,13 @@ const RUN_META={{ run_meta|tojson }};
 
 let pollIndex=0, startTime=Date.now(), currentTab='activity', timerInterval=null;
 let activities=[], decisions=[], artifacts=[], logs=[];
+// Track user-toggled accordion state: Map<stepIndex, boolean>
+// When a user manually clicks an accordion, we record their intent here.
+// This survives poll-driven re-renders so accordions don't auto-close.
+let userAccordionState={};
+// Track user-toggled phase detail state: Map<"stepIdx-phaseIdx", boolean>
+// Same pattern: preserves phase expand/collapse across poll re-renders.
+let userPhaseDetailState={};
 const STEPS=[
     {id:'config',label:'Config',status:'waiting',desc:'Loading pipeline configuration'},
     {id:'setup',label:'Setup',status:'waiting',desc:'Preparing environment and schema'},
@@ -337,6 +389,8 @@ const STEPS=[
 let substeps={};
 // Recent tool calls per step (for live "What's happening" context)
 let stepRecentTools={};
+// Full tool call counts per step {stepId: {tool_name: count}} for summary chips
+let stepToolCounts={};
 
 // Friendly names for tool calls (shown in "What's happening" live activity)
 const TOOL_LABELS={
@@ -368,6 +422,8 @@ const TOOL_DESCS={
     'describe_table':'Inspecting table schema',
     'cleanup_path':'Removing temporary files',
 };
+// Model names (populated from first poll)
+let runModels = { llm: '', vision: '' };
 
 // Map pipeline step names to UI step order (1-7)
 const STEP_ORDER_MAP={
@@ -399,8 +455,9 @@ function renderAccordion(){
         const iconClass=s.status==='completed'?'done':s.status==='running'?'running':s.status==='failed'?'failed':'pending';
         const statusClass=s.status==='completed'?'completed':s.status==='running'?'in-progress':s.status==='failed'?'failed':s.status==='skipped'?'skipped':'waiting';
         const statusLabel=s.status==='completed'?'Completed':s.status==='running'?'In Progress':s.status==='failed'?'Failed':s.status==='skipped'?'Skipped':'Pending';
-        // Keep running and completed steps expanded (clickable post-completion)
-        const isOpen=(s.status==='running'||s.status==='failed'||(s.status==='completed'&&(substeps[s.id]||[]).length>0));
+        // Determine open state: user-toggled state takes priority over auto-open logic
+        const autoOpen=(s.status==='running'||s.status==='failed'||(s.status==='completed'&&(substeps[s.id]||[]).length>0));
+        const isOpen=(i in userAccordionState) ? userAccordionState[i] : autoOpen;
 
         // Get phases for this step (driven by report_progress)
         const stepPhases=substeps[s.id]||[];
@@ -423,14 +480,21 @@ function renderAccordion(){
                 const isExpanded = ph.status==='running';
                 const phaseDetailId = `phase-detail-${i}-${phIdx}`;
                 const clickable = hasDetail || ph.status==='running';
-                const chevron = hasDetail ? `<span class="substep-chevron" id="chevron-${i}-${phIdx}" style="font-size:10px;color:var(--text-muted);transition:transform 0.2s;${isExpanded?'transform:rotate(90deg);':''}">&rsaquo;</span>` : '';
-
-                // Build expandable detail panel for this specific phase
+                // Check user-toggled state for this phase (must declare before use)
+                const phaseKey = `${i}-${phIdx}`;
+                const userPhasePref = userPhaseDetailState[phaseKey];
+                // Chevron rotation matches phase detail visibility
+                const chevronExpanded = userPhasePref !== undefined ? userPhasePref : isExpanded;
+                const chevron = hasDetail ? `<span class="substep-chevron" id="chevron-${i}-${phIdx}" style="font-size:10px;color:var(--text-muted);transition:transform 0.2s;${chevronExpanded?'transform:rotate(90deg);':''}">&rsaquo;</span>` : '';
                 let detailPanel = '';
                 if(ph.status==='running'){
-                    detailPanel = `<div class="phase-inline-detail" id="${phaseDetailId}">${renderPhaseDetail(ph, stepRecentTools[s.id]||[])}</div>`;
+                    // Running phases always show detail (user can collapse via toggle)
+                    const phaseVisible = userPhasePref !== undefined ? userPhasePref : true;
+                    detailPanel = `<div class="phase-inline-detail" id="${phaseDetailId}" style="display:${phaseVisible?'block':'none'};">${renderPhaseDetail(ph, stepRecentTools[s.id]||[])}</div>`;
                 } else if(hasDetail && ph.status!=='pending'){
-                    detailPanel = `<div class="phase-inline-detail" id="${phaseDetailId}" style="display:none;">${renderCompletedPhaseDetail(ph)}</div>`;
+                    // Completed/failed phases: hidden by default, but respect user toggle
+                    const phaseVisible = userPhasePref !== undefined ? userPhasePref : false;
+                    detailPanel = `<div class="phase-inline-detail" id="${phaseDetailId}" style="display:${phaseVisible?'block':'none'};">${renderCompletedPhaseDetail(ph)}</div>`;
                 }
 
                 return `<div class="substep ${clickable?'clickable':''}" ${clickable?`onclick="togglePhaseDetail(${i},${phIdx},event)"`:'' }>
@@ -450,7 +514,7 @@ function renderAccordion(){
         return `<div class="accordion-step">
             <div class="accordion-header ${isOpen?'expanded':''}" onclick="toggleAccordion(${i})">
                 <div class="accordion-icon ${iconClass}">${icon}</div>
-                <div><div class="accordion-title">${s.label}</div><div class="accordion-desc">${s.desc||''}</div></div>
+                <div><div class="accordion-title">${s.label}</div><div class="accordion-desc">${s.desc||''}</div>${(s.status==='completed'||s.status==='running')?buildStepToolSummary(s.id):''}</div>
                 <div class="accordion-right">
                     <span class="accordion-duration">${s.duration||''}</span>
                     <span class="accordion-status ${statusClass}">${statusLabel}</span>
@@ -476,7 +540,7 @@ function renderPhaseDetail(phase, recentTools){
 
     const statsHtml=(phase.stats&&phase.stats.length>0)?`
         <div class="phase-stats">
-            ${phase.stats.map(st=>`<div class="phase-stat"><span class="phase-stat-value">${st.value}</span><span class="phase-stat-label">${st.label}</span></div>`).join('')}
+            ${phase.stats.map(st=>renderStatItem(st)).join('')}
         </div>`:'';
 
     // Combine LLM-authored happenings with live tool call context
@@ -550,7 +614,7 @@ function renderCompletedPhaseDetail(phase){
     /* Renders a review panel for completed/failed phases — shows what happened, findings, and stats. */
     const statsHtml=(phase.stats&&phase.stats.length>0)?`
         <div class="phase-stats" style="margin-bottom:8px;">
-            ${phase.stats.map(st=>`<div class="phase-stat"><span class="phase-stat-value">${st.value}</span><span class="phase-stat-label">${st.label}</span></div>`).join('')}
+            ${phase.stats.map(st=>renderStatItem(st)).join('')}
         </div>`:'';
 
     const happeningsHtml=(phase.happenings&&phase.happenings.length>0)?`
@@ -584,6 +648,36 @@ function renderCompletedPhaseDetail(phase){
     </div>`;
 }
 
+function renderStatItem(st){
+    /* Renders a single stat item, with tooltip if items array is available. */
+    const hasItems = st.items && st.items.length > 0;
+    const tooltipHtml = hasItems ? `
+        <div class="stat-tooltip">
+            <div class="stat-tooltip-title">${st.label} (${st.value})</div>
+            ${st.items.map(item => `<div class="stat-tooltip-item">${item}</div>`).join('')}
+        </div>` : '';
+    return `<div class="phase-stat ${hasItems?'has-items':''}">
+        <span class="phase-stat-value">${st.value}</span>
+        <span class="phase-stat-label">${st.label}</span>
+        ${tooltipHtml}
+    </div>`;
+}
+
+function buildStepToolSummary(stepId){
+    /* Returns HTML chips summarizing tools used in this step (uses full counts, not just recent 5). */
+    const counts = stepToolCounts[stepId] || {};
+    if(Object.keys(counts).length === 0) return '';
+    const chips = [];
+    if(runModels.llm) chips.push(`<span class="tool-chip model">LLM: ${runModels.llm}</span>`);
+    if(counts['call_vision_model']) chips.push(`<span class="tool-chip model">Vision: ${runModels.vision||'model'}</span>`);
+    if(counts['execute_sql']) chips.push(`<span class="tool-chip sql">${counts['execute_sql']} SQL</span>`);
+    if(counts['execute_notebook']) chips.push(`<span class="tool-chip notebook">${counts['execute_notebook']} notebook${counts['execute_notebook']>1?'s':''}</span>`);
+    if(counts['write_workspace_file']) chips.push(`<span class="tool-chip">${counts['write_workspace_file']} file${counts['write_workspace_file']>1?'s':''} written</span>`);
+    if(counts['create_dashboard']) chips.push(`<span class="tool-chip">${counts['create_dashboard']} dashboard${counts['create_dashboard']>1?'s':''}</span>`);
+    if(counts['create_genie_space']) chips.push(`<span class="tool-chip">${counts['create_genie_space']} genie space</span>`);
+    return chips.length > 0 ? `<div class="step-tool-summary">${chips.join('')}</div>` : '';
+}
+
 function togglePhaseDetail(stepIdx, phaseIdx, evt){
     if(evt) evt.stopPropagation(); // Prevent bubbling to accordion toggle
     const el = document.getElementById(`phase-detail-${stepIdx}-${phaseIdx}`);
@@ -594,11 +688,17 @@ function togglePhaseDetail(stepIdx, phaseIdx, evt){
     if(chevron){
         chevron.style.transform = isHidden ? 'rotate(90deg)' : '';
     }
+    // Record user intent so poll re-renders preserve phase expand/collapse
+    userPhaseDetailState[`${stepIdx}-${phaseIdx}`] = isHidden; // true = now visible
 }
 
 function toggleAccordion(idx){
     const body=document.getElementById('accordion-body-'+idx);
-    if(body) body.classList.toggle('open');
+    if(!body) return;
+    const willOpen=!body.classList.contains('open');
+    body.classList.toggle('open');
+    // Record user intent so poll re-renders preserve it
+    userAccordionState[idx]=willOpen;
 }
 
 function renderTab(){
@@ -624,9 +724,8 @@ document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
 }));
 
 function updateTimer(){
-    const s=Math.floor((Date.now()-startTime)/1000);
+    const s=Math.max(0, Math.floor((Date.now()-startTime)/1000));
     const str=`${String(Math.floor(s/3600)).padStart(2,'0')}:${String(Math.floor((s%3600)/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
-    document.getElementById('elapsed-timer').textContent=str;
     document.getElementById('elapsed-display').textContent=str;
 }
 timerInterval=setInterval(updateTimer,1000);
@@ -661,16 +760,25 @@ async function cancelRun(){
     btn.disabled=true; btn.textContent='Cancelling\u2026';
     try{
         const r=await fetch(`/api/pipeline/cancel/${RUN_ID}`,{method:'POST'});
-        if(!r.ok) throw new Error('Cancel failed');
-        // Stop polling, set cancelled state
+        if(!r.ok){
+            let errMsg='Cancel failed';
+            try{ const e=await r.json(); errMsg=e.error?.message||errMsg; }catch(_){}
+            throw new Error(errMsg);
+        }
+        // Stop polling and timer, set cancelled state
         clearInterval(pollInterval); pollInterval=null;
+        if(timerInterval){ clearInterval(timerInterval); timerInterval=null; }
         document.getElementById('run-status-badge').textContent='Cancelled';
         document.getElementById('run-status-badge').className='status-badge failed';
+        // Show duration with the frozen elapsed value
+        const finalSecs=Math.max(0, Math.floor((Date.now()-startTime)/1000));
+        const durItem=document.getElementById('duration-item');
+        const durVal=document.getElementById('duration-value');
+        if(durItem) durItem.style.display='';
+        if(durVal) durVal.textContent=formatDuration(finalSecs);
         // Morph button → Resume All
         btn.disabled=false;
         btn.textContent='\u25B6 Resume All';
-        btn.className='resume';
-        btn.id='cancel-btn';  // keep same id for CSS
         btn.classList.add('resume');
         btn.onclick=resumeRun;
     }catch(e){
@@ -684,8 +792,13 @@ async function resumeRun(){
     try{
         const r=await fetch(`/api/pipeline/rerun/${RUN_ID}`,{method:'POST'});
         if(!r.ok){
-            const err=await r.json();
-            throw new Error(err.error?.message||'Resume failed');
+            // Safely parse error — backend may return non-JSON on 500
+            let errMsg='Resume failed';
+            try{
+                const err=await r.json();
+                errMsg=err.error?.message||err.error||errMsg;
+            }catch(_){ errMsg=`Resume failed (HTTP ${r.status})`; }
+            throw new Error(errMsg);
         }
         // Rerun returns same run_id — restart polling
         btn.textContent='Cancel Run';
@@ -693,10 +806,18 @@ async function resumeRun(){
         btn.classList.remove('resume');
         btn.onclick=cancelRun;
         btn.disabled=false;
+        // Reset timer for the resumed run
+        startTime=Date.now();
+        window._startTimeSet=false;
         document.getElementById('run-status-badge').textContent='Running';
         document.getElementById('run-status-badge').className='status-badge running';
+        // Hide Duration (it was shown when run failed), re-enable elapsed
+        const durItem=document.getElementById('duration-item');
+        if(durItem) durItem.style.display='none';
+        // Restart polling and timer
         pollStatus();
         pollInterval=setInterval(pollStatus, 3000);
+        if(!timerInterval) timerInterval=setInterval(updateTimer, 1000);
     }catch(e){
         alert(e.message); btn.disabled=false; btn.textContent='\u25B6 Resume All';
     }
@@ -727,21 +848,28 @@ async function pollStatus(){
             const vEl=document.getElementById('version-label');
             if(vEl && vEl.textContent.includes('detecting')) vEl.textContent=`v${d.version}`;
         }
+        // Hydrate model badges (once)
+        if(d.llm_model && !runModels.llm){
+            runModels.llm = d.llm_model;
+            runModels.vision = d.vision_model || d.llm_model;
+            const badge = document.getElementById('llm-model-badge');
+            if(badge){
+                const sameModel = runModels.llm === runModels.vision;
+                badge.innerHTML = sameModel
+                    ? `<span class="badge-label">LLM + Vision</span>${runModels.llm}`
+                    : `<span class="badge-label">LLM</span>${runModels.llm} <span style="margin:0 2px;color:var(--text-muted);">|</span> <span class="badge-label">Vision</span>${runModels.vision}`;
+            }
+        }
         if(d.started_at){
             // Use started_at to set startTime for the timer (first poll only)
             if(!window._startTimeSet){
-                startTime=new Date(d.started_at).getTime();
+                // Backend stores UTC without 'Z' suffix — append it so
+                // the browser parses as UTC, not local time (avoids
+                // negative elapsed when user is behind UTC).
+                const isoStr = d.started_at.endsWith('Z') ? d.started_at : d.started_at + 'Z';
+                startTime=new Date(isoStr).getTime();
                 window._startTimeSet=true;
                 updateTimer();
-            }
-            // Show total duration in the Duration field
-            const stEl=document.getElementById('started-time');
-            if(stEl){
-                if(d.duration_s){
-                    stEl.textContent=formatDuration(d.duration_s);
-                } else if(d.elapsed_s){
-                    stEl.textContent=formatDuration(d.elapsed_s);
-                }
             }
         }
 
@@ -782,7 +910,13 @@ async function pollStatus(){
                         status: ph.status==='completed'?'done':ph.status==='failed'?'failed':'running',
                         currentTask: ph.current_task||'',
                         progress: ph.progress_pct||0,
-                        stats: ph.stats?Object.entries(ph.stats).map(([k,v])=>({label:k.replace(/_/g,' '),value:v})):[],
+                        stats: ph.stats ? Object.entries(ph.stats).map(([k,v])=>{
+                            // Support both simple {label: value} and extended {label: {value, items}}
+                            if(v && typeof v === 'object' && 'value' in v){
+                                return {label:k.replace(/_/g,' '), value:v.value, items:v.items||[]};
+                            }
+                            return {label:k.replace(/_/g,' '), value:v, items:[]};
+                        }) : [],
                         happenings: ph.happenings||[],
                         findings: ph.findings||[],
                     }));
@@ -827,14 +961,17 @@ async function pollStatus(){
                     }
                     lastToolCounts[stepId] = toolCalls.length;
                 }
+                // Build full tool counts for step summary chips
+                const fullCounts = {};
+                for(const tc of toolCalls){ if(tc.tool_name) fullCounts[tc.tool_name] = (fullCounts[tc.tool_name]||0)+1; }
+                stepToolCounts[stepId] = fullCounts;
                 // Keep last 5 tool calls for "What's happening" live context in phase detail
-                stepRecentTools[stepId] = toolCalls.slice(-5).map(tc=>({
-                    label: TOOL_LABELS[tc.tool_name]||tc.tool_name,
-                    detail: tc.args_summary||'',
-                    status: tc.status||'running',
-                    error: tc.error||'',
-                    duration_ms: tc.duration_ms||null,
-                }));
+                stepRecentTools[stepId] = toolCalls.slice(-5).map(tc=>{
+                    let label = TOOL_LABELS[tc.tool_name]||tc.tool_name;
+                    // Enrich with model name for LLM-related tools
+                    if(tc.tool_name==='call_vision_model' && runModels.vision) label += ` (${runModels.vision})`;
+                    return { label, detail: tc.args_summary||'', status: tc.status||'running', error: tc.error||'', duration_ms: tc.duration_ms||null, tool_name: tc.tool_name };
+                });
             }
         }
 
@@ -845,6 +982,14 @@ async function pollStatus(){
         if(['completed','failed','cancelled'].includes(d.status)){
             clearInterval(pollInterval); pollInterval=null;
             if(timerInterval){ clearInterval(timerInterval); timerInterval=null; }
+            // Show Duration (hidden during run) with final value; freeze Elapsed
+            const finalSecs=d.duration_s || Math.max(0, Math.floor((Date.now()-startTime)/1000));
+            const durItem=document.getElementById('duration-item');
+            const durVal=document.getElementById('duration-value');
+            if(durItem){ durItem.style.display=''; }
+            if(durVal){ durVal.textContent=formatDuration(finalSecs); }
+            // Freeze elapsed display at final value
+            document.getElementById('elapsed-display').textContent=formatDuration(finalSecs);
             const st=d.status;
             document.getElementById('run-status-badge').textContent=st.charAt(0).toUpperCase()+st.slice(1);
             document.getElementById('run-status-badge').className='status-badge '+(st==='completed'?'idle':'failed');

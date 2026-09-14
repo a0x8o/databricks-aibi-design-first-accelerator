@@ -19,3 +19,29 @@ max_requests_jitter = 50
 accesslog = '-'
 errorlog = '-'
 loglevel = 'info'
+
+
+def worker_exit(server, worker):
+    """Flush running pipeline state to Lakebase on graceful worker shutdown.
+
+    Gunicorn sends SIGTERM before SIGKILL. During the grace period (timeout=600s),
+    this hook marks any in-flight runs as 'failed' in Lakebase so the UI shows
+    'Resume All' immediately instead of requiring zombie detection on next poll.
+    """
+    try:
+        from routes.pipeline_routes import _runs, _get_state_store
+        store = _get_state_store()
+        if not store:
+            return
+        for run_id, run in _runs.items():
+            if run.get('status') == 'running':
+                try:
+                    store.update_run_status(
+                        run_id, 'failed',
+                        error='Worker shutdown: app restarted during execution'
+                    )
+                    server.log.info(f"Flushed running state for run {run_id} to Lakebase")
+                except Exception as e:
+                    server.log.warning(f"Failed to flush run {run_id}: {e}")
+    except Exception:
+        pass  # Best-effort — don't prevent worker exit

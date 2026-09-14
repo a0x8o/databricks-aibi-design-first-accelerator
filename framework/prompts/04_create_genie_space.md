@@ -3,8 +3,11 @@
 > **Guardrails:** Before executing this step, read and internalize:
 > 1. `framework/prompts/guardrails/00_global_rules.md` (ALWAYS — every step)
 > 2. `framework/prompts/guardrails/04_genie_guardrails.md` (THIS step's gates, rules, and anti-patterns)
+> 3. `framework/prompts/guardrails/sql_generation_rules.md` (ALL SQL generation — example SQL, benchmark SQL, MEASURE() queries)
 >
-> Genie space deployment uses `genie_space_notebook.py.template` (the Genie compiler).
+> Genie space deployment uses `genie_space_notebook.py.template` (the Deterministic Deployment Runtime).
+> The LLM produces `genie_space_config.yaml` (declarative spec). The template handles deployment.
+> Four-gate validation runs inside the template before API calls.
 > These guardrail files are BINDING. Violations are pipeline failures.
 
 ## CONTEXT ISOLATION — Read This First
@@ -31,9 +34,17 @@ Forget all execution details from prior steps (ERD parsing, synthetic data, metr
 
 **Rules:**
 - Read `step_handoff.yaml` BEFORE any other action in this step
-- Use `sql_fqn` value EXACTLY as written in ALL example SQL (it is already correctly backtick-quoted)
 - Use `genie_title` value EXACTLY as written (it is already snake_case validated)
-- If these values look wrong, HALT — do NOT fix them locally
+
+### Normalize `step_handoff.yaml` Before Use
+
+After reading `step_handoff.yaml`, apply these **deterministic normalizations** before proceeding:
+
+1. **`sql_fqn` backtick normalization:** If any `metric_view_fqns[].sql_fqn` value is NOT backtick-quoted (e.g., `catalog.schema.view` instead of `` `catalog`.`schema`.`view` ``), split on `.` and wrap each segment in backticks: `` `{parts[0]}`.`{parts[1]}`.`{parts[2]}` ``. Strip any existing backticks first to avoid double-quoting.
+
+2. **`warehouse_id` fallback:** If `warehouse_id` is missing from `step_handoff.yaml`, read it from `accelerator.yaml` field `warehouse_id`.
+
+After normalization, write the corrected `step_handoff.yaml` back to `{OUTPUT_FOLDER}` if any changes were made.
 
 ### Pipeline Halt Rules & Recovery
 

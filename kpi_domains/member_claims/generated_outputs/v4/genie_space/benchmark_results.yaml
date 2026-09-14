@@ -1,0 +1,24 @@
+benchmark_validation:
+  source: metric_view_sql_ground_truth
+  status: PASS
+  total: 15
+  passed: 15
+  failed: 0
+  pass_rate: 1.0
+  threshold: 0.8
+  results:
+    - {qid: b01, question: How much has been paid on all member claims?, status: PASS, failure_reason: null}
+    - {qid: b02, question: Give me claim volume and service-line volume together., status: PASS, failure_reason: null}
+    - {qid: b03, question: Trend claim spend and cost per member month by service month., status: PASS, failure_reason: null}
+    - {qid: b04, question: Break down the denied-line percentage across claim categories., status: PASS, failure_reason: null}
+    - {qid: b05, question: Rank benefit categories by paid claims dollars., status: PASS, failure_reason: null}
+    - {qid: b06, question: What share of Professional claim lines are clean?, status: PASS, failure_reason: null}
+    - {qid: b07, question: Show billed, allowed, and paid dollars for each benefit category., status: PASS, failure_reason: null}
+    - {qid: b08, question: For Institutional claims, what is the denied percentage?, status: PASS, failure_reason: null}
+    - {qid: b09, question: Compare paid-to-billed and paid-to-allowed percentages for each claim type., status: PASS, failure_reason: null}
+    - {qid: b10, question: Rank network participation groups by total paid dollars., status: PASS, failure_reason: null}
+    - {qid: b11, question: Count new enrollment by LOB., status: PASS, failure_reason: null}
+    - {qid: b12, question: Show active enrolled members over time by month., status: PASS, failure_reason: null}
+    - {qid: b13, question: What is the active member count for Medicare enrollment?, status: PASS, failure_reason: null}
+    - {qid: b14, question: Which states have the largest active member populations?, status: PASS, failure_reason: null}
+    - {qid: b15, question: Break active members out by gender and race., status: PASS, failure_reason: null}

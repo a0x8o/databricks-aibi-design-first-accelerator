@@ -1,0 +1,212 @@
+catalog: aw_serverless_stable_catalog
+schema: aibi_member_claims
+version_suffix: _v1
+tables:
+  - name: dim_member
+    comment: Member dimension from ERD
+    columns:
+      - {name: member_sk, type: BIGINT, nullable: false}
+      - {name: mbr_source_member_id, type: STRING, nullable: true}
+      - {name: mbr_member_id, type: INT, nullable: true}
+      - {name: mbr_dob, type: DATE, nullable: true}
+      - {name: mbr_race, type: STRING, nullable: true}
+      - {name: mbr_sex, type: STRING, nullable: true}
+      - {name: mbr_ethnicity, type: STRING, nullable: true}
+      - {name: mbr_marital_status, type: STRING, nullable: true}
+      - {name: mbr_line_of_business, type: STRING, nullable: true}
+      - {name: mbr_state, type: STRING, nullable: true}
+      - {name: mbr_zip_code, type: STRING, nullable: true}
+      - {name: mbr_relationship_type, type: STRING, nullable: true}
+      - {name: mbr_salary_tier, type: STRING, nullable: true}
+      - {name: mbr_deceased_flag, type: STRING, nullable: true}
+      - {name: source_system_code, type: STRING, nullable: true}
+      - {name: source_system_name, type: STRING, nullable: true}
+      - {name: record_hash, type: STRING, nullable: true}
+      - {name: created_at, type: TIMESTAMP, nullable: true}
+      - {name: updated_at, type: TIMESTAMP, nullable: true}
+      - {name: is_active, type: BOOLEAN, nullable: true}
+      - {name: end_date, type: TIMESTAMP, nullable: true}
+  - name: dim_provider
+    comment: Provider dimension from ERD
+    columns:
+      - {name: provider_sk, type: BIGINT, nullable: false}
+      - {name: assigned_provider_sk, type: BIGINT, nullable: true}
+      - {name: source_provider_id, type: STRING, nullable: true}
+      - {name: provider_npi, type: STRING, nullable: true}
+      - {name: provider_tax_id, type: STRING, nullable: true}
+      - {name: provider_name, type: STRING, nullable: true}
+      - {name: provider_address_sk, type: BIGINT, nullable: true}
+      - {name: pcp_flag, type: BOOLEAN, nullable: true}
+      - {name: affiliation_id, type: STRING, nullable: true}
+      - {name: valid_from_date, type: TIMESTAMP, nullable: true}
+      - {name: valid_to_date, type: TIMESTAMP, nullable: true}
+      - {name: is_active, type: BOOLEAN, nullable: true}
+      - {name: source_system, type: STRING, nullable: true}
+      - {name: created_at, type: TIMESTAMP, nullable: true}
+      - {name: updated_at, type: TIMESTAMP, nullable: true}
+      - {name: last_update_dt, type: TIMESTAMP, nullable: true}
+      - {name: record_hash, type: STRING, nullable: true}
+  - name: dim_address
+    comment: Address dimension from ERD
+    columns:
+      - {name: address_key, type: BIGINT, nullable: false}
+      - {name: entity_type_key, type: STRING, nullable: true}
+      - {name: entity_dimension_key, type: BIGINT, nullable: true}
+      - {name: address_type_code, type: STRING, nullable: true}
+      - {name: street_address_1, type: STRING, nullable: true}
+      - {name: city, type: STRING, nullable: true}
+      - {name: state, type: STRING, nullable: true}
+      - {name: zip_code, type: STRING, nullable: true}
+      - {name: country_code, type: STRING, nullable: true}
+      - {name: county, type: STRING, nullable: true}
+      - {name: is_active, type: BOOLEAN, nullable: true}
+      - {name: valid_from_date, type: TIMESTAMP, nullable: true}
+      - {name: valid_to_date, type: TIMESTAMP, nullable: true}
+      - {name: source_system_code, type: STRING, nullable: true}
+      - {name: source_system_name, type: STRING, nullable: true}
+      - {name: record_hash, type: STRING, nullable: true}
+      - {name: created_at, type: TIMESTAMP, nullable: true}
+      - {name: updated_at, type: TIMESTAMP, nullable: true}
+  - name: dim_member_history
+    comment: Member history snapshot from ERD
+    columns:
+      - {name: mbr_history_sk, type: BIGINT, nullable: false}
+      - {name: member_sk, type: BIGINT, nullable: true}
+      - {name: mbr_source_member_id, type: STRING, nullable: true}
+      - {name: mbr_member_id, type: INT, nullable: true}
+      - {name: mbr_dob, type: DATE, nullable: true}
+      - {name: mbr_race, type: STRING, nullable: true}
+      - {name: mbr_sex, type: STRING, nullable: true}
+      - {name: mbr_ethnicity, type: STRING, nullable: true}
+      - {name: mbr_marital_status, type: STRING, nullable: true}
+      - {name: mbr_line_of_business, type: STRING, nullable: true}
+      - {name: mbr_state, type: STRING, nullable: true}
+      - {name: mbr_zip_code, type: STRING, nullable: true}
+      - {name: source_system_code, type: STRING, nullable: true}
+      - {name: source_system_name, type: STRING, nullable: true}
+      - {name: record_hash, type: STRING, nullable: true}
+      - {name: created_at, type: TIMESTAMP, nullable: true}
+      - {name: updated_at, type: TIMESTAMP, nullable: true}
+      - {name: is_active, type: BOOLEAN, nullable: true}
+      - {name: valid_from_date, type: TIMESTAMP, nullable: true}
+      - {name: valid_to_date, type: TIMESTAMP, nullable: true}
+  - name: dim_member_identifier
+    comment: Member identifier dimension from ERD
+    columns:
+      - {name: mbr_identifier_sk, type: BIGINT, nullable: false}
+      - {name: member_sk, type: BIGINT, nullable: true}
+      - {name: id_type, type: STRING, nullable: true}
+      - {name: id_value, type: STRING, nullable: true}
+      - {name: source_system_code, type: STRING, nullable: true}
+      - {name: source_system_name, type: STRING, nullable: true}
+      - {name: valid_from_date, type: TIMESTAMP, nullable: true}
+      - {name: valid_to_date, type: TIMESTAMP, nullable: true}
+      - {name: is_active, type: BOOLEAN, nullable: true}
+      - {name: created_at, type: TIMESTAMP, nullable: true}
+      - {name: updated_at, type: TIMESTAMP, nullable: true}
+      - {name: record_hash, type: STRING, nullable: true}
+  - name: fact_member_enrollment
+    comment: Member enrollment fact from ERD
+    columns:
+      - {name: enrollment_sk, type: STRING, nullable: false}
+      - {name: source_system, type: STRING, nullable: true}
+      - {name: src_member_business_id, type: INT, nullable: true}
+      - {name: mbr_enr_source_member_id, type: VARCHAR(30), nullable: true}
+      - {name: mbr_enr_insured_id, type: STRING, nullable: true}
+      - {name: mbr_enr_contract_id, type: STRING, nullable: true}
+      - {name: mbr_enr_status, type: STRING, nullable: true}
+      - {name: mbr_enr_line_of_business, type: STRING, nullable: true}
+      - {name: mbr_enr_line_of_business_id, type: VARCHAR(8), nullable: true}
+      - {name: mbr_enr_group_name, type: VARCHAR(50), nullable: true}
+      - {name: mbr_enr_effective_date, type: DATE, nullable: true}
+      - {name: mbr_enr_termination_date, type: DATE, nullable: true}
+      - {name: mbr_enr_termination_reason, type: STRING, nullable: true}
+      - {name: mbr_enr_product_id, type: STRING, nullable: true}
+      - {name: is_active, type: BOOLEAN, nullable: true}
+      - {name: id_value, type: STRING, nullable: true}
+      - {name: id_type, type: STRING, nullable: true}
+      - {name: member_sk, type: BIGINT, nullable: true}
+      - {name: payload_hash, type: STRING, nullable: true}
+  - name: fact_claim_header
+    comment: Claim header fact from ERD
+    columns:
+      - {name: clm_header_sk, type: BIGINT, nullable: false}
+      - {name: clm_id, type: INT, nullable: true}
+      - {name: clm_claim_id, type: STRING, nullable: true}
+      - {name: clm_original_source_claim_id, type: STRING, nullable: true}
+      - {name: clm_claim_type, type: STRING, nullable: true}
+      - {name: clm_bill_type, type: STRING, nullable: true}
+      - {name: clm_admit_date, type: DATE, nullable: true}
+      - {name: clm_claim_thru_date, type: DATE, nullable: true}
+      - {name: clm_discharge_date, type: DATE, nullable: true}
+      - {name: clm_admission_type, type: STRING, nullable: true}
+      - {name: clm_admission_source, type: STRING, nullable: true}
+      - {name: clm_member_nbr, type: STRING, nullable: true}
+      - {name: clm_member_name, type: STRING, nullable: true}
+      - {name: clm_member_sk, type: BIGINT, nullable: true}
+      - {name: clm_plan_code, type: STRING, nullable: true}
+      - {name: clm_line_of_business, type: STRING, nullable: true}
+      - {name: clm_covered_days, type: INT, nullable: true}
+      - {name: clm_attending_physician_spec, type: STRING, nullable: true}
+      - {name: clm_submitting_provider_type, type: STRING, nullable: true}
+      - {name: clm_service_facility_address_sk, type: BIGINT, nullable: true}
+      - {name: clm_diagnosis_1, type: STRING, nullable: true}
+      - {name: clm_diagnosis_1_icd_method, type: STRING, nullable: true}
+      - {name: clm_service_type_code, type: STRING, nullable: true}
+      - {name: clm_cob_type, type: STRING, nullable: true}
+      - {name: clm_claim_timely_filing, type: STRING, nullable: true}
+      - {name: clm_add_date, type: DATE, nullable: true}
+      - {name: clm_update_date, type: DATE, nullable: true}
+      - {name: clm_extract_date, type: TIMESTAMP, nullable: true}
+      - {name: clm_last_updated_date, type: DATE, nullable: true}
+      - {name: is_active, type: BOOLEAN, nullable: true}
+      - {name: end_date, type: TIMESTAMP, nullable: true}
+      - {name: record_hash, type: STRING, nullable: true}
+      - {name: created_at, type: TIMESTAMP, nullable: true}
+      - {name: updated_at, type: TIMESTAMP, nullable: true}
+      - {name: source_system_code, type: STRING, nullable: true}
+      - {name: source_system_name, type: STRING, nullable: true}
+  - name: fact_claim_detail
+    comment: Claim detail fact from ERD
+    columns:
+      - {name: clm_dtl_claim_id, type: STRING, nullable: false}
+      - {name: clm_dtl_line_nbr, type: INT, nullable: false}
+      - {name: clm_dtl_original_source_claim_id, type: STRING, nullable: true}
+      - {name: clm_dtl_source_system, type: STRING, nullable: true}
+      - {name: clm_dtl_member_nbr_sk, type: VARCHAR(30), nullable: true}
+      - {name: clmdetail_admit_dt, type: TIMESTAMP, nullable: true}
+      - {name: clm_dtl_specific_dos_date, type: DATE, nullable: true}
+      - {name: clm_dtl_specific_dos_thru_date, type: DATE, nullable: true}
+      - {name: clm_dtl_claim_receive_date, type: TIMESTAMP, nullable: true}
+      - {name: clm_dtl_check_date, type: TIMESTAMP, nullable: true}
+      - {name: clm_dtl_benefit_category, type: STRING, nullable: true}
+      - {name: clm_dtl_benefit_level, type: STRING, nullable: true}
+      - {name: clm_dtl_claim_type, type: STRING, nullable: true}
+      - {name: clm_dtl_allowed_amt, type: DECIMAL(28,4), nullable: true}
+      - {name: clm_dtl_billed_amt, type: DECIMAL(27,4), nullable: true}
+      - {name: clm_dtl_deduct_amt, type: DECIMAL(27,4), nullable: true}
+      - {name: clm_dtl_net_amt, type: DECIMAL(28,4), nullable: true}
+      - {name: clm_dtl_paid_amt, type: DECIMAL(28,4), nullable: true}
+      - {name: clm_dtl_actual_paid_amt, type: DECIMAL(38,4), nullable: true}
+      - {name: clm_dtl_not_covered_amt, type: DECIMAL(27,4), nullable: true}
+      - {name: clm_dtl_co_insurance_amt, type: DECIMAL(27,4), nullable: true}
+      - {name: clm_dtl_copay_amt, type: DECIMAL(27,4), nullable: true}
+      - {name: clm_dtl_copay_reason, type: VARCHAR(35), nullable: true}
+      - {name: clm_dtl_st_cd, type: VARCHAR(1), nullable: true}
+      - {name: clm_dtl_line_status, type: STRING, nullable: true}
+      - {name: clm_dtl_clean_claim_ind, type: STRING, nullable: true}
+      - {name: clm_dtl_place_of_service, type: VARCHAR(2), nullable: true}
+      - {name: clm_dtl_fee_schedule_code, type: VARCHAR(3), nullable: true}
+      - {name: clm_dtl_submitting_provider, type: STRING, nullable: true}
+      - {name: clm_dtl_rendering_provider_type, type: STRING, nullable: true}
+      - {name: clm_dtl_adjudication_status, type: STRING, nullable: true}
+      - {name: clm_dtl_procedure_code, type: VARCHAR(15), nullable: true}
+      - {name: clm_dtl_procedure_modifier, type: VARCHAR(2), nullable: true}
+      - {name: clm_dtl_procedure_qty, type: DECIMAL(15,3), nullable: true}
+      - {name: clm_dtl_revenue_code, type: VARCHAR(30), nullable: true}
+      - {name: clm_dtl_paid_days, type: DECIMAL(36,3), nullable: true}
+      - {name: clm_dtl_cob_rule, type: STRING, nullable: true}
+      - {name: clm_dtl_extract_date, type: TIMESTAMP, nullable: true}
+      - {name: is_active, type: BOOLEAN, nullable: true}
+      - {name: updated_at, type: TIMESTAMP, nullable: true}
+      - {name: created_at, type: TIMESTAMP, nullable: true}

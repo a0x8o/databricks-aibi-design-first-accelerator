@@ -1,0 +1,810 @@
+# Lakeview Dashboard API helpers — use in notebooks or Genie-generated cells.
+# Copy/adapt into a setup cell; do NOT use subprocess + databricks CLI (not installed in notebooks).
+#
+# CRITICAL RULES (from lakeview_dashboard_api.md):
+# 1. Datasets use "queryLines" (array), NOT "query" (string)
+# 2. Text widgets: use "multilineTextboxSpec": {"value": "<markdown>"} (OBJECT, not string).
+#    WRONG: "multilineTextboxSpec": "## Title" → 'failed to parse serialized dashboard'
+#    WRONG: "textboxSpec": {"value": ...} → 'missing spec, textbox_spec, multilineTextboxSpec'
+#    CORRECT: "multilineTextboxSpec": {"value": "## Title"} → works
+# 3. Counter widgets: spec.version = 2
+# 4. Bar/Line/Pie charts: spec.version = 3
+# 5. Filter widgets: spec.version = 2 (NOT 1), MUST include "queryName"
+# 6. Filters and canvas widgets MUST share the SAME dataset for cross-filtering
+# 7. Canvas widgets: disaggregated = false + SUM/AVG aggregation
+# 8. Filter widgets: disaggregated = true (no aggregation)
+# 9. Layout grid = 6 columns wide, rows must sum to width=6
+# 10. publish_dashboard MUST pass warehouse_id + embed_credentials
+
+# COMMAND ----------
+
+import json
+import os
+import sys
+import time
+from typing import Any
+
+from databricks.sdk import WorkspaceClient
+from databricks.sdk.service.sql import StatementState
+
+w = WorkspaceClient()
+
+
+def _execute_sql_via_api(stmt: str, warehouse_id: str, timeout: str = "50s"):
+    """Execute SQL via Statement Execution API (no spark dependency).
+
+    All SQL in the dashboard deployment runtime MUST go through this function.
+    Never use spark.sql() — spark is not guaranteed to be available in the
+    notebook execution context (e.g. serverless compute, job tasks).
+
+    Returns a list of column-name/value dicts on success.
+    Raises RuntimeError with the SQL error on failure.
+    """
+    response = w.statement_execution.execute_statement(
+        warehouse_id=warehouse_id,
+        statement=stmt,
+        wait_timeout=timeout,
+    )
+    if response.status is None or response.status.state != StatementState.SUCCEEDED:
+        error_msg = "unknown"
+        if response.status and hasattr(response.status, "error") and response.status.error:
+            error_msg = response.status.error.message or str(response.status.error)
+        raise RuntimeError(
+            f"SQL execution failed (state={response.status.state if response.status else 'None'}): {error_msg}\n"
+            f"  SQL: {stmt[:300]}"
+        )
+    columns = None
+    if response.manifest and response.manifest.schema and response.manifest.schema.columns:
+        columns = [c.name for c in response.manifest.schema.columns]
+    rows = []
+    if response.result and response.result.data_array:
+        for arr in response.result.data_array:
+            row = {}
+            for idx, col_name in enumerate(columns or range(len(arr))):
+                row[col_name if columns else f"col_{idx}"] = arr[idx]
+            rows.append(row)
+    return columns or [], rows
+
+# ════════════════════════════════════════════════════════════════════════════
+# Gate Checks integration — programmatic enforcement layer
+# ════════════════════════════════════════════════════════════════════════════
+# gate_checks.py provides runtime assertions that PREVENT deployment of
+# empty/incomplete dashboards. It is loaded from the framework templates
+# directory alongside this file. If unavailable, a warning is printed
+# and deployment proceeds with inline assertions only (reduced safety).
+
+_gate_checks_loaded = False
+try:
+    # Add the templates directory to sys.path so gate_checks can be imported
+    _templates_dir = os.path.dirname(os.path.abspath(__file__)) if '__file__' in dir() else None
+    if _templates_dir and _templates_dir not in sys.path:
+        sys.path.insert(0, _templates_dir)
+    from gate_checks import (
+        run_dashboard_predeploy_gates,
+        validate_dashboard_from_api,
+        write_ground_truth_validation,
+        GateCheckError,
+    )
+    _gate_checks_loaded = True
+    print("✅ gate_checks loaded — programmatic enforcement active")
+except ImportError:
+    print("⚠️  gate_checks.py not found — using inline assertions only (reduced safety)")
+    # Define no-op fallbacks so deploy_dashboard doesn't break
+    def run_dashboard_predeploy_gates(*a, **kw): return {}
+    def validate_dashboard_from_api(*a, **kw): return {"status": "SKIPPED", "source": "gate_checks_unavailable"}
+    def write_ground_truth_validation(*a, **kw): pass
+    class GateCheckError(RuntimeError): pass
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 0: Schema Discovery & Column Validation (DETERMINISM LAYER)
+# ════════════════════════════════════════════════════════════════════════════
+# This section MUST be used before building datasets or widgets.
+# It prevents the #1 failure: LLM referencing columns that don't exist.
+
+def describe_metric_view(metric_view_fqn: str, warehouse_id: str) -> dict:
+    """Discover actual columns from a metric view via DESCRIBE.
+    Returns {col_name: {'type': str, 'is_dimension': bool, 'is_measure': bool}}.
+
+    This is the SINGLE SOURCE OF TRUTH for all column references.
+    ALWAYS call this before building datasets or widgets.
+
+    Args:
+        metric_view_fqn: Fully qualified metric view name (catalog.schema.view).
+        warehouse_id: SQL warehouse ID for Statement Execution API.
+    """
+    columns_list, rows = _execute_sql_via_api(
+        f"DESCRIBE TABLE {metric_view_fqn}", warehouse_id
+    )
+    col_col = "col_name" if "col_name" in columns_list else columns_list[0] if columns_list else "col_name"
+    type_col = "data_type" if "data_type" in columns_list else columns_list[1] if len(columns_list) > 1 else "data_type"
+    columns = {}
+    for row in rows:
+        col_name = str(row.get(col_col, "")).strip()
+        data_type = str(row.get(type_col, "")).strip()
+        if not col_name or col_name.startswith('#') or not data_type:
+            break
+        # Metric view DESCRIBE returns "bigint measure", "decimal(38,2) measure", etc.
+        # for measure columns. The " measure" suffix is the authoritative signal.
+        is_measure = ' measure' in data_type.lower()
+        columns[col_name] = {
+            'type': data_type,
+            'is_dimension': not is_measure,
+            'is_measure': is_measure,
+        }
+    print(f"Metric view {metric_view_fqn}: {len(columns)} columns")
+    print(f"  Dimensions: {[k for k,v in columns.items() if v['is_dimension']]}")
+    print(f"  Measures:   {[k for k,v in columns.items() if v['is_measure']]}")
+    return columns
+
+
+def validate_column_refs(mv_columns: dict, refs: list, context: str) -> None:
+    """Assert all column references exist in the metric view.
+    Raises AssertionError with available columns if any ref is invalid.
+
+    Call this BEFORE building dataset SQL or widget field expressions.
+    This prevents silent failures where widgets reference non-existent columns.
+    """
+    valid = set(mv_columns.keys())
+    invalid = [r for r in refs if r not in valid]
+    if invalid:
+        raise AssertionError(
+            f"[{context}] Invalid column references: {invalid}\n"
+            f"  Available dimensions: {[k for k,v in mv_columns.items() if v['is_dimension']]}\n"
+            f"  Available measures:   {[k for k,v in mv_columns.items() if v['is_measure']]}"
+        )
+
+
+def validate_dataset_sql(sql: str, dataset_name: str, warehouse_id: str) -> list:
+    """Execute dataset SQL with LIMIT 1 to verify it runs.
+    Returns the list of result column names on success.
+    Raises RuntimeError with clear message on failure.
+
+    MUST be called for EVERY dataset before building the dashboard.
+    Uses Statement Execution API (no spark dependency).
+    """
+    try:
+        test_sql = f"SELECT * FROM ({sql}) _validate LIMIT 1"
+        col_names, _ = _execute_sql_via_api(test_sql, warehouse_id)
+        print(f"  ✓ Dataset '{dataset_name}' validated: {len(col_names)} columns")
+        return col_names
+    except Exception as e:
+        raise RuntimeError(
+            f"Dataset '{dataset_name}' SQL FAILED:\n"
+            f"  SQL: {sql[:300]}\n"
+            f"  Error: {e}\n"
+            f"  FIX: Check column names against describe_metric_view() output."
+        )
+
+
+def build_validated_dataset(name: str, sql: str, display_name: str = "", *, warehouse_id: str) -> dict:
+    """Build a dataset AND validate its SQL in one call.
+    This is the PREFERRED dataset builder — combines build_dataset + validation.
+    Raises RuntimeError if SQL is invalid.
+    """
+    validate_dataset_sql(sql, name, warehouse_id)
+    return build_dataset(name, sql, display_name)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 1: Low-level API helpers
+# ════════════════════════════════════════════════════════════════════════════
+
+def lakeview_request(method: str, path: str, *, body: dict | None = None, query: dict | None = None) -> dict:
+    """Call Lakeview REST API via SDK; raises on HTTP/API errors."""
+    resp = w.api_client.do(method, path, body=body, query=query)
+    if resp is None:
+        return {}
+    if isinstance(resp, dict):
+        return resp
+    return json.loads(resp) if isinstance(resp, str) and resp.strip() else {}
+
+
+def list_dashboards(page_size: int = 100, max_pages: int = 50) -> list[dict]:
+    """Paginate GET /api/2.0/lakeview/dashboards."""
+    out: list[dict] = []
+    page_token = None
+    for _ in range(max_pages):
+        q: dict[str, Any] = {"page_size": page_size}
+        if page_token:
+            q["page_token"] = page_token
+        data = lakeview_request("GET", "/api/2.0/lakeview/dashboards", query=q)
+        out.extend(data.get("dashboards", []))
+        page_token = data.get("next_page_token")
+        if not page_token:
+            break
+    return out
+
+
+def find_dashboards_by_names(names: set[str]) -> list[dict]:
+    """Match display_name (case-insensitive substring) against any of the given strings."""
+    needles = {n.lower() for n in names}
+    return [
+        d for d in list_dashboards()
+        if any(n in (d.get("display_name") or "").lower() for n in needles)
+    ]
+
+
+def delete_dashboard(dashboard_id: str) -> None:
+    """DELETE a dashboard by ID."""
+    lakeview_request("DELETE", f"/api/2.0/lakeview/dashboards/{dashboard_id}")
+
+
+def create_dashboard(
+    display_name: str,
+    warehouse_id: str,
+    parent_path: str,
+    serialized_dashboard: dict,
+) -> dict:
+    """POST to create a new Lakeview dashboard. Returns response with dashboard_id."""
+    body = {
+        "display_name": display_name,
+        "warehouse_id": warehouse_id,
+        "parent_path": parent_path,
+        "serialized_dashboard": json.dumps(serialized_dashboard),
+    }
+    return lakeview_request("POST", "/api/2.0/lakeview/dashboards", body=body)
+
+
+def publish_dashboard(dashboard_id: str, warehouse_id: str) -> dict:
+    """Publish a dashboard draft. warehouse_id + embed_credentials required."""
+    return lakeview_request(
+        "POST",
+        f"/api/2.0/lakeview/dashboards/{dashboard_id}/published",
+        body={"warehouse_id": warehouse_id, "embed_credentials": True},
+    )
+
+
+def patch_dashboard(dashboard_id: str, serialized_dashboard: dict, display_name: str | None = None) -> dict:
+    """PATCH an existing dashboard (update in place)."""
+    body: dict[str, Any] = {"serialized_dashboard": json.dumps(serialized_dashboard)}
+    if display_name:
+        body["display_name"] = display_name
+    return lakeview_request("PATCH", f"/api/2.0/lakeview/dashboards/{dashboard_id}", body=body)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 2: Dataset builder
+# ════════════════════════════════════════════════════════════════════════════
+
+def build_dataset(name: str, sql: str, display_name: str = "") -> dict:
+    """Build a dataset entry with queryLines (array) and displayName.
+    Raises ValueError if SQL is empty."""
+    if not sql or not sql.strip():
+        raise ValueError(f"Dataset '{name}' has empty SQL. Every dataset MUST have tested SQL.")
+    return {
+        "name": name,
+        "displayName": display_name or name.replace("ds_", "").replace("_", " ").title(),
+        "queryLines": [sql],
+    }
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 3: Widget builders
+# ════════════════════════════════════════════════════════════════════════════
+
+def build_text_widget(name: str, markdown: str, position: dict) -> dict:
+    """Build a text/title widget.
+
+    CRITICAL: The Lakeview API field is `multilineTextboxSpec` and it MUST be
+    an OBJECT {"value": "<markdown>"}, NOT a plain string.
+
+    Passing a plain string like `"multilineTextboxSpec": "## Title"` causes:
+        'failed to parse serialized dashboard'
+
+    Passing wrong key like `textboxSpec` or `textbox_spec` causes:
+        'missing spec, textbox_spec, multilineTextboxSpec, or imageSpec'
+
+    The ONLY working format (verified):
+        "multilineTextboxSpec": {"value": "## Title"}
+    """
+    text_value = markdown if isinstance(markdown, str) else '\n'.join(markdown)
+    return {
+        "widget": {
+            "name": name,
+            "multilineTextboxSpec": {"value": text_value},
+        },
+        "position": position,
+    }
+
+
+def build_counter(
+    name: str,
+    dataset_name: str,
+    field_name: str,
+    display_name: str,
+    title: str,
+    agg: str = "SUM",
+    position: dict | None = None,
+) -> dict:
+    """Build a counter (KPI) widget.
+
+    Args:
+        name: Widget name (alphanumeric, hyphens, underscores only)
+        dataset_name: Name of shared dataset (same as filters use)
+        field_name: Column alias from dataset SQL (e.g. 'total_paid')
+        display_name: Short label shown in counter
+        title: Frame title above counter
+        agg: SUM for additive measures, AVG for rates/ratios
+        position: {x, y, width, height} on 6-col grid
+    """
+    expr = f"{agg}(`{field_name}`)"
+    fname = f"{agg.lower()}({field_name})"
+    pos = position or {"x": 0, "y": 0, "width": 2, "height": 3}
+    return {
+        "widget": {
+            "name": name,
+            "queries": [{
+                "name": "main_query",
+                "query": {
+                    "datasetName": dataset_name,
+                    "fields": [{"name": fname, "expression": expr}],
+                    "disaggregated": False,
+                },
+            }],
+            "spec": {
+                "version": 2,
+                "widgetType": "counter",
+                "encodings": {
+                    "value": {"fieldName": fname, "displayName": display_name}
+                },
+                "frame": {"showTitle": True, "title": title},
+            },
+        },
+        "position": pos,
+    }
+
+
+def build_bar_chart(
+    name: str,
+    dataset_name: str,
+    x_field: str,
+    y_field: str,
+    y_display: str,
+    title: str,
+    agg: str = "SUM",
+    position: dict | None = None,
+) -> dict:
+    """Build a bar chart widget.
+
+    Args:
+        x_field: Dimension column name for x-axis (categorical)
+        y_field: Measure column alias for y-axis
+        y_display: Y-axis label
+        agg: SUM for additive, AVG for rates
+    """
+    y_expr = f"{agg}(`{y_field}`)"
+    y_fname = f"{agg.lower()}({y_field})"
+    pos = position or {"x": 0, "y": 0, "width": 3, "height": 5}
+    return {
+        "widget": {
+            "name": name,
+            "queries": [{
+                "name": "main_query",
+                "query": {
+                    "datasetName": dataset_name,
+                    "fields": [
+                        {"name": x_field, "expression": f"`{x_field}`"},
+                        {"name": y_fname, "expression": y_expr},
+                    ],
+                    "disaggregated": False,
+                },
+            }],
+            "spec": {
+                "version": 3,
+                "widgetType": "bar",
+                "encodings": {
+                    "x": {"fieldName": x_field, "scale": {"type": "categorical"}, "displayName": x_field},
+                    "y": {"fieldName": y_fname, "scale": {"type": "quantitative"}, "displayName": y_display},
+                },
+                "frame": {"showTitle": True, "title": title},
+            },
+        },
+        "position": pos,
+    }
+
+
+def build_line_chart(
+    name: str,
+    dataset_name: str,
+    x_field: str,
+    y_field: str,
+    y_display: str,
+    title: str,
+    agg: str = "SUM",
+    position: dict | None = None,
+) -> dict:
+    """Build a line chart widget (temporal x-axis)."""
+    y_expr = f"{agg}(`{y_field}`)"
+    y_fname = f"{agg.lower()}({y_field})"
+    pos = position or {"x": 0, "y": 0, "width": 6, "height": 5}
+    return {
+        "widget": {
+            "name": name,
+            "queries": [{
+                "name": "main_query",
+                "query": {
+                    "datasetName": dataset_name,
+                    "fields": [
+                        {"name": x_field, "expression": f"`{x_field}`"},
+                        {"name": y_fname, "expression": y_expr},
+                    ],
+                    "disaggregated": False,
+                },
+            }],
+            "spec": {
+                "version": 3,
+                "widgetType": "line",
+                "encodings": {
+                    "x": {"fieldName": x_field, "scale": {"type": "temporal"}, "displayName": x_field},
+                    "y": {"fieldName": y_fname, "scale": {"type": "quantitative"}, "displayName": y_display},
+                },
+                "frame": {"showTitle": True, "title": title},
+            },
+        },
+        "position": pos,
+    }
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 4: Filter widget builder (SHARED DATASET pattern)
+# ════════════════════════════════════════════════════════════════════════════
+
+def build_filter_widget(
+    name: str,
+    dataset_name: str,
+    field_name: str,
+    display_name: str,
+    widget_type: str = "filter-multi-select",
+    position: dict | None = None,
+) -> dict:
+    """Build a filter widget for the global filters page.
+
+    CRITICAL: dataset_name MUST be the SAME dataset used by canvas widgets.
+    Using a separate 'ds_filter_values' dataset causes filters to NOT bind.
+
+    Args:
+        name: Widget name (alphanumeric, hyphens, underscores)
+        dataset_name: SAME dataset name as canvas widgets (shared dataset pattern)
+        field_name: Column name in dataset SQL results (must match exactly)
+        display_name: Human-readable label
+        widget_type: 'filter-multi-select', 'filter-single-select', or 'filter-date-range-picker'
+        position: {x, y, width, height} on 6-column grid
+
+    Format rules:
+        - spec.version MUST be 2 (NOT 1 — version 1 causes broken binding)
+        - encodings.fields[] MUST include 'queryName' referencing queries[].name
+        - disaggregated MUST be True for filters
+    """
+    pos = position or {"x": 0, "y": 0, "width": 2, "height": 2}
+    return {
+        "widget": {
+            "name": name,
+            "queries": [{
+                "name": "main_query",
+                "query": {
+                    "datasetName": dataset_name,
+                    "fields": [{"name": field_name, "expression": f"`{field_name}`"}],
+                    "disaggregated": True,
+                },
+            }],
+            "spec": {
+                "version": 2,
+                "widgetType": widget_type,
+                "encodings": {
+                    "fields": [{
+                        "fieldName": field_name,
+                        "displayName": display_name,
+                        "queryName": "main_query",
+                    }]
+                },
+                "frame": {"showTitle": True, "title": display_name},
+            },
+        },
+        "position": pos,
+    }
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 5: Page builders
+# ════════════════════════════════════════════════════════════════════════════
+
+def build_filters_page(
+    dataset_name: str,
+    filter_dimensions: list[dict],
+) -> dict:
+    """Build the PAGE_TYPE_GLOBAL_FILTERS page.
+
+    Args:
+        dataset_name: SAME dataset name as canvas widgets (shared dataset pattern)
+        filter_dimensions: List of dicts with keys:
+            - field_name: column name in metric view / dataset SQL
+            - display_name: human-readable label
+            - widget_type: 'filter-multi-select' or 'filter-date-range-picker' (default: multi-select)
+    """
+    layout = []
+    for i, f in enumerate(filter_dimensions):
+        safe_name = f["field_name"].lower().replace(" ", "-").replace("_", "-")
+        widget = build_filter_widget(
+            name=f"filter-{safe_name}",
+            dataset_name=dataset_name,
+            field_name=f["field_name"],
+            display_name=f["display_name"],
+            widget_type=f.get("widget_type", "filter-multi-select"),
+            position={"x": (i % 3) * 2, "y": (i // 3) * 2, "width": 2, "height": 2},
+        )
+        layout.append(widget)
+
+    return {
+        "name": "filters_page",
+        "displayName": "Filters",
+        "pageType": "PAGE_TYPE_GLOBAL_FILTERS",
+        "layout": layout,
+    }
+
+
+def build_canvas_page(name: str, display_name: str, layout: list[dict]) -> dict:
+    """Build a PAGE_TYPE_CANVAS page."""
+    return {
+        "name": name,
+        "displayName": display_name,
+        "pageType": "PAGE_TYPE_CANVAS",
+        "layout": layout,
+    }
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 6: Dashboard assembler + validation
+# ════════════════════════════════════════════════════════════════════════════
+
+def build_serialized_dashboard(
+    datasets: list[dict],
+    pages: list[dict],
+    filter_dimensions: list[str] | None = None,
+) -> dict:
+    """Assemble the full serialized_dashboard dict with validation.
+
+    Validates:
+        - No empty queryLines in any dataset
+        - All datasets have displayName
+        - Filter dimensions present in dataset SQL (warning if missing)
+
+    Returns dict ready for json.dumps() in create_dashboard().
+    """
+    for ds in datasets:
+        query_lines = ds.get("queryLines", [])
+        has_sql = query_lines and any(line.strip() for line in query_lines)
+        if not has_sql:
+            raise ValueError(
+                f"Dataset '{ds.get('name', '?')}' has empty queryLines. "
+                f"Fix before calling create_dashboard()."
+            )
+        if not ds.get("displayName"):
+            ds["displayName"] = ds.get("name", "Dataset").replace("ds_", "").replace("_", " ").title()
+
+    # Warn if filter columns are missing from datasets
+    if filter_dimensions:
+        for ds in datasets:
+            sql_lower = " ".join(ds.get("queryLines", [])).lower()
+            missing = [d for d in filter_dimensions if d.lower() not in sql_lower]
+            if missing:
+                print(f"⚠️  Dataset '{ds['name']}' missing filter columns: {missing}. Filters won't bind.")
+
+    return {
+        "datasets": datasets,
+        "pages": pages,
+        "uiSettings": {
+            "theme": {"widgetHeaderAlignment": "ALIGNMENT_UNSPECIFIED"},
+            "applyModeEnabled": False,
+        },
+    }
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 7: End-to-end convenience function
+# ════════════════════════════════════════════════════════════════════════════
+
+def deploy_dashboard(
+    display_name: str,
+    warehouse_id: str,
+    parent_path: str,
+    datasets: list[dict],
+    pages: list[dict],
+    filter_dimensions: list[str] | None = None,
+    *,
+    required_artifacts: list[str] | None = None,
+    quality_gates: dict | None = None,
+    output_folder: str | None = None,
+) -> dict:
+    """Build, validate, create/update, and publish a dashboard.
+
+    IDEMPOTENT: If a dashboard with the same display_name exists, it is UPDATED
+    instead of creating a duplicate.
+
+    Gate enforcement (when gate_checks.py is available):
+    - PRE-DEPLOY: Verifies required artifacts exist, all canvas pages have
+      widgets, and a filters page with >= min_filters exists. Raises
+      GateCheckError if ANY check fails — the API call never executes.
+    - POST-DEPLOY: Reads the dashboard back from the Lakeview API and verifies
+      the deployed content matches what was sent. Writes ground-truth
+      validation to output_folder if provided.
+
+    Args:
+        display_name: Dashboard display name (used for idempotency matching).
+        warehouse_id: SQL warehouse ID for the dashboard.
+        parent_path: Workspace parent path for dashboard creation.
+        datasets: List of dataset dicts built by build_dataset().
+        pages: List of page dicts (filter + canvas) built by page builders.
+        filter_dimensions: Column names used for filter binding warnings.
+        required_artifacts: File paths that must exist before deploy (gate check).
+        quality_gates: Optional quality thresholds from accelerator.yaml.
+        output_folder: If provided, writes ground-truth validation YAML here.
+
+    Returns dict with keys: dashboard_id, display_name, path, published.
+    Raises GateCheckError or AssertionError on any validation failure.
+    """
+    # Pre-flight: validate structure
+    sd = build_serialized_dashboard(datasets, pages, filter_dimensions)
+
+    # ── LAYER 1: Programmatic pre-deploy gate enforcement ──
+    # When gate_checks is loaded, this runs comprehensive checks that
+    # physically block API creation of empty/incomplete dashboards.
+    # When gate_checks is NOT loaded, falls back to inline assertions.
+    if _gate_checks_loaded:
+        run_dashboard_predeploy_gates(
+            sd,
+            display_name,
+            required_artifacts=required_artifacts,
+            quality_gates=quality_gates,
+        )
+    else:
+        # Fallback inline assertions (reduced safety)
+        page_types = [p.get("pageType") for p in pages]
+        assert "PAGE_TYPE_GLOBAL_FILTERS" in page_types, \
+            "BLOCKED: Dashboard has no PAGE_TYPE_GLOBAL_FILTERS page. Add filters first."
+        assert "PAGE_TYPE_CANVAS" in page_types, \
+            "BLOCKED: Dashboard has no PAGE_TYPE_CANVAS page."
+        filter_page = next(p for p in pages if p.get("pageType") == "PAGE_TYPE_GLOBAL_FILTERS")
+        assert len(filter_page.get("layout", [])) >= 3, \
+            f"BLOCKED: Filter page has only {len(filter_page.get('layout', []))} widgets (need >=3)."
+
+    # Idempotency: check for existing dashboard with same name
+    dashboard_id = None
+    try:
+        for d in list_dashboards():
+            if (d.get("display_name") or "").lower() == display_name.lower():
+                dashboard_id = d["dashboard_id"]
+                print(f"  Found existing '{display_name}': {dashboard_id} — will UPDATE")
+                break
+    except Exception:
+        pass
+
+    if dashboard_id:
+        patch_dashboard(dashboard_id, sd, display_name)
+    else:
+        result = create_dashboard(display_name, warehouse_id, parent_path, sd)
+        dashboard_id = result["dashboard_id"]
+
+    print(f"  ✓ Dashboard '{display_name}': {dashboard_id}")
+
+    # Publish
+    time.sleep(1)
+    publish_dashboard(dashboard_id, warehouse_id)
+    print(f"  ✓ Published")
+
+    # ── LAYER 2: Post-deploy API readback validation ──
+    # Reads the dashboard back from the API and verifies the deployed
+    # content is non-empty. Writes ground-truth validation YAML.
+    if _gate_checks_loaded:
+        try:
+            post_deploy_result = validate_dashboard_from_api(
+                dashboard_id,
+                display_name,
+                quality_gates=quality_gates,
+            )
+            if output_folder:
+                validation_path = os.path.join(
+                    output_folder, "dashboards",
+                    f"{display_name}_validation.yaml",
+                )
+                write_ground_truth_validation(
+                    validation_path, post_deploy_result, source="api_readback",
+                )
+        except GateCheckError as e:
+            print(f"\n❌ POST-DEPLOY GATE FAILED for '{display_name}':")
+            print(f"   {str(e)[:300]}")
+            raise
+
+    return {
+        "dashboard_id": dashboard_id,
+        "display_name": display_name,
+        "path": f"/dashboardsv3/{dashboard_id}",
+        "published": True,
+    }
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 8: Post-Deploy Validation
+# ════════════════════════════════════════════════════════════════════════════
+
+def validate_dashboard_post_deploy(dashboard_id: str) -> dict:
+    """Read back a deployed dashboard and validate its structure.
+
+    Checks:
+    - Dashboard exists and is accessible
+    - Has global filters page with >= 3 filter widgets
+    - Has canvas pages with chart widgets
+    - All datasets have non-empty queryLines
+    - Published version exists
+
+    Returns dict with status (PASS/FAIL) and issues list.
+    """
+    result = lakeview_request("GET", f"/api/2.0/lakeview/dashboards/{dashboard_id}")
+    sd = json.loads(result.get("serialized_dashboard", "{}"))
+
+    datasets = sd.get("datasets", [])
+    pages = sd.get("pages", [])
+    issues = []
+
+    # Check datasets have SQL
+    for ds in datasets:
+        ql = ds.get("queryLines", [])
+        if not ql or not any(line.strip() for line in ql):
+            issues.append(f"Dataset '{ds.get('name')}' has empty queryLines")
+
+    # Check page types
+    filter_pages = [p for p in pages if p.get("pageType") == "PAGE_TYPE_GLOBAL_FILTERS"]
+    canvas_pages = [p for p in pages if p.get("pageType") == "PAGE_TYPE_CANVAS"]
+
+    if not filter_pages:
+        issues.append("No PAGE_TYPE_GLOBAL_FILTERS page")
+    else:
+        for fp in filter_pages:
+            filter_widgets = [
+                w for w in fp.get("layout", [])
+                if w.get("widget", {}).get("spec", {}).get("widgetType", "").startswith("filter-")
+            ]
+            if len(filter_widgets) < 3:
+                issues.append(f"Filter page has {len(filter_widgets)} filters (need >=3)")
+            # Validate filter version and queryName
+            for fw in filter_widgets:
+                spec = fw.get("widget", {}).get("spec", {})
+                if spec.get("version") != 2:
+                    issues.append(f"Filter '{fw['widget']['name']}' has version {spec.get('version')} (need 2)")
+                fields = spec.get("encodings", {}).get("fields", [])
+                for f in fields:
+                    if "queryName" not in f:
+                        issues.append(f"Filter '{fw['widget']['name']}' field missing queryName")
+
+    if not canvas_pages:
+        issues.append("No PAGE_TYPE_CANVAS page")
+
+    # Check published
+    published = False
+    try:
+        lakeview_request("GET", f"/api/2.0/lakeview/dashboards/{dashboard_id}/published")
+        published = True
+    except Exception:
+        issues.append("Dashboard NOT published")
+
+    report = {
+        "dashboard_id": dashboard_id,
+        "display_name": result.get("display_name"),
+        "datasets_count": len(datasets),
+        "total_pages": len(pages),
+        "filter_pages": len(filter_pages),
+        "canvas_pages": len(canvas_pages),
+        "published": published,
+        "issues": issues,
+        "status": "PASS" if not issues else "FAIL",
+    }
+
+    if issues:
+        print(f"❌ VALIDATION FAILED: '{result.get('display_name')}'")
+        for issue in issues:
+            print(f"   • {issue}")
+    else:
+        print(f"✅ VALIDATION PASSED: '{result.get('display_name')}'")
+        print(f"   Datasets={len(datasets)}, Pages={len(pages)}, Filters={len(filter_pages)}, Canvas={len(canvas_pages)}")
+
+    return report

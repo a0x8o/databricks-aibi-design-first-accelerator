@@ -1,0 +1,45 @@
+validation_source: statement_execution_api
+status: PASS
+validated_at: current_run
+warehouse_id: 2d8e531640ffa469
+datasets:
+  - name: ds_member_claims_metric_view_v4
+    dashboard: member_claims_kpis_dashboard_v4
+    metric_view: '`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v4`'
+    sql_status: PASS
+    semantic_status: PASS
+    actual_rows: 2500
+    actual_columns: [benefit_category, benefit_level, claim_type, clean_claim_indicator, line_status, place_of_service, procedure_code, provider_participation, rendering_provider_specialty, rendering_provider_type, service_date, service_month, Average Paid per Claim, Average Paid per Member, Claim Member Months, Claims per 1,000 Members, Claims per Member, Clean Claim Rate, Clean Lines, Denial Rate, Denied Lines, Inpatient Paid Amount, Lines per Claim, Outpatient Paid Amount, PMPM, Participating Provider Paid Amount, Participating Provider Rate, Payment-to-Allowed Ratio, Payment-to-Billed Ratio, Total Allowed Amount, Total Billed Amount, Total Claim Lines, Total Claims, Total Paid Amount, Unique Claim Members]
+    filters: [service_month, claim_type, benefit_category, line_status]
+    expected_shape: dimensional metric-view dataset with all dimensions grouped and all measures via MEASURE()
+    failure_reason: null
+  - name: ds_member_claims_enrollment_metric_view_v4
+    dashboard: member_claims_kpis_dashboard_v4
+    metric_view: '`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_enrollment_metric_view_v4`'
+    sql_status: PASS
+    semantic_status: PASS
+    actual_rows: 800
+    actual_columns: [enrollment_status, line_of_business, plan_id, product_id, service_date, service_month, termination_reason, Active Members, Enrollment Records, New Member Enrollment]
+    filters: [service_month]
+    expected_shape: enrollment dimensional metric-view dataset with measures via MEASURE()
+    failure_reason: null
+  - name: ds_member_claims_member_metric_view_v4
+    dashboard: member_claims_kpis_dashboard_v4
+    metric_view: '`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_member_metric_view_v4`'
+    sql_status: PASS
+    semantic_status: PASS
+    actual_rows: 300
+    actual_columns: [ethnicity, line_of_business, race, service_date, service_month, sex, state, zip_code, Active Members by Geography]
+    filters: [service_month]
+    expected_shape: member geography dimensional metric-view dataset with measures via MEASURE()
+    failure_reason: null
+  - name: ds_main
+    dashboard: member_claims_utilization_dashboard_v4
+    metric_view: '`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v4`'
+    sql_status: PASS
+    semantic_status: PASS
+    actual_rows: 2500
+    actual_columns: [benefit_category, benefit_level, claim_type, clean_claim_indicator, line_status, place_of_service, procedure_code, provider_participation, rendering_provider_specialty, rendering_provider_type, service_date, service_month, Average Paid per Claim, Average Paid per Member, Claim Member Months, Claims per 1,000 Members, Claims per Member, Clean Claim Rate, Clean Lines, Denial Rate, Denied Lines, Inpatient Paid Amount, Lines per Claim, Outpatient Paid Amount, PMPM, Participating Provider Paid Amount, Participating Provider Rate, Payment-to-Allowed Ratio, Payment-to-Billed Ratio, Total Allowed Amount, Total Billed Amount, Total Claim Lines, Total Claims, Total Paid Amount, Unique Claim Members]
+    filters: [service_month, claim_type, benefit_category, provider_participation]
+    expected_shape: utilization dimensional metric-view dataset with all dimensions grouped and all measures via MEASURE()
+    failure_reason: null

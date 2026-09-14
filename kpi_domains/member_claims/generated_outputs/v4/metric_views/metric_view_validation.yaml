@@ -1,0 +1,77 @@
+status: PASS
+validated_at: current_run
+metric_views:
+  - name: member_claims_metric_view_v4
+    sql_fqn: aw_serverless_stable_catalog.aibi_member_claims.member_claims_metric_view_v4
+    source: fact_claim_detail_v4
+    source_grain: one row represents one claim detail line
+    validation_status: PASS
+    kpi_count: 16
+    row_count: 2500
+  - name: member_claims_enrollment_metric_view_v4
+    sql_fqn: aw_serverless_stable_catalog.aibi_member_claims.member_claims_enrollment_metric_view_v4
+    source: fact_member_enrollment_v4
+    source_grain: one row represents one member enrollment event or enrollment period
+    validation_status: PASS
+    kpi_count: 2
+    row_count: 800
+  - name: member_claims_member_metric_view_v4
+    sql_fqn: aw_serverless_stable_catalog.aibi_member_claims.member_claims_member_metric_view_v4
+    source: dim_member_v4
+    source_grain: one row represents one current member dimension record
+    validation_status: PASS
+    kpi_count: 1
+    row_count: 300
+intermediate_views: []
+parity_gate_5_7:
+  status: PASS
+  planned_metric_views: 3
+  validated_metric_views: 3
+  handoff_metric_view_fqns: 3
+baseline_reconciliation:
+  status: PASS
+  checks:
+    - {check: Total Claims, baseline_result: 500.0000, metric_view_result: 500.0000, difference: 0.0000, validation_status: PASS}
+    - {check: Claim Member Months, baseline_result: 780.0000, metric_view_result: 780.0000, difference: 0.0000, validation_status: PASS}
+    - {check: Total Paid Amount, baseline_result: 3123750.0000, metric_view_result: 3123750.0000, difference: 0.0000, validation_status: PASS}
+    - {check: PMPM, baseline_result: 4004.8077, metric_view_result: 4004.8077, difference: 0.0000, validation_status: PASS}
+    - {check: Denial Rate, baseline_result: 0.2624, metric_view_result: 0.2624, difference: 0.0000, validation_status: PASS}
+    - {check: New Member Enrollment, baseline_result: 300.0000, metric_view_result: 300.0000, difference: 0.0000, validation_status: PASS}
+    - {check: Active Members, baseline_result: 150.0000, metric_view_result: 150.0000, difference: 0.0000, validation_status: PASS}
+    - {check: Active Members by Geography, baseline_result: 150.0000, metric_view_result: 150.0000, difference: 0.0000, validation_status: PASS}
+kpis:
+  - {kpi: M-1, metric_view: member_claims_enrollment_metric_view_v4, status: IMPLEMENTED_AND_VALIDATED, baseline_result: 300.0000, metric_view_result: 300.0000, difference: 0.0000, validation_status: PASS}
+  - {kpi: M-2, metric_view: member_claims_enrollment_metric_view_v4, status: IMPLEMENTED_AND_VALIDATED, baseline_result: 150.0000, metric_view_result: 150.0000, difference: 0.0000, validation_status: PASS}
+  - {kpi: M-3, metric_view: member_claims_member_metric_view_v4, status: IMPLEMENTED_AND_VALIDATED, baseline_result: 150.0000, metric_view_result: 150.0000, difference: 0.0000, validation_status: PASS}
+  - {kpi: C-1, metric_view: member_claims_metric_view_v4, status: IMPLEMENTED_AND_VALIDATED, baseline_result: 500.0000, metric_view_result: 500.0000, difference: 0.0000, validation_status: PASS}
+  - {kpi: C-2, metric_view: member_claims_metric_view_v4, status: IMPLEMENTED_AND_VALIDATED, baseline_result: 2500.0000, metric_view_result: 2500.0000, difference: 0.0000, validation_status: PASS}
+  - {kpi: C-3, metric_view: member_claims_metric_view_v4, status: IMPLEMENTED_AND_VALIDATED, baseline_result: 3123750.0000, metric_view_result: 3123750.0000, difference: 0.0000, validation_status: PASS}
+  - {kpi: C-4, metric_view: member_claims_metric_view_v4, status: IMPLEMENTED_AND_VALIDATED, baseline_result: 6247.5000, metric_view_result: 6247.5000, difference: 0.0000, validation_status: PASS}
+  - {kpi: MC-1, metric_view: member_claims_metric_view_v4, status: IMPLEMENTED_AND_VALIDATED, baseline_result: 4004.8077, metric_view_result: 4004.8077, difference: 0.0000, validation_status: PASS}
+  - {kpi: MC-2, metric_view: member_claims_metric_view_v4, status: IMPLEMENTED_AND_VALIDATED, baseline_result: 641.0256, metric_view_result: 641.0256, difference: 0.0000, validation_status: PASS}
+  - {kpi: MC-3, metric_view: null, status: SKIPPED_UNSAFE_GRAIN, reason: Unsafe cross-fact grain/key mismatch between claims member key and enrollment member_sk.}
+  - {kpi: MC-4, metric_view: null, status: NOT_IMPLEMENTED, reason: Requires HAVING over member-level pre-aggregation, sql_ref: See metric_view_plan.yaml, documentation_only: true}
+  - {kpi: W-1, metric_view: null, status: NOT_IMPLEMENTED, reason: Requires rolling window over separately aggregated numerator and denominator, sql_ref: See metric_view_plan.yaml, documentation_only: true}
+  - {kpi: W-2, metric_view: null, status: NOT_IMPLEMENTED, reason: Requires LAG/prior-period offset, sql_ref: See metric_view_plan.yaml, documentation_only: true}
+  - {kpi: ADD-1, metric_view: member_claims_metric_view_v4, status: IMPLEMENTED_AND_VALIDATED, baseline_result: 0.2624, metric_view_result: 0.2624, difference: 0.0000, validation_status: PASS}
+  - {kpi: ADD-2, metric_view: member_claims_metric_view_v4, status: IMPLEMENTED_AND_VALIDATED, baseline_result: 0.7284, metric_view_result: 0.7284, difference: 0.0000, validation_status: PASS}
+  - {kpi: ADD-3, metric_view: member_claims_metric_view_v4, status: IMPLEMENTED_AND_VALIDATED, baseline_result: 0.8000, metric_view_result: 0.8000, difference: 0.0000, validation_status: PASS}
+  - {kpi: ADD-4, metric_view: member_claims_metric_view_v4, status: IMPLEMENTED_AND_VALIDATED, baseline_result: 0.8889, metric_view_result: 0.8889, difference: 0.0000, validation_status: PASS}
+  - {kpi: ADD-5, metric_view: member_claims_metric_view_v4, status: IMPLEMENTED_AND_VALIDATED, baseline_result: 10412.5000, metric_view_result: 10412.5000, difference: 0.0000, validation_status: PASS}
+  - {kpi: ADD-6, metric_view: member_claims_metric_view_v4, status: IMPLEMENTED_AND_VALIDATED, baseline_result: 1.6667, metric_view_result: 1.6667, difference: 0.0000, validation_status: PASS}
+  - {kpi: ADD-7, metric_view: member_claims_metric_view_v4, status: IMPLEMENTED_AND_VALIDATED, baseline_result: 5.0000, metric_view_result: 5.0000, difference: 0.0000, validation_status: PASS}
+  - {kpi: ADD-8, metric_view: member_claims_metric_view_v4, status: IMPLEMENTED_AND_VALIDATED, baseline_result: null, metric_view_result: null, difference: 0.0000, validation_status: PASS}
+  - {kpi: ADD-9, metric_view: member_claims_metric_view_v4, status: IMPLEMENTED_AND_VALIDATED, baseline_result: null, metric_view_result: null, difference: 0.0000, validation_status: PASS}
+  - {kpi: ADD-10, metric_view: member_claims_metric_view_v4, status: IMPLEMENTED_AND_VALIDATED, baseline_result: null, metric_view_result: null, difference: 0.0000, validation_status: PASS}
+join_validation:
+  status: PASS
+  joins_in_metric_views: 0
+  relationship_verification_source: schema_profile.yaml
+measure_stability:
+  status: PASS
+  checks:
+    - {name: direct_claim_paid_no_join, pre_join: 3123750.00, post_join: 3123750.00, status: PASS}
+    - {name: direct_enrollment_members_no_join, pre_join: 150, post_join: 150, status: PASS}
+    - {name: direct_member_geo_no_join, pre_join: 150, post_join: 150, status: PASS}
+skipped_kpis:
+  - {kpi: MC-3, status: SKIPPED_UNSAFE_GRAIN, reason: unsafe cross-fact grain/key mismatch}

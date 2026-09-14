@@ -53,14 +53,16 @@ MAX_CONSECUTIVE_ERRORS = 3
 # Critical tools: a single failure is immediately fatal because skipping
 # leaves the system in an inconsistent state that cannot self-correct.
 # The LLM must NOT be allowed to silently adapt around these failures.
+# EXCEPTION: errors classified as LLM_REPAIRABLE by the error classifier
+# are routed to the LLM for self-correction instead of hard-halting.
 CRITICAL_TOOLS = {
     "execute_sql",            # DDL failures (CREATE SCHEMA, CREATE TABLE) = broken data layer
     "execute_python",         # Python code generates artifacts (YAML, configs) needed downstream
     "execute_notebook",       # Notebook execution (data generation, ETL) = missing data
     "create_notebook",        # Can't create the notebook = can't proceed
     "write_file",             # File writes produce artifacts required by later phases
-    "create_dashboard",       # Dashboard creation failure = step cannot complete
 }
+# NOTE: create_dashboard removed — now disabled, uses template notebook pattern
 
 # Read-only tools: errors are counted toward consecutive_errors (resets on success)
 # but NOT toward per_tool_errors (permanent). This prevents transient workspace API
@@ -71,15 +73,83 @@ READ_ONLY_TOOLS = {
     "describe_table",
 }
 
-# Critical error patterns: even for non-critical tools, certain error messages
-# indicate unrecoverable state (e.g., permission denied, quota exceeded).
+# Error classifier: routes failures based on error pattern.
+# LLM_REPAIRABLE errors return to the LLM for self-correction (non-critical).
+# DETERMINISTIC_FAIL errors halt immediately (infrastructure, not generation).
+# RETRY errors trigger automatic retry with backoff (transient).
+ERROR_CLASSIFICATION = {
+    # LLM repairable — generation errors the LLM can fix
+    "LLM_REPAIRABLE": [
+        "PARSE_SYNTAX_ERROR",
+        "UNRESOLVED_COLUMN",
+        "UNRESOLVED_FIELD",
+        "DATATYPE_MISMATCH",
+        "INVALID_PARAMETER_VALUE",
+        "SYNTAX_ERROR",
+        "SCHEMA_MISMATCH",
+        "SQL ERROR",
+        # Delta / data constraint errors — LLM can widen column types or
+        # adjust generated values to satisfy constraints.
+        "DELTA_EXCEED_CHAR_VARCHAR_LIMIT",
+        "DELTA_CONSTRAINT_VIOLATION",
+        "CHECK_CONSTRAINT_VIOLATED",
+        # Notebook assertion failures — ALL AssertionErrors from template
+        # notebooks are validation gates (structural, metadata, semantic,
+        # deployment). They catch LLM spec errors: hallucinated columns,
+        # unbalanced datatypes, missing references, duplicate measures, etc.
+        # The LLM can fix these by correcting its spec and regenerating.
+        # Infrastructure errors use different exception types (PermissionDenied,
+        # RuntimeError, etc.) and are classified as DETERMINISTIC_FAIL.
+        "AssertionError",
+    ],
+    # Deterministic fail — infrastructure errors the LLM cannot fix
+    "DETERMINISTIC_FAIL": [
+        "PermissionDenied",
+        "PERMISSION_DENIED",
+        "RESOURCE_EXHAUSTED",
+        "QUOTA_EXCEEDED",
+        "INTERNAL_ERROR",
+        "UNAUTHORIZED",
+        "TOKEN_EXPIRED",
+    ],
+    # Retry with backoff — transient errors
+    "RETRY": [
+        "RATE_LIMIT",
+        "THROTTLED",
+        "TIMEOUT",
+        "ServiceUnavailable",
+        "TEMPORARILY_UNAVAILABLE",
+    ],
+    # Deployment policy — idempotency check
+    "DEPLOYMENT_POLICY": [
+        "OBJECT_ALREADY_EXISTS",
+        "ALREADY_EXISTS",
+        "schema already exists",
+    ],
+}
+
+def classify_error(error_str: str) -> str:
+    """Classify an error string into a remediation category.
+    
+    Returns one of: LLM_REPAIRABLE, DETERMINISTIC_FAIL, RETRY, DEPLOYMENT_POLICY, UNKNOWN
+    """
+    error_upper = error_str.upper()
+    for category, patterns in ERROR_CLASSIFICATION.items():
+        for pattern in patterns:
+            if pattern.upper() in error_upper:
+                return category
+    return "UNKNOWN"
+
+# Critical error patterns: superseded by error classifier but kept for backward compat.
+# These now route through classify_error() first — only DETERMINISTIC_FAIL patterns
+# trigger immediate halt. LLM_REPAIRABLE patterns allow LLM self-correction.
 CRITICAL_ERROR_PATTERNS = [
+    # Only DETERMINISTIC_FAIL patterns remain here — these ALWAYS halt
     "PermissionDenied",
     "PERMISSION_DENIED",
     "RESOURCE_EXHAUSTED",
     "QUOTA_EXCEEDED",
     "INTERNAL_ERROR",
-    "schema already exists",   # Shouldn't hit this but if we do, something is off
 ]
 
 
@@ -252,25 +322,96 @@ class AgentLoop:
                     if tool_name not in READ_ONLY_TOOLS:
                         per_tool_errors[tool_name] = per_tool_errors.get(tool_name, 0) + 1
 
-                    # --- CRITICAL TOOL CHECK (immediate halt) ---
-                    # Certain tools leave the system inconsistent if they fail;
-                    # the LLM must NOT be allowed to silently adapt around them.
-                    # Exception: read-only SQL (SELECT/SHOW/DESCRIBE) is non-critical.
-                    is_critical = False
-                    if tool_name in CRITICAL_TOOLS:
-                        # For execute_sql, only DDL/DML is critical (not reads)
-                        if tool_name == "execute_sql":
-                            stmt = tool_args.get("statement", "").strip().upper()
-                            is_critical = not stmt.startswith(("SELECT", "SHOW", "DESCRIBE", "DESC"))
-                        else:
-                            is_critical = True
+                    # --- ERROR CLASSIFIER (replaces blanket critical halt) ---
+                    # Classify the error to determine remediation route:
+                    #   LLM_REPAIRABLE → return to LLM for self-correction (non-critical)
+                    #   DETERMINISTIC_FAIL → immediate halt (infrastructure)
+                    #   RETRY → automatic retry with backoff (transient)
+                    #   DEPLOYMENT_POLICY → idempotency check
+                    error_category = classify_error(result_str)
 
-                    # Check for critical error patterns (any tool)
-                    if not is_critical:
-                        for pattern in CRITICAL_ERROR_PATTERNS:
-                            if pattern in result_str:
+                    is_critical = False
+                    if error_category == "DETERMINISTIC_FAIL":
+                        is_critical = True
+                    elif error_category == "LLM_REPAIRABLE":
+                        # LLM can fix this — do NOT halt, let LLM self-correct
+                        is_critical = False
+                        logger.info(
+                            f"LLM_REPAIRABLE error in '{tool_name}' "
+                            f"(category={error_category}). Routing to LLM for self-correction. "
+                            f"Error: {result_str[:300]}"
+                        )
+                    elif error_category == "RETRY":
+                        # Transient error — implement actual retry with exponential backoff
+                        # Max 3 retries: 1s, 2s, 4s, then escalate to DETERMINISTIC_FAIL
+                        is_critical = False
+                        retry_count = tool_args.get("_retry_count", 0)
+                        if retry_count < 3:
+                            backoff = 2 ** retry_count  # 1, 2, 4
+                            logger.warning(
+                                f"RETRY error in '{tool_name}' "
+                                f"(category={error_category}, attempt {retry_count + 1}/3). "
+                                f"Retrying in {backoff}s. Error: {result_str[:300]}"
+                            )
+                            if callback:
+                                callback("retry", {
+                                    "tool": tool_name,
+                                    "attempt": retry_count + 1,
+                                    "backoff_seconds": backoff,
+                                    "error": result_str[:200],
+                                })
+                            time.sleep(backoff)
+                            # Re-execute the tool with retry count incremented
+                            tool_args["_retry_count"] = retry_count + 1
+                            try:
+                                result_str = self._executor.execute(tool_name, tool_args)
+                                if not (result_str.startswith("ERROR") or result_str.startswith("SQL ERROR") or result_str.startswith("NOTEBOOK ERROR")):
+                                    logger.info(f"Retry {retry_count + 1} for '{tool_name}' SUCCEEDED")
+                            except Exception as retry_err:
+                                logger.error(f"Retry {retry_count + 1} for '{tool_name}' failed: {retry_err}")
+                                if retry_count + 1 >= 3:
+                                    is_critical = True  # Exhausted retries → halt
+                        else:
+                            # All retries exhausted — escalate to deterministic fail
+                            is_critical = True
+                            logger.error(
+                                f"RETRY exhausted for '{tool_name}' after 3 attempts. "
+                                f"Escalating to DETERMINISTIC_FAIL. Error: {result_str[:300]}"
+                            )
+                    elif error_category == "DEPLOYMENT_POLICY":
+                        # Idempotency check — when OBJECT_ALREADY_EXISTS, determine if
+                        # this is an expected state (idempotent success) or a real conflict.
+                        # Route to LLM with context about the existing object so it can
+                        # decide whether to skip (same state) or update (different state).
+                        is_critical = False
+                        logger.info(
+                            f"DEPLOYMENT_POLICY error in '{tool_name}' "
+                            f"(category={error_category}). Object already exists — "
+                            f"routing to LLM for idempotency decision. "
+                            f"Error: {result_str[:300]}"
+                        )
+                        # The LLM receives the error and can decide:
+                        # - If the existing object matches desired state → skip (idempotent success)
+                        # - If the existing object differs → update via CREATE OR REPLACE
+                        # - If naming conflict with unrelated object → rename and retry
+                        # This is non-critical because OBJECT_ALREADY_EXISTS is not a failure
+                        # — it's a deployment policy decision the LLM is equipped to make.
+                    else:
+                        # UNKNOWN error — fall back to original critical tool logic
+                        if tool_name in CRITICAL_TOOLS:
+                            # For execute_sql, only DDL/DML is critical (not reads)
+                            if tool_name == "execute_sql":
+                                stmt = tool_args.get("statement", "").strip().upper()
+                                is_critical = not stmt.startswith(("SELECT", "SHOW", "DESCRIBE", "DESC"))
+                            else:
                                 is_critical = True
-                                break
+
+                        # Check for critical error patterns (any tool)
+                        if not is_critical:
+                            for pattern in CRITICAL_ERROR_PATTERNS:
+                                if pattern in result_str:
+                                    is_critical = True
+                                    break
 
                     if is_critical:
                         logger.error(
@@ -740,28 +881,57 @@ class AgentLoop:
             parts.append("  You already have that data. Use it from context.")
 
         # Inject RESUME_CONTEXT when resuming from a prior checkpoint (App-mode optimization).
-        # The step prompts already encode artifact-as-state verification unconditionally.
-        # This context accelerates the process by pre-identifying what's done.
+        # Two sources: (1) Lakebase step-level resume, (2) artifact-gated phase skip.
+        # Artifact-gated is more granular and takes precedence when present.
         resume_context = context_vars.get('RESUME_CONTEXT')
         if resume_context:
             parts.append("")
-            parts.append("RESUME_CONTEXT (App-mode optimization — pre-identified completed work):")
+            parts.append("═" * 72)
+            parts.append("RESUME_CONTEXT (MANDATORY — artifact-gated phase skip)")
+            parts.append("═" * 72)
             parts.append(f"  run_id: {resume_context.get('run_id', 'N/A')}")
-            parts.append(f"  last_completed_step: {resume_context.get('last_completed_step', 'N/A')}")
-            parts.append(f"  current_step: {resume_context.get('current_step', 'N/A')}")
-            artifacts = resume_context.get('artifacts_written', [])
-            if artifacts:
-                parts.append("  artifacts_written (verify these exist, skip phases if valid):")
-                for a in artifacts:
-                    parts.append(f"    - {a}")
-            findings = resume_context.get('prior_findings', [])
-            if findings:
-                parts.append("  prior_findings:")
-                for f in findings:
-                    parts.append(f"    - {f}")
-            parts.append("")
-            parts.append("  Use this context to skip listing the output folder — verify the")
-            parts.append("  artifacts above directly, then continue from the first incomplete phase.")
+
+            # Phase-level resume (artifact-gated)
+            completed_phases = resume_context.get('completed_phases', [])
+            resume_from_phase = resume_context.get('resume_from_phase')
+            if completed_phases:
+                parts.append("")
+                parts.append("  COMPLETED PHASES (artifacts verified on disk — DO NOT re-execute):")
+                for p in completed_phases:
+                    phase_id = p.get('phase_id', '?')
+                    artifact = p.get('artifact', '?')
+                    size = p.get('size', 0)
+                    parts.append(f"    ✓ {phase_id}")
+                    parts.append(f"      artifact: {artifact} ({size:,} bytes)")
+                parts.append("")
+                parts.append(f"  RESUME FROM: {resume_from_phase or 'validation'}")
+                parts.append("")
+                parts.append("  RULES:")
+                parts.append("  1. DO NOT call write_workspace_file for any completed artifact.")
+                parts.append("  2. DO NOT re-run SQL/notebooks for completed phases.")
+                parts.append("  3. You MAY call read_workspace_file on completed artifacts")
+                parts.append("     if you need their content as input for the next phase.")
+                parts.append("  4. Call report_progress(status='completed') for each skipped")
+                parts.append("     phase so the UI shows correct progress.")
+                parts.append(f"  5. Start executing from phase '{resume_from_phase}'.")
+            else:
+                # Legacy step-level resume (Lakebase-based)
+                parts.append(f"  last_completed_step: {resume_context.get('last_completed_step', 'N/A')}")
+                parts.append(f"  current_step: {resume_context.get('current_step', 'N/A')}")
+                artifacts = resume_context.get('artifacts_written', [])
+                if artifacts:
+                    parts.append("  artifacts_written (verify these exist, skip phases if valid):")
+                    for a in artifacts:
+                        parts.append(f"    - {a}")
+                findings = resume_context.get('prior_findings', [])
+                if findings:
+                    parts.append("  prior_findings:")
+                    for f in findings:
+                        parts.append(f"    - {f}")
+                parts.append("")
+                parts.append("  Use this context to skip listing the output folder — verify the")
+                parts.append("  artifacts above directly, then continue from the first incomplete phase.")
+            parts.append("═" * 72)
 
         if supplement:
             parts.append("")

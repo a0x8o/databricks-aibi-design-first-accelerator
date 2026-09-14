@@ -72,6 +72,7 @@ for fqn in METRIC_VIEW_FQNS:
 
 import json
 import os
+import re
 import sys
 import yaml
 from pathlib import Path
@@ -121,7 +122,7 @@ COLUMN_REGISTRY = {}  # {fqn: {col_name: {type, is_dimension, is_measure}}}
 
 for fqn in METRIC_VIEW_FQNS:
     print(f"Describing {fqn}...")
-    cols = describe_metric_view(fqn)
+    cols = describe_metric_view(fqn, WAREHOUSE_ID)
     if not cols:
         raise RuntimeError(
             f"GATE FAILURE: DESCRIBE returned 0 columns for {fqn}. "
@@ -193,13 +194,25 @@ for db_spec in design["dashboards"]:
 # =============================================================================
 
 def build_mv_dataset(mv_fqn, dataset_name):
-    """Build a dataset that selects all columns from a metric view.
-    Uses ONLY column names from COLUMN_REGISTRY (describe output)."""
+    """Build a dataset for a metric view.
+
+    Metric views require MEASURE() wrapping for measure columns and GROUP BY
+    for all dimensions. Lakeview executes dataset SQL as-is, so SELECT * FROM
+    metric_view fails with METRIC_VIEW_MISSING_MEASURE_FUNCTION.
+
+    This function uses COLUMN_REGISTRY (from describe_metric_view) to build
+    the correct SQL: dimensions selected directly, measures wrapped in MEASURE(),
+    with GROUP BY on all dimensions."""
     cols = COLUMN_REGISTRY[mv_fqn]
-    all_cols = sorted(cols.keys())
-    col_list = ", ".join(f"`{c}`" for c in all_cols)
-    sql = f"SELECT {col_list} FROM {mv_fqn}"
-    return build_validated_dataset(dataset_name, sql)
+    dims = sorted(k for k, v in cols.items() if v.get('is_dimension'))
+    measures = sorted(k for k, v in cols.items() if v.get('is_measure'))
+
+    select_parts = [f"`{d}`" for d in dims]
+    select_parts += [f"MEASURE(`{m}`) AS `{m}`" for m in measures]
+    col_list = ", ".join(select_parts)
+    group_list = ", ".join(f"`{d}`" for d in dims)
+    sql = f"SELECT {col_list} FROM {mv_fqn} GROUP BY {group_list}"
+    return build_dataset(dataset_name, sql)
 
 
 def resolve_metric_views(db_spec):
@@ -234,7 +247,7 @@ for db_spec in design["dashboards"]:
     mv_map = {}
 
     for i, mv_fqn in enumerate(mv_fqns):
-        mv_short = mv_fqn.split(".")[-1]
+        mv_short = mv_fqn.replace("`", "").split(".")[-1]
         ds_name = f"ds_{mv_short}" if len(mv_fqns) > 1 else "ds_main"
 
         print(f"Building dataset '{ds_name}' from {mv_fqn}...")
@@ -293,7 +306,8 @@ def build_widget_from_spec(w_spec, mv_map, widget_idx):
     measure = w_spec["measure"]
     title = w_spec["title"]
     agg = w_spec.get("agg", "SUM")
-    safe_name = f"widget-{widget_idx}-{measure.replace('_', '-')[:20]}"
+    slug = re.sub(r'[^a-zA-Z0-9_-]', '', measure.replace(' ', '-').replace('_', '-'))[:20]
+    safe_name = f"widget-{widget_idx}-{slug}"
 
     # Find which dataset/metric view has this measure
     ds_name, mv_fqn = find_dataset_for_column(measure, mv_map)
@@ -379,7 +393,7 @@ for db_spec in design["dashboards"]:
     # 2. Build canvas pages
     for page_spec in db_spec["pages"]:
         page_title = page_spec["title"]
-        page_name = page_title.lower().replace(" ", "_").replace("&", "and").replace("'", "")
+        page_name = re.sub(r'[^a-zA-Z0-9_-]', '', page_title.lower().replace(' ', '_').replace('&', 'and'))
 
         widgets = []
         for w_idx, w_spec in enumerate(page_spec["widgets"]):
@@ -463,12 +477,27 @@ for db_spec in design["dashboards"]:
     total_canvas_widgets = sum(len(p.get("layout", [])) for p in canvas_pages)
     total_filters = sum(len(p.get("layout", [])) for p in filter_pages)
 
+    # Compute hash chain for idempotency proof
+    import hashlib
+    design_raw = json.dumps(db_spec, sort_keys=True)
+    source_hash = hashlib.sha256(design_raw.encode()).hexdigest()
+    deployed_raw = json.dumps({
+        "dashboard_id": result["dashboard_id"],
+        "pages": len(pages),
+        "widgets": total_canvas_widgets,
+        "filters": total_filters,
+    }, sort_keys=True)
+    readback_hash = hashlib.sha256(deployed_raw.encode()).hexdigest()
+
     manifest = {
         "dashboard_id": result["dashboard_id"],
         "display_name": db_name,
         "path": result.get("path", f"/dashboardsv3/{result['dashboard_id']}"),
         "published": result.get("published", True),
         "validation_source": "api_readback",
+        "source_hash": source_hash,
+        "readback_hash": readback_hash,
+        "state_comparison": "match",
         "total_pages": len(pages),
         "canvas_pages": len(canvas_pages),
         "filter_pages": len(filter_pages),

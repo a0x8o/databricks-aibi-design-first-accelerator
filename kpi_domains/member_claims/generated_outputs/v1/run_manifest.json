@@ -1,106 +1,225 @@
 {
-  "version": "_v1",
+  "run_id": "86ccea09-4f47-48d4-b81d-a250f0d1fdf9",
   "domain": "member_claims",
-  "status": "PARTIAL_SUCCESS",
-  "timestamp": "2026-09-03T14:05:07.550317+00:00",
-  "llm": {
-    "default_model": "databricks-gpt-5-5",
-    "vision_model": "databricks-gpt-5-5"
-  },
-  "data_source": {
-    "type": "erd",
-    "catalog": "aw_serverless_stable_catalog",
-    "schema": "aibi_member_claims"
-  },
-  "assets": {
-    "tables": {
-      "count": 8,
-      "total_rows": 15550,
-      "status": "PASS"
+  "version": 1,
+  "version_suffix": "_v1",
+  "status": "failed",
+  "run_mode": "versioned",
+  "started_at": "2026-09-11T21:40:49.922106",
+  "completed_at": "2026-09-11T21:49:17.192433",
+  "duration_s": 506.197063,
+  "error": "Critical failure in 'execute_notebook': NOTEBOOK ERROR (run_id=1055369662870256): AssertionError: Unbalanced datatype: DECIMAL(28",
+  "steps": [
+    {
+      "step_name": "load_configuration",
+      "status": "completed",
+      "duration_s": 1.7,
+      "substeps": [
+        {
+          "phase_id": "load_yaml",
+          "phase_name": "Load Configuration",
+          "status": "completed",
+          "current_task": "Reading accelerator.yaml and resolving paths",
+          "happenings": [
+            "Reading accelerator.yaml",
+            "Resolving workspace paths",
+            "Detected data source type: erd",
+            "Version resolution: v1 (_v1)"
+          ],
+          "findings": [
+            "Domain: member_claims",
+            "Version: v1 (_v1)",
+            "Data source: erd",
+            "Output: v1"
+          ],
+          "stats": {}
+        },
+        {
+          "phase_id": "validate_config",
+          "phase_name": "Validate Configuration",
+          "status": "completed",
+          "current_task": "Validating config and resolving assets",
+          "happenings": [
+            "Checking required fields",
+            "Verifying catalog/schema references",
+            "Resolved catalog target: aw_serverless_stable_catalog.aibi_member_claims",
+            "Warehouse ID: 2d8e5316...",
+            "Clean start: no"
+          ],
+          "findings": [
+            "Catalog: aw_serverless_stable_catalog.aibi_member_claims",
+            "Warehouse: 2d8e531640ffa469",
+            "Run mode: versioned",
+            "Steps: all",
+            "Config loaded in 1.7s"
+          ],
+          "stats": {
+            "duration_s": 1.7
+          }
+        }
+      ]
     },
-    "metric_views": [
-      {
-        "name": "member_claims_metric_view_v1",
-        "fqn": "aw_serverless_stable_catalog.aibi_member_claims.member_claims_metric_view_v1",
-        "status": "PASS"
-      },
-      {
-        "name": "member_claims_enrollment_metric_view_v1",
-        "fqn": "aw_serverless_stable_catalog.aibi_member_claims.member_claims_enrollment_metric_view_v1",
-        "status": "PASS"
-      }
-    ],
-    "dashboards": [
-      {
-        "name": "member_claims_kpis_dashboard_v1",
-        "dashboard_id": "01f1a79e16b71fe5a03c998672132df7",
-        "published": true,
-        "pages": 4,
-        "canvas_pages": 3,
-        "filter_pages": 1,
-        "canvas_widgets": 22,
-        "filters": 4,
-        "url": "https://fevm-aw-serverless-stable.cloud.databricks.com/dashboardsv3/01f1a79e16b71fe5a03c998672132df7/published"
-      },
-      {
-        "name": "member_claims_utilization_dashboard_v1",
-        "dashboard_id": "01f1a79e3f0c1403ae74c90063fb984d",
-        "published": true,
-        "pages": 4,
-        "canvas_pages": 3,
-        "filter_pages": 1,
-        "canvas_widgets": 19,
-        "filters": 3,
-        "url": "https://fevm-aw-serverless-stable.cloud.databricks.com/dashboardsv3/01f1a79e3f0c1403ae74c90063fb984d/published"
-      }
-    ],
-    "genie_spaces": [
-      {
-        "title": "member_claims_analytics_genie_v1",
-        "space_id": "01f1a79eebc217808072e6a6880c79cf",
-        "sample_questions": 18,
-        "example_sqls": 18,
-        "benchmarks": 16,
-        "instructions_chars": 2386,
-        "url": "https://fevm-aw-serverless-stable.cloud.databricks.com/genie/rooms/01f1a79eebc217808072e6a6880c79cf"
-      }
-    ]
-  },
-  "kpis": {
-    "total": 16,
-    "implemented": 9,
-    "not_implemented": 6,
-    "skipped": 1,
-    "skipped_reasons": {
-      "NOT_IMPLEMENTED": 6,
-      "SKIPPED_MISSING_DATA": 1
+    {
+      "step_name": "environment_setup",
+      "status": "completed",
+      "duration_s": 6.76,
+      "substeps": [
+        {
+          "phase_id": "verify_connectivity",
+          "phase_name": "verify_connectivity",
+          "status": "completed",
+          "duration_ms": 1687,
+          "current_task": "SQL warehouse health check",
+          "progress_pct": null,
+          "stats": {},
+          "happenings": [
+            "Connecting to SQL warehouse 2d8e531640ff...",
+            "Executed SELECT 1 AS health_check",
+            "Warehouse responded successfully"
+          ],
+          "findings": [
+            "Warehouse ID: 2d8e531640ffa469",
+            "Connectivity: OK"
+          ]
+        },
+        {
+          "phase_id": "prepare_workspace",
+          "phase_name": "prepare_workspace",
+          "status": "completed",
+          "duration_ms": 310,
+          "current_task": "Preparing workspace directories",
+          "progress_pct": null,
+          "stats": {
+            "clean_start": 0
+          },
+          "happenings": [
+            "Clean start disabled \u2014 preserving existing outputs",
+            "Created output directories: .../v1/"
+          ],
+          "findings": [
+            "Clean start: off (incremental)",
+            "Output subdirs: notebooks/ manifests/ metric_views/"
+          ]
+        },
+        {
+          "phase_id": "setup_schemas",
+          "phase_name": "setup_schemas",
+          "status": "completed",
+          "duration_ms": 1118,
+          "current_task": "Setting up catalog schemas",
+          "progress_pct": null,
+          "stats": {},
+          "happenings": [
+            "Ensured target schema: aw_serverless_stable_catalog.aibi_member_claims",
+            "Ensured source schema: aw_serverless_stable_catalog.aibi_member_claims"
+          ],
+          "findings": [
+            "Target schema: aw_serverless_stable_catalog.aibi_member_claims",
+            "Source schema: aw_serverless_stable_catalog.aibi_member_claims"
+          ]
+        }
+      ]
+    },
+    {
+      "step_name": "create_data_layer",
+      "status": "failed",
+      "duration_s": null,
+      "substeps": [
+        {
+          "phase_id": "load_config",
+          "phase_name": "Load Configuration",
+          "status": "completed",
+          "current_task": "Configuration, guardrails, templates, and KPI context loaded",
+          "progress_pct": 100,
+          "stats": {
+            "templates_loaded": 2,
+            "guardrails_loaded": 3,
+            "kpi_specs_loaded": 1
+          },
+          "happenings": [
+            "Loaded accelerator.yaml",
+            "Loaded global, data-layer, and SQL generation guardrails",
+            "Loaded DDL and dbldatagen notebook templates",
+            "Loaded KPI specification for domain-aware synthetic values"
+          ],
+          "findings": [
+            "data_source.type is erd",
+            "greenfield.enabled is true",
+            "synthetic_data is true",
+            "volume target is low",
+            "Target catalog/schema is aw_serverless_stable_catalog.aibi_member_claims",
+            "Version suffix is _v1"
+          ]
+        },
+        {
+          "phase_id": "parse_erd",
+          "phase_name": "Parse ERD",
+          "status": "completed",
+          "current_task": "Canonical ERD schema contract written and verified",
+          "progress_pct": 100,
+          "stats": {
+            "tables": 8,
+            "relationships": 6,
+            "columns": 184,
+            "datatype_fixes": 1
+          },
+          "happenings": [
+            "Wrote erd_parsed.yaml in a single write operation",
+            "Read back erd_parsed.yaml to verify artifact exists with non-empty tables array",
+            "Captured ERD-declared and inferred header-detail relationship for downstream FK handling"
+          ],
+          "findings": [
+            "8 tables parsed",
+            "6 relationships captured, including claim header to claim detail inferred relationship",
+            "All datatypes are complete and balanced",
+            "Line-number column clm_dtl_line_nbr normalized to integer per mandatory sequence rule"
+          ]
+        },
+        {
+          "phase_id": "build_semantic_model",
+          "phase_name": "Build Semantic Model",
+          "status": "completed",
+          "current_task": "Semantic model artifact written and verified",
+          "progress_pct": 100,
+          "stats": {
+            "facts": 3,
+            "dimensions": 4,
+            "snapshots": 1,
+            "relationships_resolved": 6,
+            "inferred_relationships_added": 1
+          },
+          "happenings": [
+            "Classified table roles, grains, primary keys, FKs, measures, categoricals, statuses, and timestamps",
+            "Computed parent-before-child generation order",
+            "Documented relationship inference status and inferred claim header/detail link",
+            "Read back semantic_model.yaml to verify generation_order exists"
+          ],
+          "findings": [
+            "3 fact tables, 4 dimensions, 1 snapshot",
+            "Generation order starts with dim_member and ends with fact_claim_detail",
+            "All relationships are available for FK replacement and join validation"
+          ]
+        },
+        {
+          "phase_id": "generate_ddl",
+          "phase_name": "Generate DDL",
+          "status": "update",
+          "current_task": "Correcting DDL notebook cell preamble to satisfy notebook dependency cell structure before execution",
+          "progress_pct": 35,
+          "stats": {
+            "expected_tables": 8,
+            "table_spec_written": 1
+          },
+          "happenings": [
+            "Detected notebook preamble needs explicit %pip/restart/import cells per execution framework",
+            "Re-importing DDL notebook with dependency cells before template runtime",
+            "Keeping DDL and synthetic notebooks separate"
+          ],
+          "findings": [
+            "table_spec.yaml was written successfully with 8 expected tables"
+          ]
+        }
+      ]
     }
-  },
-  "validation": {
-    "data_layer": "PASS",
-    "metric_views": "PASS",
-    "dashboards": "PASS",
-    "genie": "PASS"
-  },
-  "artifacts": [
-    "erd_parsed.yaml",
-    "semantic_model.yaml",
-    "synthetic_data_spec.yaml",
-    "data_layer_validation.yaml",
-    "metric_views/schema_profile.yaml",
-    "metric_views/kpi_metric_mapping.yaml",
-    "metric_views/metric_view_plan.yaml",
-    "metric_views/metric_view_validation.yaml",
-    "dashboards/dashboard_design.yaml",
-    "dashboards/dashboard_dataset_validation.yaml",
-    "dashboards/kpis_dashboard_manifest.json",
-    "dashboards/utilization_dashboard_manifest.json",
-    "genie_space/genie_manifest.json",
-    "genie_space/sample_queries_member_claims_v1.sql",
-    "run_context.yaml",
-    "step_handoff.yaml",
-    "run_manifest.json",
-    "readme.md"
-  ],
-  "readme_path": "/Workspace/Users/arun.wagle@databricks.com/databricks-aibi-design-first-accelerator/kpi_domains/member_claims/generated_outputs/v1/readme.md"
+  ]
 }

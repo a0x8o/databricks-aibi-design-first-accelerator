@@ -3,9 +3,11 @@
 > **Guardrails:** Before executing this step, read and internalize:
 > 1. `framework/prompts/guardrails/00_global_rules.md` (ALWAYS — every step)
 > 2. `framework/prompts/guardrails/03_dashboard_guardrails.md` (THIS step's gates, rules, and anti-patterns)
+> 3. `framework/prompts/guardrails/sql_generation_rules.md` (ALL SQL generation — dataset queries, validation SQL)
 >
-> Dashboard deployment uses `dashboard_notebook.py.template` (the dashboard compiler).
-> The LLM's job is to produce `dashboard_design.yaml`. The template handles deployment.
+> Dashboard deployment uses `dashboard_notebook.py.template` (the Deterministic Deployment Runtime).
+> The LLM produces `dashboard_design.yaml` (declarative spec). The template handles compilation, deployment, and readback.
+> Four-gate validation runs inside the template before API calls.
 > These guardrail files are BINDING. Violations are pipeline failures.
 
 ## CONTEXT ISOLATION — Read This First
@@ -31,9 +33,21 @@ Forget all execution details from prior steps (ERD parsing, synthetic data gener
 
 **Rules:**
 - Read `step_handoff.yaml` BEFORE any other action in this step
-- Use `sql_fqn` value EXACTLY as written (it is already correctly backtick-quoted)
 - Use `display_name` value EXACTLY as written (it is already snake_case validated)
-- If these values look wrong, HALT — do NOT fix them locally
+
+### Normalize `step_handoff.yaml` Before Use
+
+After reading `step_handoff.yaml`, apply these **deterministic normalizations** before proceeding. These handle cases where the upstream step wrote slightly wrong formats:
+
+1. **`sql_fqn` backtick normalization:** If any `metric_view_fqns[].sql_fqn` value is NOT backtick-quoted (e.g., `catalog.schema.view` instead of `` `catalog`.`schema`.`view` ``), split on `.` and wrap each segment in backticks: `` `{parts[0]}`.`{parts[1]}`.`{parts[2]}` ``. Strip any existing backticks first to avoid double-quoting.
+
+2. **`warehouse_id` fallback:** If `warehouse_id` is missing from `step_handoff.yaml`, read it from `accelerator.yaml` field `warehouse_id`.
+
+3. **`parent_path` fallback:** If `parent_path` is missing, construct it as: `/{output_folder_without_Workspace_prefix}/dashboards` (strip leading `/Workspace` from `output_folder`). The Lakeview API requires a `/Users/...` path, NOT a `/Workspace/Users/...` path. Example: `/Users/user@example.com/project/kpi_domains/domain/generated_outputs/v3/dashboards`.
+
+4. **`workspace_host` fallback:** If missing, derive from the Databricks SDK or use the environment's host URL.
+
+After normalization, write the corrected `step_handoff.yaml` back to `{OUTPUT_FOLDER}` so downstream steps (Genie) also get the normalized values.
 
 ### Pipeline Halt Rules & Recovery
 
@@ -45,6 +59,7 @@ If `step_handoff.yaml` does NOT exist in `{OUTPUT_FOLDER}`:
    - Construct `dashboard_display_names` from `assets.dashboards[].name` + version suffix
    - Construct `genie_title` from `assets.genie.space_name` + version suffix
    - Populate `warehouse_id`, `parent_path`, `workspace_host`, `catalog`, `schema`
+   - **`parent_path` MUST be set to the output folder's dashboards subfolder** (e.g. `/Users/{username}/databricks-aibi-design-first-accelerator/kpi_domains/{domain}/generated_outputs/{version}/dashboards`). This is the workspace path (NOT the `/Workspace/`-prefixed DBFS path) where the Lakeview API creates the dashboard. NEVER use the user's home root (`/Users/{username}`) — the service principal does not have create permission there. Always use a subfolder within the project directory.
    - Write the reconstructed `step_handoff.yaml` to `{OUTPUT_FOLDER}`
    - Log: `"⚠️ RECOVERY: step_handoff.yaml was missing. Reconstructed from run_context.yaml."`
    - Proceed normally
@@ -91,10 +106,14 @@ The objective is to produce dashboards that are:
 ## ENFORCEMENT HEADER
 
 <!-- @enforcement
-  pattern: lakeview_api_execution
+  pattern: declarative_artifact + lakeview_api_execution
+  architecture: three_plane (generation → control → execution → verification → manifest)
+  declarative_artifact: dashboard_design.yaml (pages, widgets, datasets, filters)
   api_reference_required: lakeview_dashboard_api.md
   multi_dashboard_mandatory: true  # If assets.dashboards[] has N entries, create N dashboards
   filters_mandatory: true  # Every dashboard MUST have dimension filters
+  four_gate_model: structural → metadata → semantic → deployment
+  error_classifier: routes PERMISSION_DENIED to deterministic fail, API errors to LLM repair
   gates:
     - id: api_contract_loaded
       after_step: 1
@@ -131,11 +150,13 @@ The following actions are STRICTLY FORBIDDEN:
 10. **DO NOT improvise or use custom logic** — this prompt defines the EXACT sequence. Do NOT substitute your own dashboard creation workflow, skip gates, or collapse multiple steps into a single API call. Every numbered step in this prompt exists because prior runs failed when it was skipped.
 11. **DO NOT use `query` (string) in dataset objects** — MUST use `queryLines` (array of strings) per `lakeview_dashboard_api.md`. Using `query` causes silent rendering failures.
 12. **DO NOT call `w.lakeview.create()` before Steps 1-11 are complete** — the design contract, dataset validation YAML, and preflight structural validation MUST all exist first. Jumping to API creation "because the dashboard seems simple" is the #1 cause of dashboard failures.
-13. **DO NOT use `execute_python` for dashboard creation or publishing** — the subprocess has NO WorkspaceClient, NO Databricks SDK access, and NO API tokens. Use the `create_dashboard` and `publish_dashboard` tools instead. Any Python code using `w.lakeview.*`, `w.api_client.do(...)`, or `requests.post(...)` will FAIL.
+13. **DO NOT use the `create_dashboard` or `publish_dashboard` tools** — these tools are DISABLED. Dashboard creation MUST use the template notebook pattern (same as metric views and Genie spaces): the LLM produces `dashboard_design.yaml` (declarative spec), and `dashboard_notebook.py.template` (the Deterministic Deployment Runtime) handles compilation, Lakeview API deployment, readback, and manifest writing. Any attempt to call `create_dashboard` or `publish_dashboard` directly will fail with `tool is disabled`.
 14. **DO NOT use `multilineTextboxSpec` as a plain string for text widgets** — the Lakeview API rejects plain strings and returns `'failed to parse serialized dashboard'`. The field MUST be an object: `"multilineTextboxSpec": {"value": "<markdown>"}`. Also NEVER use `textboxSpec` or `textbox_spec` (wrong key names). The template's `build_text_widget()` handles this correctly; always use it.
 15. **DO NOT hand-write filter widget JSON inline** — ALWAYS use `build_filter_widget()` or `build_filters_page()` from the helper template. Hand-written filter JSON consistently omits `queryName` from `encodings.fields[]`, which makes filters appear as "no fields or parameters selected" in the Lakeview UI. The template function at line 454 ALWAYS includes `queryName: "main_query"`. If you are building dashboard JSON without importing and calling the template helpers, you are violating this rule.
 16. **DO NOT define your own widget builder functions** (e.g., `def bar(...)`, `def counter(...)`, `def line(...)`) — ALWAYS import `build_bar_chart`, `build_counter`, `build_line_chart` etc. from `lakeview_dashboard_helpers.py.template`. Hand-rolled builder functions have wrong signatures and produce `TypeError: bar() missing required positional argument` crashes. See Step 8 for the exact import boilerplate.
 17. **DO NOT skip DESCRIBE on the metric view before building datasets** — always run `DESCRIBE TABLE {metric_view_fqn}` and use the RETURNED column names in dataset SQL and filter field references. The metric view dimension names (e.g., `claim_type`, `service_date`) may differ from the source table column names (e.g., `clm_dtl_claim_type`, `clm_dtl_specific_dos_date`). Using source-table column names in dashboard SQL will produce empty results or filter binding failures.
+18. **DO NOT use `spark.sql()` for any SQL execution** — the `spark` variable is NOT guaranteed to be available in the notebook execution context (serverless compute, job tasks). ALL SQL must go through the Statement Execution API (`w.statement_execution.execute_statement()`) or the template helper functions (`describe_metric_view()`, `validate_dataset_sql()`, `build_validated_dataset()`), which now use the Statement Execution API internally. Using `spark.sql()` will cause `NameError: name 'spark' is not defined` and crash the pipeline.
+19. **DO NOT set `PARENT_PATH` to the user's home root** (e.g., `/Users/{username}`) — the service principal running the pipeline does NOT have create permission there. Always set `PARENT_PATH` to a subfolder within the project's output directory (e.g., `/Users/{username}/databricks-aibi-design-first-accelerator/kpi_domains/{domain}/generated_outputs/{version}/dashboards`). Use the `parent_path` value from `step_handoff.yaml` if available. If reconstructing, derive it from `{OUTPUT_FOLDER}` by stripping the `/Workspace` prefix and appending `/dashboards`.
 
 ### HARD STOP RULE: No Divergence from This Prompt
 
@@ -150,6 +171,7 @@ If the executing agent:
 - Hand-writes filter JSON without using `build_filter_widget()` / `build_filters_page()` → **INVALID** (consistently omits `queryName`)
 - Builds dataset SQL using column names from `erd_parsed.yaml` or `kpi_metric_mapping.yaml` without first running `DESCRIBE TABLE {metric_view_fqn}` → **INVALID** (metric view aliases differ from source table column names)
 - Defines its own `bar()`, `counter()`, `line()` or similar widget builder functions instead of importing from the template → **INVALID** (signature mismatch causes TypeError crashes)
+- Uses `spark.sql()` for any SQL execution → **INVALID** (causes `NameError: name 'spark' is not defined` on serverless compute; use Statement Execution API or template helpers instead)
 
 Any of these invalidate the dashboard and require re-execution from Step 1 of this prompt.
 
@@ -1640,11 +1662,51 @@ Do not break widget semantics.
 For each planned widget:
 
 1. generate SQL against the validated Metric View;
-2. use `MEASURE()` for validated measures;
+2. **use `MEASURE()` for ALL validated measures** — this is NON-NEGOTIABLE;
 3. include required grouping dimensions;
 4. include only supported filters;
 5. apply ordering/Top-N where required;
 6. use CTE/window logic only when the KPI/dashboard design requires it.
+
+### CRITICAL: MEASURE() Is Mandatory for ALL Measure References
+
+Metric view measures are NOT regular columns — they are computed expressions defined in the metric view YAML.
+Accessing a measure column directly (without `MEASURE()`) causes:
+
+```text
+SQL ERROR: [METRIC_VIEW_MISSING_MEASURE_FUNCTION] The usage of measure column [Total Claims,Total Paid Amount]
+```
+
+**NEVER write dataset SQL like this:**
+```sql
+-- WRONG — direct column access causes METRIC_VIEW_MISSING_MEASURE_FUNCTION
+SELECT `Total Claims`, `Total Paid Amount`
+FROM catalog.schema.metric_view
+
+-- WRONG — even with GROUP BY, measures MUST be wrapped in MEASURE()
+SELECT claim_type, `Total Paid Amount`
+FROM catalog.schema.metric_view
+GROUP BY claim_type
+```
+
+**ALWAYS write dataset SQL like this:**
+```sql
+-- CORRECT — measures wrapped in MEASURE()
+SELECT MEASURE(`Total Claims`) AS total_claims,
+       MEASURE(`Total Paid Amount`) AS total_paid
+FROM `catalog`.`schema`.`metric_view`
+
+-- CORRECT — with GROUP BY for dimensional analysis
+SELECT claim_type,
+       MEASURE(`Total Paid Amount`) AS total_paid
+FROM `catalog`.`schema`.`metric_view`
+GROUP BY claim_type
+```
+
+**Backtick-quoting rules for MEASURE():**
+- Multi-word measure names (e.g., `Total Claims`, `Total Paid Amount`) MUST be backtick-quoted inside `MEASURE()`: `MEASURE(`Total Paid Amount`)`
+- Single-word measure names (e.g., `denial_rate`) can be unquoted: `MEASURE(denial_rate)` — but backtick-quoting is always safe
+- The measure name inside `MEASURE()` MUST match the EXACT `name` field from the metric view YAML definition — use the names returned by `DESCRIBE TABLE` on the metric view
 
 Each dataset SQL must have an expected result shape.
 
@@ -1759,10 +1821,13 @@ FROM metric_view GROUP BY claim_type LIMIT 5
 
 For datasets with incompatible column shapes (different column counts), group into 2-3 separate batches. This reduces 15+ tool calls to 2-3.
 
-Use:
+Use the **Statement Execution API** (NOT `spark.sql()` — spark is not available in this execution context):
 
-```text
-sql_warehouse_id
+```python
+from lakeview_dashboard_helpers import _execute_sql_via_api
+
+columns, rows = _execute_sql_via_api(batch_sql, warehouse_id)
+# or use validate_dataset_sql(sql, dataset_name, warehouse_id) for individual datasets
 ```
 
 Validate:
@@ -1853,24 +1918,44 @@ where configured.
 
 The template file has a `.template` extension and must be copied to a `.py` file before import. Use this EXACT boilerplate at the top of every `execute_python` call that builds dashboards:
 
-```python
-import sys, os, shutil
+Use the **G-12 canonical path derivation** from `guardrails/00_global_rules.md`:
 
-deploy_root = os.environ.get("DEPLOY_ROOT", "/Workspace/Users/{username}/databricks-aibi-design-first-accelerator")
+```python
+import sys, os, shutil, yaml
+
+# G-12: Primary method — read deploy_root from run_context.yaml
+try:
+    with open(f"{OUTPUT_FOLDER}/run_context.yaml") as f:
+        _rc = yaml.safe_load(f)
+    deploy_root = _rc["runtime"]["deploy_root"]
+except Exception:
+    # G-12: Fallback — derive from OUTPUT_FOLDER (4 levels up)
+    deploy_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(OUTPUT_FOLDER))))
 templates_dir = f"{deploy_root}/framework/templates"
-tmp_helpers = "/tmp/pipeline_python/lakeview_dashboard_helpers.py"
+assert os.path.isdir(templates_dir), f"templates_dir not found at {templates_dir} — check G-12 derivation"
+
+tmp_dir = "/tmp/pipeline_python"
+os.makedirs(tmp_dir, exist_ok=True)
+tmp_helpers = f"{tmp_dir}/lakeview_dashboard_helpers.py"
 
 # Copy .template → .py so Python can import it
 shutil.copy2(f"{templates_dir}/lakeview_dashboard_helpers.py.template", tmp_helpers)
-shutil.copy2(f"{templates_dir}/gate_checks.py", "/tmp/pipeline_python/gate_checks.py")
-sys.path.insert(0, "/tmp/pipeline_python")
+shutil.copy2(f"{templates_dir}/gate_checks.py", f"{tmp_dir}/gate_checks.py")
+if tmp_dir not in sys.path:
+    sys.path.insert(0, tmp_dir)
 
 from lakeview_dashboard_helpers import (
     build_dataset, build_text_widget, build_counter,
     build_bar_chart, build_line_chart,
     build_filter_widget, build_filters_page, build_canvas_page,
     build_serialized_dashboard, deploy_dashboard,
+    describe_metric_view, validate_dataset_sql, build_validated_dataset,
+    _execute_sql_via_api,
 )
+
+# NOTE: describe_metric_view(fqn, warehouse_id), validate_dataset_sql(sql, name, warehouse_id),
+# and build_validated_dataset(name, sql, display_name, warehouse_id) now require warehouse_id.
+# NEVER use spark.sql() — it is not available in this execution context.
 ```
 
 **DO NOT define your own `bar()`, `counter()`, `line()`, or any other shorthand function.** The template provides the canonical builders. Defining your own function with a different signature is the #1 cause of `TypeError: bar() missing required positional argument` failures.
@@ -1880,6 +1965,12 @@ from lakeview_dashboard_helpers import (
 Use the project's supported helpers:
 
 ```python
+# Schema discovery + validation (use warehouse_id, NOT spark.sql)
+describe_metric_view(metric_view_fqn, warehouse_id)  # → {col: {type, is_dimension, is_measure}}
+validate_dataset_sql(sql, dataset_name, warehouse_id)  # → [col_name, ...]
+build_validated_dataset(name, sql, display_name, warehouse_id)  # → dataset dict (validates + builds)
+_execute_sql_via_api(stmt, warehouse_id)  # → (columns, rows) low-level Statement Execution API
+
 # Dataset
 build_dataset(name, sql, display_name)
 
@@ -2270,32 +2361,26 @@ pages[].layout[] = {
 
 **2. Page types:** The `serialized_dashboard` must include a `PAGE_TYPE_GLOBAL_FILTERS` page for filters, and `PAGE_TYPE_CANVAS` pages for widgets. Filter pages are separate from canvas pages.
 
-**3. Deployment method — use the `create_dashboard` tool (MANDATORY):**
+**3. Deployment method — use the template notebook pattern (MANDATORY):**
 
-```text
-Tool: create_dashboard
-Args:
-  display_name: "<configured_name_from_accelerator.yaml>"
-  serialized_dashboard: "<JSON string of the full serialized dashboard spec>"
-  warehouse_id: "<warehouse_id>"
-```
+The `create_dashboard` and `publish_dashboard` tools are DISABLED. Dashboard deployment MUST follow the template notebook pattern (same as metric views and Genie spaces):
 
-Returns: `SUCCESS: Dashboard ID: <id>`
+1. The LLM produces `dashboard_design.yaml` (declarative spec — pages, widgets, datasets, filters)
+2. The LLM populates `dashboard_notebook.py.template` Cell 1 with configuration from `step_handoff.yaml` and `dashboard_design.yaml`
+3. The LLM copies Cells 2-N VERBATIM from the template (they handle compilation, deployment, readback, and manifest writing)
+4. The LLM saves the notebook to `{OUTPUT_FOLDER}/dashboards/dashboard_deployment.ipynb`
+5. The LLM executes the notebook
 
-**CRITICAL:** Do NOT use `execute_python` with SDK calls (`w.lakeview.create(...)`, `w.api_client.do(...)`) — the subprocess has NO WorkspaceClient and NO access to Databricks APIs.
+The template handles:
+- Gate 1 (structural validation of design spec)
+- Gate 2 (metadata validation — metric view columns accessible)
+- Gate 3 (semantic validation — widget/field references resolve)
+- Gate 4 (deployment — Lakeview API create + publish, readback, manifest writing)
+
+**CRITICAL:** Do NOT use `create_dashboard` or `publish_dashboard` tools — they are DISABLED.
+Do NOT use `execute_python` with SDK calls (`w.lakeview.create(...)`, `w.api_client.do(...)`) — the subprocess has NO WorkspaceClient and NO access to Databricks APIs.
 Do NOT use `requests.post()` with tokens.
-The `create_dashboard` tool handles authentication, parent_path resolution, and error handling internally.
-
-**4. Publish after create — use the `publish_dashboard` tool (MANDATORY):**
-
-```text
-Tool: publish_dashboard
-Args:
-  dashboard_id: "<id returned from create_dashboard>"
-  warehouse_id: "<warehouse_id>"
-```
-
-Always call `publish_dashboard` immediately after successful `create_dashboard`.
+The template notebook handles authentication, compilation, deployment, and error handling internally.
 
 **5. Multiple dashboards:** When `accelerator.yaml` defines `assets.dashboards[]` as an array with multiple entries, create ALL configured dashboards — not just one. Each may have multiple pages.
 
@@ -2886,7 +2971,7 @@ This section exists at the END of the prompt to leverage recency bias. These che
 
 ## Pre-Deploy Check Artifact (GATE)
 
-**Before ANY call to `POST /api/2.0/lakeview/dashboards`**, the agent MUST produce and print the following self-check. If ANY check shows `FAIL`, the agent MUST NOT proceed.
+**Before ANY dashboard deployment via the template notebook**, the agent MUST produce and print the following self-check. If ANY check shows `FAIL`, the agent MUST NOT proceed.
 
 ```yaml
 # pre_deploy_check (print to stdout before API call)
@@ -2960,42 +3045,35 @@ The FQN MUST use 3 separate backtick pairs: `` `catalog`.`schema`.`table` ``. Ne
 ## Tool Usage (MANDATORY)
 
 ```text
-# ✅ CORRECT — use the create_dashboard tool
-Tool: create_dashboard
-Args:
-  display_name: "<configured_name_from_accelerator.yaml>"
-  serialized_dashboard: "<json.dumps(full_spec)>"
-  warehouse_id: "<warehouse_id>"
+# CORRECT — use the template notebook pattern (create_dashboard tool is DISABLED)
+1. Produce dashboard_design.yaml (declarative spec)
+2. Populate dashboard_notebook.py.template Cell 1 with config
+3. Copy Cells 2-N VERBATIM from template
+4. Save notebook to {OUTPUT_FOLDER}/dashboards/dashboard_deployment.ipynb
+5. Execute the notebook
+# The template handles: Lakeview API create + publish + readback + manifest
 
-# ❌ WRONG — execute_python with SDK calls (subprocess has no WorkspaceClient)
-execute_python with code: w.lakeview.create(...)
-execute_python with code: w.api_client.do("POST", ...)
-execute_python with code: requests.post(...)
-```
-
-## Publish Call (MANDATORY)
-
-```text
-# ✅ CORRECT — use the publish_dashboard tool
-Tool: publish_dashboard
-Args:
-  dashboard_id: "<id from create_dashboard response>"
-  warehouse_id: "<warehouse_id>"
-
-# ❌ WRONG — execute_python with SDK publish calls
-execute_python with code: w.lakeview.publish(...)
+# WRONG — these tools are DISABLED and will fail:
+Tool: create_dashboard   # DISABLED
+Tool: publish_dashboard   # DISABLED
+execute_python with code: w.lakeview.create(...)   # no WorkspaceClient in subprocess
+execute_python with code: w.api_client.do("POST", ...)   # no SDK access
+execute_python with code: requests.post(...)   # no tokens
 ```
 
 ---
 
 # Final Instruction (HIGHEST PRIORITY)
 
-If you are about to make an API call and you have NOT:
+If you are about to deploy a dashboard and you have NOT:
 1. Printed the pre_deploy_check to stdout
 2. Confirmed all checks are `true`
 3. Used a template helper function (not hand-constructed JSON)
 4. Used the EXACT configured display_name from accelerator.yaml
 5. Used 3-part backtick quoting in ALL dataset SQL
+6. Used MEASURE() for ALL measure references in dataset SQL (NEVER direct column access)
+7. Used the template notebook pattern (NOT the disabled create_dashboard tool)
+8. Used Statement Execution API or template helpers for ALL SQL (NEVER `spark.sql()`)
 
 Then **STOP. Go back. Do it correctly.**
 

@@ -1,0 +1,45 @@
+metric_views:
+  - name: member_claims_metric_view_v3
+    fqn: '`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v3`'
+    row_count: 2500
+    min_date: 2020-01-01
+    max_date: 2024-12-31
+    source_grain: one claim service/detail line
+    measures:
+      - {name: total_claims, kpi: C-1, datatype: bigint, format: integer, aggregation_semantics: additive_distinct_count}
+      - {name: total_claim_lines, kpi: C-2, datatype: bigint, format: integer, aggregation_semantics: additive}
+      - {name: total_paid_amount, kpi: C-3, datatype: decimal, format: currency_usd, aggregation_semantics: additive}
+      - {name: average_paid_per_claim, kpi: C-4, datatype: decimal, format: currency_usd, aggregation_semantics: ratio}
+      - {name: denial_rate, kpi: D-1, datatype: decimal, format: percentage, aggregation_semantics: ratio}
+      - {name: clean_claim_rate, kpi: D-2, datatype: decimal, format: percentage, aggregation_semantics: ratio}
+      - {name: payment_to_billed_ratio, kpi: D-3, datatype: decimal, format: percentage, aggregation_semantics: ratio}
+      - {name: payment_to_allowed_ratio, kpi: D-4, datatype: decimal, format: percentage, aggregation_semantics: ratio}
+      - {name: inpatient_paid_amount, kpi: D-8, datatype: decimal, format: currency_usd, aggregation_semantics: additive}
+      - {name: outpatient_paid_amount, kpi: D-9, datatype: decimal, format: currency_usd, aggregation_semantics: additive}
+      - {name: participating_provider_rate, kpi: D-10, datatype: decimal, format: percentage, aggregation_semantics: ratio}
+    dimensions:
+      - {name: service_date, datatype: date, filter_candidate: true, approximate_cardinality: 1827}
+      - {name: service_month, datatype: timestamp, filter_candidate: false, approximate_cardinality: 60}
+      - {name: claim_type, datatype: string, filter_candidate: true, approximate_cardinality: 5}
+      - {name: line_status, datatype: string, filter_candidate: true, approximate_cardinality: 5}
+      - {name: place_of_service, datatype: string, filter_candidate: true, approximate_cardinality: 7}
+      - {name: participating_provider, datatype: string, filter_candidate: true, approximate_cardinality: 3}
+      - {name: rendering_provider_specialty, datatype: string, filter_candidate: true, approximate_cardinality: unknown}
+  - name: member_claims_enrollment_metric_view_v3
+    fqn: '`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_enrollment_metric_view_v3`'
+    row_count: 1200
+    min_date: 2020-01-01
+    max_date: 2023-04-14
+    source_grain: one member enrollment/event row
+    measures:
+      - {name: new_member_enrollments, kpi: M-1, datatype: bigint, format: integer, aggregation_semantics: distinct_count}
+      - {name: active_members, kpi: M-2, datatype: bigint, format: integer, aggregation_semantics: semi_additive}
+      - {name: members_by_geography, kpi: M-3, datatype: bigint, format: integer, aggregation_semantics: semi_additive}
+    dimensions:
+      - {name: service_date, datatype: date, filter_candidate: true, approximate_cardinality: 1200}
+      - {name: service_month, datatype: timestamp, filter_candidate: false, approximate_cardinality: 40}
+      - {name: line_of_business, datatype: string, filter_candidate: true, approximate_cardinality: 5}
+      - {name: enrollment_status, datatype: string, filter_candidate: true, approximate_cardinality: unknown}
+      - {name: product_id, datatype: string, filter_candidate: false, approximate_cardinality: unknown}
+      - {name: member_state, datatype: string, filter_candidate: true, approximate_cardinality: 8}
+      - {name: member_sex, datatype: string, filter_candidate: true, approximate_cardinality: 3}

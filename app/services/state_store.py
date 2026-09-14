@@ -229,7 +229,8 @@ class StateStore:
         #             progress_pct, current_step, run_manifest, updated_at
         valid_cols = {'status', 'error', 'started_at', 'completed_at', 'version',
                       'version_suffix', 'total_steps', 'retry_count', 'config_json',
-                      'progress_pct', 'current_step', 'run_manifest', 'updated_at'}
+                      'progress_pct', 'current_step', 'run_manifest', 'updated_at',
+                      'duration_s', 'steps_completed'}
         kwargs["status"] = status
         kwargs["updated_at"] = datetime.now(timezone.utc).isoformat()
         if status == "running" and "started_at" not in kwargs:

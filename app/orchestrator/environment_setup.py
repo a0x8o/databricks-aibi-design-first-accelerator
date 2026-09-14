@@ -32,9 +32,12 @@ class EnvironmentSetup:
         - Resume from failed phase (skips completed phases)
     """
 
-    # Phase name -> handler method name
+    # Phase name -> handler method name (ordered)
+    # Split into distinct phases so the UI accordion shows granular progress.
     PHASE_HANDLERS = {
-        "setup_env": "_phase_setup_env",
+        "verify_connectivity": "_phase_verify_connectivity",
+        "prepare_workspace":   "_phase_prepare_workspace",
+        "setup_schemas":       "_phase_setup_schemas",
     }
 
     def __init__(self, config, services: dict):
@@ -91,18 +94,29 @@ class EnvironmentSetup:
                     phase_callback(phase_name, "skipped")
                 continue
 
+            # Clear phase detail before each phase
+            self._ctx.pop('_phase_detail', None)
+
             if phase_callback:
-                phase_callback(phase_name, "started")
+                phase_callback(phase_name, "started",
+                               current_task=f'Running {phase_name.replace("_", " ")}')
 
             start_ms = time.time() * 1000
             try:
                 self._run_phase(phase_name)
                 duration_ms = int(time.time() * 1000 - start_ms)
 
+                # Extract rich detail set by the phase handler
+                detail = self._ctx.pop('_phase_detail', {})
+
                 if phase_callback:
                     phase_callback(phase_name, "completed",
                                    duration_ms=duration_ms,
-                                   artifacts=self._ctx["artifacts"])
+                                   artifacts=self._ctx["artifacts"],
+                                   happenings=detail.get('happenings'),
+                                   findings=detail.get('findings'),
+                                   stats=detail.get('stats'),
+                                   current_task=detail.get('current_task'))
             except Exception as exc:
                 duration_ms = int(time.time() * 1000 - start_ms)
                 if phase_callback:
@@ -136,28 +150,95 @@ class EnvironmentSetup:
     # Phase handler methods
     # ------------------------------------------------------------------
 
-    def _phase_setup_env(self) -> None:
-        """Phase handler: full environment setup."""
-        # 1. Verify SQL warehouse connectivity
+    def _phase_verify_connectivity(self) -> None:
+        """Phase 1: Verify SQL warehouse is reachable."""
         self._verify_connectivity()
+        warehouse_id = getattr(self._config, 'sql_warehouse_id', '?') or '?'
+        self._ctx['_phase_detail'] = {
+            'current_task': 'SQL warehouse health check',
+            'happenings': [
+                f'Connecting to SQL warehouse {warehouse_id[:12]}...',
+                'Executed SELECT 1 AS health_check',
+                'Warehouse responded successfully',
+            ],
+            'findings': [
+                f'Warehouse ID: {warehouse_id}',
+                'Connectivity: OK',
+            ],
+            'stats': {},
+        }
+        logger.info("Phase verify_connectivity: complete")
 
-        # 2. Handle clean start
-        if self._config.pipeline.clean_start:
+    def _phase_prepare_workspace(self) -> None:
+        """Phase 2: Clean start (if enabled) and create output directories."""
+        output = self._config.output_folder
+        clean_start = self._config.pipeline.clean_start
+        happenings = []
+        findings = []
+
+        if clean_start:
             self._clean_output_folder()
+            happenings.append(f'Cleaned output folder: .../{output.split("/")[-1]}')
             self._clean_target_schema()
+            target = getattr(self._config.catalog, 'target', '') or ''
+            if target:
+                happenings.append(f'Dropped and recreated schema: {target}')
+                findings.append(f'Schema recreated: {target}')
+        else:
+            happenings.append('Clean start disabled — preserving existing outputs')
+            findings.append('Clean start: off (incremental)')
 
-        # 3. Ensure output directory structure
         self._create_output_structure()
-        self._ctx["artifacts"].append(self._config.output_folder)
+        self._ctx["artifacts"].append(output)
+        happenings.append(f'Created output directories: .../{output.split("/")[-1]}/')
 
-        # 4. Ensure target schema exists
-        self._ensure_target_schema()
+        # List subdirs created
+        subdirs = ['notebooks/', 'manifests/', 'metric_views/']
+        findings.append(f'Output subdirs: {" ".join(subdirs)}')
 
-        # 5. (Greenfield only) Ensure source schema exists
-        if self._config.data_source.greenfield_enabled and self._config.catalog.source:
+        self._ctx['_phase_detail'] = {
+            'current_task': 'Preparing workspace directories',
+            'happenings': happenings,
+            'findings': findings,
+            'stats': {'clean_start': 1 if clean_start else 0},
+        }
+        logger.info("Phase prepare_workspace: complete")
+
+    def _phase_setup_schemas(self) -> None:
+        """Phase 3: Ensure target and source schemas exist."""
+        happenings = []
+        findings = []
+
+        target = getattr(self._config.catalog, 'target', '') or ''
+        source = getattr(self._config.catalog, 'source', '') or ''
+        greenfield = getattr(self._config.data_source, 'greenfield_enabled', False)
+
+        if target:
+            self._ensure_target_schema()
+            happenings.append(f'Ensured target schema: {target}')
+            findings.append(f'Target schema: {target}')
+        else:
+            happenings.append('No target schema configured')
+
+        if greenfield and source:
             self._ensure_source_schema()
+            happenings.append(f'Ensured source schema: {source}')
+            findings.append(f'Source schema: {source}')
+        else:
+            if greenfield:
+                happenings.append('Greenfield mode, no source schema override')
+            else:
+                happenings.append(f'Using existing source: {source or "(default)"}')
+                if source:
+                    findings.append(f'Source schema: {source}')
 
-        logger.info("Phase setup_env: Environment setup complete")
+        self._ctx['_phase_detail'] = {
+            'current_task': 'Setting up catalog schemas',
+            'happenings': happenings,
+            'findings': findings,
+            'stats': {},
+        }
+        logger.info("Phase setup_schemas: Environment setup complete")
 
     # ------------------------------------------------------------------
     # Internal Methods

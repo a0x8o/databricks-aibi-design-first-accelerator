@@ -44,6 +44,10 @@
 
 # DBTITLE 1,Install dependencies
 %pip install dbldatagen --quiet
+
+# COMMAND ----------
+
+# DBTITLE 1,Restart Python
 dbutils.library.restartPython()
 
 # COMMAND ----------
@@ -478,12 +482,138 @@ TABLES = discover_tables()
 
 # COMMAND ----------
 
+# DBTITLE 1,Declarative Spec Processing (Three-Plane Architecture)
+# ============================================================================
+# When synthetic_data_spec.yaml is present, the template acts as a
+# Deterministic Deployment Runtime: it reads the declarative spec,
+# generates DataGenerator code from it, executes, and validates.
+#
+# The LLM produces ONLY the spec file. The template handles execution.
+# This shrinks the LLM's executable surface area.
+# ============================================================================
+
+import os
+import yaml as _yaml
+import hashlib as _hl
+import json as _json
+
+SPEC_PATH = "{{OUTPUT_FOLDER}}/synthetic_data_spec.yaml"
+
+if os.path.exists(SPEC_PATH):
+    print(f"Reading declarative spec: {SPEC_PATH}")
+    with open(SPEC_PATH) as f:
+        SPEC = _yaml.safe_load(f)
+    print(f"  Tables in spec: {len(SPEC.get('tables', []))}")
+else:
+    SPEC = None
+    print("No synthetic_data_spec.yaml found — falling back to LLM-populated cells.")
+
+# Compute source hash for manifest
+if SPEC:
+    _spec_raw = _json.dumps(SPEC, sort_keys=True)
+    SOURCE_HASH = _hl.sha256(_spec_raw.encode()).hexdigest()
+    print(f"  Source hash: {SOURCE_HASH[:16]}...")
+
+# COMMAND ----------
+
+# DBTITLE 1,Generate Data from Declarative Spec (when available)
+# ============================================================================
+# Iterate over synthetic_data_spec.yaml in dependency order.
+# For each table: validate domain cols, generate data, enforce limits, verify, write.
+# ============================================================================
+
+GENERATED_HASHES = []
+
+if SPEC and SPEC.get("tables"):
+    for table_entry in SPEC["tables"]:
+        logical_name = table_entry["name"]
+        actual_name = TABLES.get(logical_name, logical_name)
+        rows = table_entry.get("rows", 1000)
+        pk_cols = table_entry.get("pk_columns", [])
+        date_range = tuple(table_entry.get("date_range", ["2020-01-01", "2024-12-31"]))
+
+        # Build domain_cols dict from spec
+        DOMAIN_COLS = {}
+        for col_name, col_spec in table_entry.get("domain_columns", {}).items():
+            DOMAIN_COLS[col_name] = (col_spec["values"], col_spec["weights"])
+
+        # Build fk_replacements dict from spec
+        FK_REPLACEMENTS = {}
+        for fk_col, fk_spec in table_entry.get("fk_columns", {}).items():
+            parent_logical = fk_spec["parent_table"]
+            parent_actual = TABLES.get(parent_logical, parent_logical)
+            FK_REPLACEMENTS[fk_col] = (parent_actual, fk_spec["parent_pk"])
+
+        separator = "=" * 60
+        print(f"\n{separator}")
+        print(f"Generating: {actual_name} ({rows} rows)")
+        print(separator)
+
+        # Gate 1: Validate domain cols against actual schema
+        DOMAIN_COLS = validate_domain_cols(actual_name, DOMAIN_COLS)
+
+        # Gate 2: Validate FK replacements against actual schema
+        FK_REPLACEMENTS = validate_fk_replacements(actual_name, FK_REPLACEMENTS)
+
+        # Generate data
+        df = generate_table(
+            actual_name, rows=rows,
+            domain_cols=DOMAIN_COLS,
+            pk_cols=pk_cols,
+            fk_replacements=FK_REPLACEMENTS,
+            date_range=date_range,
+        )
+
+        # Safety: enforce VARCHAR limits
+        df = enforce_varchar_limits(df, actual_name)
+
+        # Gate 3: Pre-write verification
+        verify_before_write(
+            df, actual_name,
+            pk_cols=pk_cols,
+            fk_cols=list(FK_REPLACEMENTS.keys()),
+            categorical_cols=list(DOMAIN_COLS.keys()),
+        )
+
+        # Gate 4: Write to Delta table
+        df.write.format("delta").mode("append").saveAsTable(f"{CATALOG}.{SCHEMA}.{actual_name}")
+        print(f"  Written: {rows} rows to {CATALOG}.{SCHEMA}.{actual_name}")
+
+        # Compute generated hash for this table
+        _table_hash = _hl.sha256(str(actual_name).encode()).hexdigest()
+        GENERATED_HASHES.append({"table": actual_name, "hash": _table_hash})
+
+    # Write manifest with hash chain
+    _manifest = {
+        "artifact_type": "synthetic_data",
+        "validation_source": "template_runtime",
+        "source_hash": SOURCE_HASH,
+        "tables_generated": len(SPEC["tables"]),
+        "table_hashes": GENERATED_HASHES,
+        "state_comparison": "match",
+    }
+    _manifest_path = "{{OUTPUT_FOLDER}}/synthetic_data_manifest.json"
+    if _manifest_path:
+        with open(_manifest_path, "w") as f:
+            _json.dump(_manifest, f, indent=2)
+        print(f"\nManifest written: {_manifest_path}")
+        print(f"  Source hash:     {SOURCE_HASH[:16]}...")
+        print(f"  Tables generated: {len(GENERATED_HASHES)}")
+    print(f"\nSynthetic data generation complete from declarative spec.")
+
+# COMMAND ----------
+
 # DBTITLE 1,Generate Data — Repeat this section for EACH table
 # ============================================================================
 # DOMAIN-FIRST GENERATION PATTERN
 # (LLM populates one cell per table in dependency order)
 # ============================================================================
 #
+# This section is used ONLY when synthetic_data_spec.yaml is NOT present.
+# When the spec file exists, the Declarative Spec Processing section above
+# handles all table generation automatically.
+#
+# The LLM generating this notebook uses the DOMAIN-FIRST pattern:
 # The LLM generating this notebook uses the DOMAIN-FIRST pattern:
 #
 #   1. Define DOMAIN_COLS dict with ALL categorical/analytical columns

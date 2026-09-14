@@ -3,6 +3,7 @@
 > **Guardrails:** Before executing this step, read and internalize:
 > 1. `framework/prompts/guardrails/00_global_rules.md` (ALWAYS — every step)
 > 2. `framework/prompts/guardrails/01_data_layer_guardrails.md` (THIS step's gates, rules, and anti-patterns)
+> 3. `framework/prompts/guardrails/sql_generation_rules.md` (ALL SQL generation — DDL, queries, validation)
 >
 > These guardrail files are BINDING. Violations are pipeline failures.
 
@@ -21,12 +22,18 @@ The resulting data layer must be: structurally faithful to the ERD, semantically
 ## ENFORCEMENT HEADER
 
 <!-- @enforcement
-  pattern: notebook_execution
+  pattern: declarative_artifact + notebook_execution
+  architecture: three_plane (generation → control → execution → verification → manifest)
   templates_required:
     - ddl_notebook (templates.ddl_notebook from accelerator.yaml)
     - dbldatagen_notebook (templates.dbldatagen_notebook from accelerator.yaml)
+  declarative_artifacts:
+    - table_spec.yaml (DDL: tables, columns, types — compiler generates SQL)
+    - synthetic_data_spec.yaml (data gen: domains, distributions, FK mappings)
   inline_code_forbidden: true
-  ddl_pattern: CREATE TABLE IF NOT EXISTS (NEVER CREATE OR REPLACE TABLE)
+  ddl_pattern: CREATE TABLE IF NOT EXISTS (compiler-generated from table_spec.yaml, NEVER LLM-generated)
+  four_gate_model: structural → metadata → semantic → deployment
+  error_classifier: routes PARSE_SYNTAX_ERROR to LLM repair, PERMISSION_DENIED to deterministic fail
   gates:
     - id: erd_parsed_exists
       after_step: 2
@@ -36,7 +43,7 @@ The resulting data layer must be: structurally faithful to the ERD, semantically
       check: "file_exists('{OUTPUT_FOLDER}/semantic_model.yaml')"
     - id: ddl_notebook_executed
       after_step: 4
-      check: "SHOW TABLES IN {catalog}.{schema} LIKE '%{VERSION_SUFFIX}' returns >= 1 row"
+      check: "SHOW TABLES IN {catalog}.{schema} LIKE '*{VERSION_SUFFIX}' returns >= 1 row"
     - id: synthetic_spec_domain_check
       after_step: 5
       check: "Every CATEGORICAL/WEIGHTED_CATEGORICAL column has concrete domain values (no val_N, no single-char placeholders)"
@@ -75,13 +82,15 @@ The following actions are STRICTLY FORBIDDEN. Violating any is a pipeline failur
 19. **DO NOT skip `validate_domain_cols()` before `generate_table()`** — this is the determinism gate. Without it, column name mismatches produce garbage data non-deterministically across runs.
 20. **DO NOT write unquoted numeric values for STRING/VARCHAR columns in `synthetic_data_spec.yaml`** — YAML parses `99213` as integer, creating mixed-type lists. The LLM HAS the DDL types from ERD; use them: ALL values for VARCHAR/STRING columns MUST be quoted strings (`"99213"` not `99213`). See §5.4 GATE 5.2.
 21. **DO NOT write date-only strings for TIMESTAMP columns** — `"2020-01-01"` causes ValueError in dbldatagen. Always use full datetime: `"2020-01-01 00:00:00"`. The LLM KNOWS the column is TIMESTAMP from ERD; use that information.
+22. **DO NOT use backtick-quoted column names in DDL** — write `clm_dtl_billed_amt DECIMAL(27,4)` NOT `` `clm_dtl_billed_amt` DECIMAL(27,4) ``. Backticks in DDL cause `PARSE_SYNTAX_ERROR` when a comma is missing between columns.
+23. **DO NOT omit commas between column definitions** — every column MUST end with a comma except the LAST one before the closing `)`. Missing commas are the #1 cause of DDL `PARSE_SYNTAX_ERROR`.
 
 ### Environment-Specific Rules
 
 | Rule | Genie Code | Databricks App |
 |------|-----------|----------------|
-| DML (DELETE/TRUNCATE/UPDATE) | BLOCKED — ensure correctness BEFORE write | ALLOWED — use TRUNCATE + re-append to fix |
-| Recovery from bad data | Report as `DATA_QUALITY_WARNING`, proceed | TRUNCATE and regenerate |
+| DML (DELETE/UPDATE) | BLOCKED — ensure correctness BEFORE write | ALLOWED — use DELETE FROM + re-append to fix (**TRUNCATE TABLE is NOT supported in Databricks SQL / UC — always use DELETE FROM**) |
+| Recovery from bad data | Report as `DATA_QUALITY_WARNING`, proceed | DELETE FROM and regenerate |
 | Safety guardrail trigger | HALT immediately, report block | N/A (no guardrails) |
 | `.mode("overwrite")` | BLOCKED | ALSO PROHIBITED (template uses append) |
 
@@ -519,7 +528,7 @@ Because inferred relationships are first-class in `semantic_model.yaml`:
 
 ---
 
-# Step 4: Generate DDL Notebook
+# Step 4: Generate DDL from Declarative Table Spec
 
 ### Pre-Flight
 
@@ -529,25 +538,80 @@ Because inferred relationships are first-class in `semantic_model.yaml`:
 - [ ] Every PK identified
 - [ ] `templates.ddl_notebook` loaded
 
-### Process
+### Process (Three-Plane Architecture)
 
-1. Create `{workspace.output_folder}/notebooks/ddl_{domain.name}.ipynb`
-2. Populate from `templates.ddl_notebook`
-3. Generate tables from `erd_parsed.yaml` targeting `{catalog.source.catalog}.{catalog.source.schema}`
-4. Execute the notebook
+**Generation Plane (LLM):**
+1. Produce `{workspace.output_folder}/table_spec.yaml` — a declarative specification of all tables
+2. This spec is derived from `erd_parsed.yaml` and contains table names, columns, types, and comments
+3. The LLM does NOT write CREATE TABLE SQL — the compiler does that deterministically
 
-### DDL Pattern (MANDATORY)
+**Control Plane (Validator/Compiler):**
+4. **Deploy DDL notebook from template** — call the `deploy_from_template` tool with:
+   - `template_path`: `{DEPLOY_ROOT}/framework/templates/ddl_notebook.py.template`
+   - `output_path`: `{OUTPUT_FOLDER}/notebooks/ddl_{DOMAIN_NAME}.py`
+   - `placeholders`: `{"DOMAIN_NAME": "...", "OUTPUT_FOLDER": "...", "TARGET_CATALOG": "...", "TARGET_SCHEMA": "..."}`
+   This tool reads the template verbatim and performs ONLY placeholder substitution.
+   DO NOT use `import_notebook` for this — it will reject template-based paths (G-16 enforcement).
+   DO NOT read the template yourself and do string manipulation — the tool handles everything.
+5. The DDL template reads `table_spec.yaml` and compiles it into CREATE TABLE IF NOT EXISTS statements
+6. Four gates run before execution (see gate_checks framework)
+
+**Execution Plane (Runtime):**
+7. Execute the DDL notebook (template reads spec, generates SQL, executes via spark.sql)
+
+### Declarative Table Spec Schema
+
+```yaml
+# table_spec.yaml — declarative DDL specification
+# LLM produces this. Compiler (ddl_notebook template) generates CREATE TABLE SQL from it.
+catalog: "{{TARGET_CATALOG}}"
+schema: "{{TARGET_SCHEMA}}"
+version_suffix: "{{VERSION_SUFFIX}}"
+tables:
+  - name: dim_member
+    comment: "Member dimension from ERD"
+    columns:
+      - name: member_sk
+        type: BIGINT
+        nullable: false
+      - name: mbr_source_member_id
+        type: STRING
+        nullable: true
+      - name: mbr_dob
+        type: DATE
+        nullable: true
+      # ... all columns from erd_parsed.yaml
+  - name: fact_claim_detail
+    comment: "Claim detail fact from ERD"
+    columns:
+      - name: clm_dtl_claim_id
+        type: STRING
+        nullable: false
+      - name: clm_dtl_billed_amt
+        type: DECIMAL(27,4)
+        nullable: true
+      # ... all columns from erd_parsed.yaml
+```
+
+**Rules:**
+- Column names and types MUST match `erd_parsed.yaml` exactly
+- The compiler (template) generates `CREATE TABLE IF NOT EXISTS` with proper SQL syntax
+- The LLM NEVER writes SQL — only the declarative spec above
+- Backtick and comma issues are eliminated because the compiler controls SQL syntax
+
+### DDL Pattern (compiler-generated, NOT LLM-generated)
 
 ```sql
+-- Generated by compiler from table_spec.yaml
 CREATE TABLE IF NOT EXISTS {catalog}.{schema}.{table_name}{version_suffix} (
-  column_definitions...
+  column_name DATATYPE,
+  column_name DATATYPE,
+  last_column DATATYPE
 ) USING DELTA
 COMMENT '{table description}';
 ```
 
-The DDL MUST NOT modify schema to make synthetic-data generation easier. The schema does not adapt to generation.
-
-**GATE 4.1**: `SHOW TABLES IN {catalog}.{schema} LIKE '%{VERSION_SUFFIX}'` returns expected count. HALT if fewer.
+**GATE 4.1**: `SHOW TABLES IN {catalog}.{schema} LIKE '*{VERSION_SUFFIX}'` returns expected count. HALT if fewer.
 
 ### GATE 4.2: Schema Reconciliation (MANDATORY after DDL execution)
 
@@ -832,11 +896,14 @@ volume_targets:
 
 ### Process
 
-1. Create `{workspace.output_folder}/notebooks/synthetic_data_{domain.name}.ipynb`
-2. Populate from `templates.dbldatagen_notebook`
-3. For EACH table (dependency order), add generation cell using `generate_table()` with `DOMAIN_COLS` dict
-4. Execute the notebook
-5. Verify execution completed without errors
+1. Produce `{workspace.output_folder}/synthetic_data_spec.yaml` — declarative specification of all tables, row counts, column domains, FK mappings, and PK columns. The LLM produces ONLY this spec.
+2. **Deploy dbldatagen notebook from template** — call `deploy_from_template` with:
+   - `template_path`: `{DEPLOY_ROOT}/framework/templates/dbldatagen_notebook.py.template`
+   - `output_path`: `{OUTPUT_FOLDER}/notebooks/synthetic_data_{DOMAIN_NAME}.py`
+   - `placeholders`: `{"DOMAIN_NAME": "...", "OUTPUT_FOLDER": "...", "SOURCE_CATALOG": "...", "SOURCE_SCHEMA": "...", "VERSION_SUFFIX": "..."}`
+   The template is a Deterministic Deployment Runtime: it reads `synthetic_data_spec.yaml`, iterates over all tables in dependency order, calls `generate_table()` for each, enforces varchar limits, validates row counts, and writes the manifest. The LLM MUST NOT add custom cells — everything is driven by the spec.
+3. Execute the notebook via `execute_notebook`
+4. Verify execution completed without errors
 
 ### Notebook Execution
 

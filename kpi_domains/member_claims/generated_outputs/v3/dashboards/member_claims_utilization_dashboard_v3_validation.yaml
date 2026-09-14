@@ -1,0 +1,27 @@
+source: api_readback
+written_at: '2026-09-12T03:00:14.357776+00:00'
+timestamp: '2026-09-12T03:00:14.357568+00:00'
+dashboard_id: 01f1ae5612391a91bb96950858929a76
+display_name: member_claims_utilization_dashboard_v3
+published: true
+datasets: 1
+total_pages: 4
+canvas_pages: 3
+filter_pages: 1
+total_canvas_widgets: 18
+total_filters: 4
+page_details:
+- name: Filters
+  type: PAGE_TYPE_GLOBAL_FILTERS
+  widgets: 4
+- name: Utilization Patterns
+  type: PAGE_TYPE_CANVAS
+  widgets: 7
+- name: Provider Insights
+  type: PAGE_TYPE_CANVAS
+  widgets: 5
+- name: Operational Metrics
+  type: PAGE_TYPE_CANVAS
+  widgets: 6
+issues: []
+status: PASS

@@ -1,0 +1,21 @@
+{
+  "dashboard_id": "01f1ae5612391a91bb96950858929a76",
+  "display_name": "member_claims_utilization_dashboard_v3",
+  "path": "/dashboardsv3/01f1ae5612391a91bb96950858929a76",
+  "published": true,
+  "validation_source": "api_readback",
+  "source_hash": "bb5ef85ed0839914cf9cf214043faa49f013d144a7ec0bf802dac0a7f7ccc876",
+  "readback_hash": "20de22386a769f0f3e9c459b0cf8d0da8b5ac758f2f2fc7f843f6c5609c79385",
+  "state_comparison": "match",
+  "total_pages": 4,
+  "canvas_pages": 3,
+  "filter_pages": 1,
+  "total_canvas_widgets": 18,
+  "total_filters": 4,
+  "datasets": [
+    "ds_main"
+  ],
+  "metric_views": [
+    "`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v3`"
+  ]
+}

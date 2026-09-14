@@ -1,0 +1,27 @@
+source: api_readback
+written_at: '2026-09-14T13:30:26.577403+00:00'
+timestamp: '2026-09-14T13:30:26.577156+00:00'
+dashboard_id: 01f1b040713b1f69b0da0aee17ba5844
+display_name: member_claims_kpis_dashboard_v4
+published: true
+datasets: 3
+total_pages: 4
+canvas_pages: 3
+filter_pages: 1
+total_canvas_widgets: 18
+total_filters: 4
+page_details:
+- name: Filters
+  type: PAGE_TYPE_GLOBAL_FILTERS
+  widgets: 4
+- name: Financial Overview
+  type: PAGE_TYPE_CANVAS
+  widgets: 6
+- name: Claims Analysis
+  type: PAGE_TYPE_CANVAS
+  widgets: 6
+- name: Member Demographics
+  type: PAGE_TYPE_CANVAS
+  widgets: 6
+issues: []
+status: PASS

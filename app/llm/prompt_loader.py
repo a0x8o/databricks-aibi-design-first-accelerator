@@ -26,9 +26,12 @@ STEP_PROMPT_FILES = {
 }
 
 # Supplementary input files that steps reference
+# SQL generation guardrail is loaded for ALL steps that generate SQL
 SUPPLEMENT_FILES = {
-    "create_dashboards": ["inputs/lakeview_dashboard_api.md"],
-    "create_genie_space": ["inputs/genie_space_configuration.md"],
+    "create_data_layer": ["prompts/guardrails/sql_generation_rules.md"],
+    "create_metric_views": ["prompts/guardrails/sql_generation_rules.md"],
+    "create_dashboards": ["inputs/lakeview_dashboard_api.md", "prompts/guardrails/sql_generation_rules.md"],
+    "create_genie_space": ["inputs/genie_space_configuration.md", "prompts/guardrails/sql_generation_rules.md"],
 }
 
 

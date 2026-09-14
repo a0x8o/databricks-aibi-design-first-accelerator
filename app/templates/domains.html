@@ -122,6 +122,150 @@
         .domain-detail-body { grid-template-columns: 1fr; }
         .files-panel { border-right: none; border-bottom: 1px solid var(--border); }
     }
+
+    /* --- Full-Screen File Preview (replaces main content) --- */
+    .file-preview-page { display: none; padding: 0; }
+    .file-preview-page.visible { display: flex; flex-direction: column; height: calc(100vh - 56px); }
+    .domains-page.hidden { display: none; }
+
+    .file-preview-toolbar {
+        display: flex; align-items: center; gap: 12px;
+        padding: 12px 28px; border-bottom: 1px solid var(--border);
+        background: var(--bg-card); flex-shrink: 0;
+    }
+    .preview-back-btn {
+        display: inline-flex; align-items: center; gap: 6px;
+        background: none; border: 1px solid var(--border); border-radius: 6px;
+        padding: 7px 16px; font-size: 0.82rem; font-weight: 500;
+        color: var(--text-primary); cursor: pointer; transition: all 0.15s;
+    }
+    .preview-back-btn:hover { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .preview-file-title {
+        font-size: 0.95rem; font-weight: 600; color: var(--text-primary);
+        flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .preview-file-badge {
+        font-size: 0.68rem; font-weight: 600; text-transform: uppercase;
+        letter-spacing: 0.4px; padding: 3px 8px; border-radius: 4px;
+        background: var(--bg-app); color: var(--text-muted);
+    }
+
+    /* Zoom controls (image preview) */
+    .zoom-controls { display: none; align-items: center; gap: 4px; }
+    .zoom-controls.visible { display: flex; }
+    .zoom-btn {
+        width: 32px; height: 32px; border-radius: 6px;
+        border: 1px solid var(--border); background: var(--bg-app);
+        font-size: 16px; font-weight: 600; cursor: pointer;
+        color: var(--text-primary); display: flex; align-items: center; justify-content: center;
+        transition: all 0.15s; user-select: none;
+    }
+    .zoom-btn:hover { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .zoom-label {
+        font-size: 0.75rem; font-weight: 500; color: var(--text-muted);
+        min-width: 42px; text-align: center;
+    }
+    .zoom-btn-fit { padding: 0 10px; width: auto; font-size: 0.72rem; letter-spacing: 0.2px; }
+
+    /* Preview body (scrollable content area) */
+    .file-preview-body {
+        flex: 1; overflow: auto; padding: 28px;
+    }
+    .file-preview-body .loading-spinner {
+        text-align: center; padding: 64px; color: var(--text-muted); font-size: 0.9rem;
+    }
+    .file-preview-body .preview-error {
+        text-align: center; padding: 64px; color: var(--danger); font-size: 0.9rem;
+    }
+
+    /* Image preview with zoom */
+    .image-preview-wrapper {
+        display: flex; justify-content: center; align-items: flex-start;
+        min-height: 100%;
+    }
+    .image-preview-wrapper img {
+        transition: transform 0.15s ease; transform-origin: top center;
+        border-radius: 6px; box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+        max-width: 100%;
+    }
+
+    /* --- GitHub / Claude Style Markdown --- */
+    .md-content {
+        max-width: 860px; margin: 0 auto;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+        font-size: 15px; line-height: 1.72; color: var(--text-primary);
+        word-wrap: break-word;
+    }
+    .md-content h1 {
+        font-size: 1.75rem; font-weight: 700; margin: 0 0 16px;
+        padding-bottom: 10px; border-bottom: 1px solid var(--border);
+    }
+    .md-content h2 {
+        font-size: 1.35rem; font-weight: 600; margin: 32px 0 12px;
+        padding-bottom: 8px; border-bottom: 1px solid var(--border-light);
+    }
+    .md-content h3 { font-size: 1.1rem; font-weight: 600; margin: 24px 0 8px; }
+    .md-content h4 { font-size: 0.95rem; font-weight: 600; margin: 20px 0 6px; }
+    .md-content p { margin: 12px 0; }
+    .md-content ul, .md-content ol { padding-left: 28px; margin: 8px 0 16px; }
+    .md-content li { margin: 4px 0; }
+    .md-content li > p { margin: 4px 0; }
+    .md-content code {
+        background: rgba(175,184,193,0.15); padding: 2.5px 6px; border-radius: 4px;
+        font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
+        font-size: 0.88em;
+    }
+    .md-content pre {
+        background: #1e1e2e; color: #cdd6f4; padding: 16px 20px;
+        border-radius: 8px; overflow-x: auto; margin: 16px 0;
+        font-size: 13px; line-height: 1.55;
+    }
+    .md-content pre code { background: none; padding: 0; color: inherit; font-size: inherit; }
+    .md-content table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 0.88rem; }
+    .md-content table th, .md-content table td {
+        border: 1px solid var(--border); padding: 8px 14px; text-align: left;
+    }
+    .md-content table th { background: var(--bg-app); font-weight: 600; font-size: 0.82rem; }
+    .md-content table tr:nth-child(even) td { background: rgba(0,0,0,0.02); }
+    .md-content blockquote {
+        border-left: 4px solid var(--primary); margin: 16px 0; padding: 10px 20px;
+        color: var(--text-secondary); background: rgba(59,130,246,0.04);
+        border-radius: 0 6px 6px 0;
+    }
+    .md-content blockquote p { margin: 4px 0; }
+    .md-content hr { border: none; height: 1px; background: var(--border); margin: 28px 0; }
+    .md-content strong { font-weight: 600; }
+    .md-content em { font-style: italic; }
+    .md-content img { max-width: 100%; border-radius: 6px; margin: 12px 0; }
+
+    /* --- YAML Syntax Highlighting --- */
+    .yaml-preview {
+        max-width: 920px; margin: 0 auto;
+    }
+    .yaml-preview pre {
+        background: #1e1e2e; color: #cdd6f4; padding: 20px 24px;
+        border-radius: 10px; overflow-x: auto;
+        font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
+        font-size: 13.5px; line-height: 1.6; tab-size: 2;
+    }
+    .yaml-preview code { background: none; padding: 0; color: inherit; font-size: inherit; }
+    .yk { color: #89b4fa; }           /* keys */
+    .yv { color: #a6e3a1; }           /* string values */
+    .yn { color: #fab387; }           /* numbers */
+    .yb { color: #f38ba8; }           /* booleans / null */
+    .yc { color: #6c7086; font-style: italic; }  /* comments */
+    .yd { color: #f9e2af; }           /* dashes (list markers) */
+    .ya { color: #cba6f7; }           /* anchors & aliases */
+
+    /* Viewable file items */
+    .file-item.viewable { cursor: pointer; }
+    .file-item.viewable:hover { background: rgba(59,130,246,0.08); }
+    .file-view-link {
+        margin-left: auto; font-size: 0.72rem; font-weight: 500;
+        color: var(--primary); opacity: 0; transition: opacity 0.15s;
+        text-transform: uppercase; letter-spacing: 0.3px;
+    }
+    .file-item.viewable:hover .file-view-link { opacity: 1; }
 </style>
 {% endblock %}
 
@@ -182,6 +326,25 @@
                 </div>
             </div>
         </div>
+    </div>
+</div>
+<!-- Full-Screen File Preview (replaces main content) -->
+<div class="file-preview-page" id="file-preview-page">
+    <div class="file-preview-toolbar">
+        <button class="preview-back-btn" onclick="closePreview()">
+            &larr; Back
+        </button>
+        <span class="preview-file-title" id="preview-title"></span>
+        <span class="preview-file-badge" id="preview-badge"></span>
+        <div class="zoom-controls" id="zoom-controls">
+            <button class="zoom-btn" onclick="zoomImage(-1)" title="Zoom out">&minus;</button>
+            <span class="zoom-label" id="zoom-label">100%</span>
+            <button class="zoom-btn" onclick="zoomImage(+1)" title="Zoom in">+</button>
+            <button class="zoom-btn zoom-btn-fit" onclick="zoomFit()" title="Fit to screen">Fit</button>
+        </div>
+    </div>
+    <div class="file-preview-body" id="preview-body">
+        <div class="loading-spinner">Loading...</div>
     </div>
 </div>
 {% endblock %}
@@ -287,9 +450,13 @@ async function selectDomain(domain) {
         if (d.input_files && d.input_files.length > 0) {
             html += '<div class="file-group"><div class="file-group-title">KPI Inputs</div>';
             for (const f of d.input_files) {
-                const ext = f.split('.').pop();
-                const iconClass = ext === 'png' || ext === 'jpg' ? 'png' : ext === 'md' ? 'md' : 'yaml';
-                html += `<div class="file-item"><span class="file-icon ${iconClass}">&#9776;</span><span class="file-name">${f}</span></div>`;
+                const ext = f.split('.').pop().toLowerCase();
+                const iconClass = ext === 'png' || ext === 'jpg' || ext === 'jpeg' ? 'png' : ext === 'md' ? 'md' : 'yaml';
+                const isPreviewable = ['png','jpg','jpeg','gif','svg','md','yaml','yml'].includes(ext);
+                const viewableClass = isPreviewable ? 'viewable' : '';
+                const clickHandler = isPreviewable ? `onclick="openFilePreview('${domain}','${f}')"` : '';
+                const viewLabel = isPreviewable ? '<span class="file-view-link">View</span>' : '';
+                html += `<div class="file-item ${viewableClass}" ${clickHandler}><span class="file-icon ${iconClass}">&#9776;</span><span class="file-name">${f}</span>${viewLabel}</div>`;
             }
             html += '</div>';
         }
@@ -329,10 +496,12 @@ async function checkResumableRun(domain) {
 
     // PRIMARY: Check version_registry.yaml via the version-status endpoint
     // This is the SINGLE SOURCE OF TRUTH for version resolution.
+    let versionStatusChecked = false;
     try {
         const vsResp = await fetch(`/api/pipeline/version-status?domain=${domain}`);
         if (vsResp.ok) {
             const vs = await vsResp.json();
+            versionStatusChecked = true;
             if (vs.is_resumable && vs.latest_version > 0) {
                 lastResumableRun = { run_id: vs.run_id, status: vs.status, version: vs.latest_version };
                 const resumeBtn = document.getElementById('resume-btn');
@@ -340,44 +509,55 @@ async function checkResumableRun(domain) {
                 resumeBtn.style.display = 'inline-flex';
                 return;
             }
-        }
-    } catch(e) { console.debug('Version status check failed:', e); }
-
-    // FALLBACK: Check Lakebase via the runs API for incomplete runs
-    try {
-        const resp = await fetch(`/api/pipeline/runs?domain=${domain}&limit=5`);
-        if (resp.ok) {
-            const runs = await resp.json();
-            // Find the most recent run that is still running or failed
-            const resumable = runs.find(r => r.status === 'running' || r.status === 'failed');
-            if (resumable) {
-                lastResumableRun = resumable;
-                const resumeBtn = document.getElementById('resume-btn');
-                const statusLabel = resumable.status === 'running' ? 'running' : 'failed';
-                const versionLabel = resumable.version ? `v${resumable.version}` : resumable.run_id.slice(0,8);
-                resumeBtn.textContent = `\u21BB Resume ${versionLabel} (${statusLabel})`;
-                resumeBtn.style.display = 'inline-flex';
+            // If version-status says NOT resumable (latest version completed/none),
+            // trust it and do NOT fall through to Lakebase — stale failed runs
+            // for the same version would incorrectly show the resume button.
+            if (vs.latest_version > 0 && !vs.is_resumable) {
+                lastResumableRun = null;
+                document.getElementById('resume-btn').style.display = 'none';
                 return;
             }
         }
-    } catch(e) { console.debug('Resume check failed:', e); }
+    } catch(e) { console.debug('Version status check failed:', e); }
 
-    // Fallback: check localStorage for a run_id and try the status endpoint
-    if (localRunId) {
+    // FALLBACK (only when version-status endpoint was unavailable):
+    // Check Lakebase via the runs API for incomplete runs
+    if (!versionStatusChecked) {
         try {
-            const resp = await fetch(`/api/pipeline/run/${localRunId}/status`);
+            const resp = await fetch(`/api/pipeline/runs?domain=${domain}&limit=5`);
             if (resp.ok) {
-                const data = await resp.json();
-                if (data.status === 'running' || data.status === 'failed') {
-                    lastResumableRun = { run_id: localRunId, status: data.status };
+                const runs = await resp.json();
+                // Find the most recent run that is still running or failed
+                const resumable = runs.find(r => r.status === 'running' || r.status === 'failed');
+                if (resumable) {
+                    lastResumableRun = resumable;
                     const resumeBtn = document.getElementById('resume-btn');
-                    const vLabel = data.version ? `v${data.version}` : localRunId.slice(0,8);
-                    resumeBtn.textContent = `\u21BB Resume ${vLabel} (${data.status})`;
+                    const statusLabel = resumable.status === 'running' ? 'running' : 'failed';
+                    const versionLabel = resumable.version ? `v${resumable.version}` : resumable.run_id.slice(0,8);
+                    resumeBtn.textContent = `\u21BB Resume ${versionLabel} (${statusLabel})`;
                     resumeBtn.style.display = 'inline-flex';
                     return;
                 }
             }
-        } catch(e) {}
+        } catch(e) { console.debug('Resume check failed:', e); }
+
+        // Fallback: check localStorage for a run_id and try the status endpoint
+        if (localRunId) {
+            try {
+                const resp = await fetch(`/api/pipeline/run/${localRunId}/status`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.status === 'running' || data.status === 'failed') {
+                        lastResumableRun = { run_id: localRunId, status: data.status };
+                        const resumeBtn = document.getElementById('resume-btn');
+                        const vLabel = data.version ? `v${data.version}` : localRunId.slice(0,8);
+                        resumeBtn.textContent = `\u21BB Resume ${vLabel} (${data.status})`;
+                        resumeBtn.style.display = 'inline-flex';
+                        return;
+                    }
+                }
+            } catch(e) {}
+        }
     }
 
     // No resumable run found — hide button
@@ -440,6 +620,7 @@ async function launchPipeline() {
     const payload = {
         domain: selectedDomain,
         run_mode: 'versioned',
+        version_mode: 'fresh',  // Always create a new version — Resume handles retries
     };
 
     try {
@@ -460,5 +641,283 @@ async function launchPipeline() {
         btn.textContent = 'Run Pipeline';
     }
 }
+// =============================================
+// File Preview — Full-screen view with zoom
+// =============================================
+
+const PREVIEWABLE_IMAGES = ['png','jpg','jpeg','gif','svg'];
+let currentZoom = 100;
+
+async function openFilePreview(domain, filename) {
+    const body = document.getElementById('preview-body');
+    const title = document.getElementById('preview-title');
+    const badge = document.getElementById('preview-badge');
+    const zoomCtrl = document.getElementById('zoom-controls');
+
+    const ext = filename.split('.').pop().toLowerCase();
+    title.textContent = filename;
+    badge.textContent = ext.toUpperCase();
+    body.innerHTML = '<div class="loading-spinner">Loading preview...</div>';
+    zoomCtrl.classList.remove('visible');
+    currentZoom = 100;
+
+    // Swap views: hide domains page, show preview page
+    document.querySelector('.domains-page').classList.add('hidden');
+    document.getElementById('file-preview-page').classList.add('visible');
+
+    if (PREVIEWABLE_IMAGES.includes(ext)) {
+        zoomCtrl.classList.add('visible');
+        const imgUrl = `/api/domains/${domain}/input-file/${encodeURIComponent(filename)}`;
+        const img = new Image();
+        img.id = 'preview-img';
+        img.onload = () => {
+            body.innerHTML = '<div class="image-preview-wrapper" id="img-wrapper"></div>';
+            document.getElementById('img-wrapper').appendChild(img);
+            updateZoomLabel();
+        };
+        img.onerror = () => {
+            body.innerHTML = '<div class="preview-error">Failed to load image</div>';
+            zoomCtrl.classList.remove('visible');
+        };
+        img.src = imgUrl;
+    } else if (ext === 'md') {
+        try {
+            const resp = await fetch(`/api/domains/${domain}/input-file/${encodeURIComponent(filename)}`);
+            if (!resp.ok) throw new Error('Failed to fetch');
+            const data = await resp.json();
+            body.innerHTML = `<div class="md-content">${renderMarkdown(data.content || '')}</div>`;
+        } catch(e) {
+            body.innerHTML = `<div class="preview-error">Failed to load: ${e.message}</div>`;
+        }
+    } else if (ext === 'yaml' || ext === 'yml') {
+        try {
+            const resp = await fetch(`/api/domains/${domain}/input-file/${encodeURIComponent(filename)}`);
+            if (!resp.ok) throw new Error('Failed to fetch');
+            const data = await resp.json();
+            body.innerHTML = `<div class="yaml-preview"><pre><code>${highlightYaml(data.content || '')}</code></pre></div>`;
+        } catch(e) {
+            body.innerHTML = `<div class="preview-error">Failed to load: ${e.message}</div>`;
+        }
+    } else {
+        body.innerHTML = '<div class="preview-error">Preview not available for this file type</div>';
+    }
+}
+
+function closePreview() {
+    document.getElementById('file-preview-page').classList.remove('visible');
+    document.querySelector('.domains-page').classList.remove('hidden');
+}
+
+// ESC key closes preview
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && document.getElementById('file-preview-page').classList.contains('visible')) {
+        closePreview();
+    }
+});
+
+// --- Zoom controls ---
+function zoomImage(direction) {
+    const steps = [25, 50, 75, 100, 125, 150, 200, 300, 400];
+    const idx = steps.indexOf(currentZoom);
+    if (direction > 0 && idx < steps.length - 1) currentZoom = steps[idx + 1];
+    else if (direction < 0 && idx > 0) currentZoom = steps[idx - 1];
+    else if (idx === -1) currentZoom = direction > 0 ? 150 : 75; // snap to nearest
+    applyZoom();
+}
+
+function zoomFit() {
+    currentZoom = 100;
+    applyZoom();
+}
+
+function applyZoom() {
+    const img = document.getElementById('preview-img');
+    if (img) img.style.transform = `scale(${currentZoom / 100})`;
+    updateZoomLabel();
+}
+
+function updateZoomLabel() {
+    const label = document.getElementById('zoom-label');
+    if (label) label.textContent = `${currentZoom}%`;
+}
+
+// --- Robust Markdown Renderer (GitHub / Claude style) ---
+function renderMarkdown(src) {
+    if (!src) return '';
+
+    // Normalize line endings
+    src = src.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+    // Phase 1: Extract code blocks to protect them from further processing
+    const codeBlocks = [];
+    src = src.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
+        const idx = codeBlocks.length;
+        codeBlocks.push({ lang, code: code.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') });
+        return `\n%%CODEBLOCK_${idx}%%\n`;
+    });
+
+    // Phase 2: Escape remaining HTML
+    src = src.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+    // Phase 3: Inline formatting
+    src = src.replace(/`([^`]+)`/g, '<code>$1</code>');
+    src = src.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    src = src.replace(/(?<![*])\*([^*]+)\*(?![*])/g, '<em>$1</em>');
+    src = src.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    src = src.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1">');
+
+    // Phase 4: Block elements (process line-by-line)
+    const lines = src.split('\n');
+    const out = [];
+    let i = 0;
+
+    while (i < lines.length) {
+        const line = lines[i];
+        const trimmed = line.trim();
+
+        // Empty line
+        if (!trimmed) { i++; continue; }
+
+        // Code block placeholder
+        const cbMatch = trimmed.match(/^%%CODEBLOCK_(\d+)%%$/);
+        if (cbMatch) {
+            const cb = codeBlocks[parseInt(cbMatch[1])];
+            out.push(`<pre><code>${cb.code}</code></pre>`);
+            i++; continue;
+        }
+
+        // Horizontal rule
+        if (/^(---|\*\*\*|___)$/.test(trimmed)) {
+            out.push('<hr>'); i++; continue;
+        }
+
+        // Headers
+        const hMatch = trimmed.match(/^(#{1,6})\s+(.+)$/);
+        if (hMatch) {
+            const level = hMatch[1].length;
+            out.push(`<h${level}>${hMatch[2]}</h${level}>`);
+            i++; continue;
+        }
+
+        // Blockquote (collect consecutive lines)
+        if (trimmed.startsWith('&gt; ') || trimmed === '&gt;') {
+            const bqLines = [];
+            while (i < lines.length && (lines[i].trim().startsWith('&gt; ') || lines[i].trim() === '&gt;')) {
+                bqLines.push(lines[i].trim().replace(/^&gt; ?/, ''));
+                i++;
+            }
+            out.push(`<blockquote><p>${bqLines.join('<br>')}</p></blockquote>`);
+            continue;
+        }
+
+        // Table (detect header | separator pattern)
+        if (trimmed.includes('|') && i + 1 < lines.length && /^[\s|:+-]+$/.test(lines[i+1].replace(/-/g,'').replace(/\|/g,'').replace(/:/g,'').trim()) === false && /^\|?[\s:|-]+\|?$/.test(lines[i+1].trim())) {
+            const headerCells = trimmed.split('|').map(c => c.trim()).filter(c => c);
+            const headerHtml = headerCells.map(c => `<th>${c}</th>`).join('');
+            i += 2; // skip header + separator
+            const rows = [];
+            while (i < lines.length && lines[i].trim().includes('|')) {
+                const cells = lines[i].trim().split('|').map(c => c.trim()).filter(c => c);
+                rows.push('<tr>' + cells.map(c => `<td>${c}</td>`).join('') + '</tr>');
+                i++;
+            }
+            out.push(`<table><thead><tr>${headerHtml}</tr></thead><tbody>${rows.join('')}</tbody></table>`);
+            continue;
+        }
+
+        // Unordered list
+        if (/^[*+-]\s/.test(trimmed)) {
+            const items = [];
+            while (i < lines.length && /^\s*[*+-]\s/.test(lines[i])) {
+                items.push(lines[i].replace(/^\s*[*+-]\s+/, ''));
+                i++;
+            }
+            out.push('<ul>' + items.map(li => `<li>${li}</li>`).join('') + '</ul>');
+            continue;
+        }
+
+        // Ordered list
+        if (/^\d+\.\s/.test(trimmed)) {
+            const items = [];
+            while (i < lines.length && /^\s*\d+\.\s/.test(lines[i])) {
+                items.push(lines[i].replace(/^\s*\d+\.\s+/, ''));
+                i++;
+            }
+            out.push('<ol>' + items.map(li => `<li>${li}</li>`).join('') + '</ol>');
+            continue;
+        }
+
+        // Paragraph (collect consecutive non-empty, non-block lines)
+        const pLines = [];
+        while (i < lines.length && lines[i].trim() && !/^[#>|*+-]/.test(lines[i].trim()) && !/^\d+\.\s/.test(lines[i].trim()) && !/^(---|\*\*\*|___)$/.test(lines[i].trim()) && !/^%%CODEBLOCK_/.test(lines[i].trim())) {
+            pLines.push(lines[i].trim());
+            i++;
+        }
+        if (pLines.length) out.push(`<p>${pLines.join(' ')}</p>`);
+    }
+
+    return out.join('\n');
+}
+
+// --- YAML Syntax Highlighter ---
+function highlightYaml(src) {
+    if (!src) return '';
+    return src.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .split('\n').map(line => {
+            // Comment lines
+            if (/^\s*#/.test(line)) {
+                return `<span class="yc">${line}</span>`;
+            }
+            // Inline comment at end of line
+            let inlineComment = '';
+            const commentIdx = line.search(/\s+#(?!\{)/);
+            let main = line;
+            if (commentIdx > 0) {
+                inlineComment = `<span class="yc">${line.slice(commentIdx)}</span>`;
+                main = line.slice(0, commentIdx);
+            }
+            // Document markers (--- or ...)
+            if (/^(---|\.\.\.)\s*$/.test(main.trim())) {
+                return `<span class="yc">${main}</span>${inlineComment}`;
+            }
+            // Key: value lines
+            const kvMatch = main.match(/^(\s*)(- )?([\w][\w.\s/\-]*)(:)(\s*)(.*)?$/);
+            if (kvMatch) {
+                const [, indent, dash, key, colon, space, val] = kvMatch;
+                const dashHtml = dash ? `<span class="yd">${dash}</span>` : '';
+                const valHtml = val ? highlightYamlValue(val) : '';
+                return `${indent}${dashHtml}<span class="yk">${key}</span>${colon}${space}${valHtml}${inlineComment}`;
+            }
+            // List items (- value)
+            const listMatch = main.match(/^(\s*)(- )(.*)?$/);
+            if (listMatch) {
+                const [, indent, dash, val] = listMatch;
+                const valHtml = val ? highlightYamlValue(val) : '';
+                return `${indent}<span class="yd">${dash}</span>${valHtml}${inlineComment}`;
+            }
+            // Anchors & aliases
+            if (/[&*]\w/.test(main)) {
+                main = main.replace(/([&*]\w+)/g, '<span class="ya">$1</span>');
+                return `${main}${inlineComment}`;
+            }
+            return `${main}${inlineComment}`;
+        }).join('\n');
+}
+
+function highlightYamlValue(val) {
+    if (!val) return '';
+    const v = val.trim();
+    // Quoted strings
+    if (/^["'].*["']$/.test(v)) return `<span class="yv">${val}</span>`;
+    // Booleans & null
+    if (/^(true|false|yes|no|on|off|null|~)$/i.test(v)) return `<span class="yb">${val}</span>`;
+    // Numbers
+    if (/^-?[\d]+(\.[\d]+)?([eE][+-]?\d+)?$/.test(v)) return `<span class="yn">${val}</span>`;
+    // Multiline indicators
+    if (/^[|>][+-]?\s*$/.test(v)) return `<span class="yc">${val}</span>`;
+    // Plain string value
+    return `<span class="yv">${val}</span>`;
+}
+
 </script>
 {% endblock %}

@@ -4,6 +4,7 @@ Factory pattern creates and configures the app with modular blueprints.
 See docs/design_phase2.md for full architecture.
 """
 
+import atexit
 import os
 import logging
 from flask import Flask, redirect, url_for, session, render_template, request
@@ -140,6 +141,33 @@ def create_app():
     logger.info(f"{config.APP_NAME} initialized (env={os.environ.get('FLASK_ENV', 'development')})")
     return application
 
+
+# --- Shutdown hook: flush running pipeline state on process exit ---
+def _flush_running_state():
+    """Mark in-flight runs as 'failed' in Lakebase on process exit.
+
+    Covers non-gunicorn scenarios (dev server, direct `python app.py`).
+    Gunicorn worker exits are handled by worker_exit in gunicorn.conf.py.
+    """
+    try:
+        from routes.pipeline_routes import _runs, _get_state_store
+        store = _get_state_store()
+        if not store:
+            return
+        for run_id, run in _runs.items():
+            if run.get('status') == 'running':
+                try:
+                    store.update_run_status(
+                        run_id, 'failed',
+                        error='Process exit: app restarted during execution'
+                    )
+                    logger.info(f"atexit: flushed run {run_id} to Lakebase")
+                except Exception as e:
+                    logger.warning(f"atexit: failed to flush run {run_id}: {e}")
+    except Exception:
+        pass  # Best-effort — don't prevent exit
+
+atexit.register(_flush_running_state)
 
 # Create the app instance (used by gunicorn: `app:app`)
 app = create_app()

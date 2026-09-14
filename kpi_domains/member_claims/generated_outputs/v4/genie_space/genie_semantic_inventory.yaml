@@ -1,0 +1,104 @@
+metric_views:
+  - fqn: aw_serverless_stable_catalog.aibi_member_claims.member_claims_metric_view_v4
+    sql_fqn: '`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v4`'
+    description: Validated claim-detail-line metric view for claims volume, payment, denial, clean-claim, provider participation, and normalized member-claim cost measures.
+    grain: one row represents one claim detail line
+    row_count: 2500
+    primary: true
+    measures:
+      - {name: Total Claims, description: Distinct count of claims represented by claim detail lines, datatype: numeric, aggregation_semantics: DISTINCT_COUNT, kpis_supported: [C-1], synonyms: [claim count, claims volume]}
+      - {name: Total Claim Lines, description: Count of claim service lines, datatype: numeric, aggregation_semantics: ADDITIVE, kpis_supported: [C-2], synonyms: [line count, service lines]}
+      - {name: Total Paid Amount, description: Sum of paid dollars across claim lines, datatype: currency, aggregation_semantics: ADDITIVE, kpis_supported: [C-3], synonyms: [paid amount, claim paid, paid dollars]}
+      - {name: Total Billed Amount, description: Sum of billed dollars across claim lines, datatype: currency, aggregation_semantics: ADDITIVE, kpis_supported: [], synonyms: [billed amount, billed dollars]}
+      - {name: Total Allowed Amount, description: Sum of allowed dollars across claim lines, datatype: currency, aggregation_semantics: ADDITIVE, kpis_supported: [], synonyms: [allowed amount, allowed dollars]}
+      - {name: Unique Claim Members, description: Distinct claim member identifiers observed in claims, datatype: numeric, aggregation_semantics: DISTINCT_COUNT, kpis_supported: [], synonyms: [members with claims]}
+      - {name: Claim Member Months, description: Distinct member-month exposure observed in claims, datatype: numeric, aggregation_semantics: SEMI_ADDITIVE, kpis_supported: [MC-1, MC-2], synonyms: [member months, exposure]}
+      - {name: Denied Lines, description: Count of denied claim lines, datatype: numeric, aggregation_semantics: ADDITIVE, kpis_supported: [ADD-1], synonyms: [denied services, denied line count]}
+      - {name: Clean Lines, description: Count of clean claim lines, datatype: numeric, aggregation_semantics: ADDITIVE, kpis_supported: [ADD-2], synonyms: [clean claim lines]}
+      - {name: Participating Provider Paid Amount, description: Paid dollars associated with participating providers, datatype: currency, aggregation_semantics: ADDITIVE, kpis_supported: [ADD-10], synonyms: [par paid, participating provider spend]}
+      - {name: Inpatient Paid Amount, description: Paid dollars for institutional/inpatient-style claims, datatype: currency, aggregation_semantics: ADDITIVE_FILTERED, kpis_supported: [ADD-8], synonyms: [inpatient spend]}
+      - {name: Outpatient Paid Amount, description: Paid dollars for professional/outpatient-style claims, datatype: currency, aggregation_semantics: ADDITIVE_FILTERED, kpis_supported: [ADD-9], synonyms: [outpatient spend]}
+      - {name: Average Paid per Claim, description: Total paid amount divided by distinct claims, datatype: currency, aggregation_semantics: RATIO_NON_ADDITIVE, kpis_supported: [C-4], synonyms: [avg paid per claim]}
+      - {name: PMPM, description: Paid dollars per claim-observed member month, datatype: currency, aggregation_semantics: RATIO_NON_ADDITIVE, kpis_supported: [MC-1], synonyms: [per member per month, cost PMPM]}
+      - {name: Claims per 1,000 Members, description: Claims normalized per 1,000 claim-observed member months, datatype: decimal, aggregation_semantics: RATIO_NON_ADDITIVE, kpis_supported: [MC-2], synonyms: [claim frequency, claims per thousand]}
+      - {name: Denial Rate, description: Denied lines divided by total claim lines, datatype: percentage, aggregation_semantics: RATIO_NON_ADDITIVE, kpis_supported: [ADD-1], synonyms: [percent denied, denial percentage]}
+      - {name: Clean Claim Rate, description: Clean lines divided by total claim lines, datatype: percentage, aggregation_semantics: RATIO_NON_ADDITIVE, kpis_supported: [ADD-2], synonyms: [clean rate]}
+      - {name: Payment-to-Billed Ratio, description: Total paid divided by total billed, datatype: percentage, aggregation_semantics: RATIO_NON_ADDITIVE, kpis_supported: [ADD-3], synonyms: [paid to billed]}
+      - {name: Payment-to-Allowed Ratio, description: Total paid divided by total allowed, datatype: percentage, aggregation_semantics: RATIO_NON_ADDITIVE, kpis_supported: [ADD-4], synonyms: [paid to allowed]}
+      - {name: Average Paid per Member, description: Total paid divided by distinct claim members, datatype: currency, aggregation_semantics: RATIO_NON_ADDITIVE, kpis_supported: [ADD-5], synonyms: [avg paid per member]}
+      - {name: Claims per Member, description: Distinct claims divided by distinct claim members, datatype: decimal, aggregation_semantics: RATIO_NON_ADDITIVE, kpis_supported: [ADD-6], synonyms: [claim frequency per member]}
+      - {name: Lines per Claim, description: Claim lines divided by distinct claims, datatype: decimal, aggregation_semantics: RATIO_NON_ADDITIVE, kpis_supported: [ADD-7], synonyms: [services per claim]}
+      - {name: Participating Provider Rate, description: Participating provider paid amount divided by total paid amount, datatype: percentage, aggregation_semantics: RATIO_NON_ADDITIVE, kpis_supported: [ADD-10], synonyms: [par provider rate, network participation rate]}
+    dimensions:
+      - {name: service_date, description: Claim service date for daily analysis, datatype: date, sample_values: [], synonyms: [date of service]}
+      - {name: service_month, description: Month of service derived from service date, datatype: date, sample_values: [], synonyms: [month, service period]}
+      - {name: claim_type, description: Claim type classification, datatype: string, sample_values: [Institutional, Vision, Dental, Pharmacy, Professional], synonyms: [claim category]}
+      - {name: benefit_category, description: Benefit category for the service line, datatype: string, sample_values: [Behavioral Health, Medical, Vision, Dental, Surgical, Pharmacy, Preventive Care], synonyms: [benefit]}
+      - {name: benefit_level, description: Benefit level for coverage grouping, datatype: string, sample_values: [], synonyms: []}
+      - {name: line_status, description: Claim line processing status, datatype: string, sample_values: [Adjusted, Paid, Denied, Pending, Reversed], synonyms: [claim status]}
+      - {name: clean_claim_indicator, description: Clean claim classification, datatype: string, sample_values: [Corrected, Pended, Not Clean, Clean], synonyms: [clean indicator]}
+      - {name: provider_participation, description: Provider network participation classification, datatype: string, sample_values: [Non Participating, Unknown, Network Exception, Participating], synonyms: [PAR, network status]}
+      - {name: place_of_service, description: Place of service code, datatype: string, sample_values: [], synonyms: [POS]}
+      - {name: procedure_code, description: Procedure code, datatype: string, sample_values: [], synonyms: [CPT, procedure]}
+      - {name: rendering_provider_type, description: Rendering provider type, datatype: string, sample_values: [], synonyms: [provider type]}
+      - {name: rendering_provider_specialty, description: Rendering provider specialty, datatype: string, sample_values: [], synonyms: [specialty]}
+  - fqn: aw_serverless_stable_catalog.aibi_member_claims.member_claims_enrollment_metric_view_v4
+    sql_fqn: '`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_enrollment_metric_view_v4`'
+    description: Validated enrollment-grain metric view for new member enrollment, active members, and enrollment record counts by product and status.
+    grain: one row represents one member enrollment event or enrollment period
+    row_count: 800
+    primary: false
+    measures:
+      - {name: New Member Enrollment, description: Distinct members entering coverage in a period, datatype: numeric, aggregation_semantics: SEMI_ADDITIVE, kpis_supported: [M-1], synonyms: [new enrollments]}
+      - {name: Active Members, description: Distinct active member count from enrollment events, datatype: numeric, aggregation_semantics: SEMI_ADDITIVE, kpis_supported: [M-2], synonyms: [member count, enrolled members]}
+      - {name: Enrollment Records, description: Count of enrollment records, datatype: numeric, aggregation_semantics: ADDITIVE, kpis_supported: [], synonyms: [enrollment events]}
+    dimensions:
+      - {name: service_date, description: Enrollment effective date, datatype: date, sample_values: [], synonyms: [effective date]}
+      - {name: service_month, description: Enrollment effective month, datatype: date, sample_values: [], synonyms: [month]}
+      - {name: line_of_business, description: Line of business or product market, datatype: string, sample_values: [Exchange, Medicare, Commercial, Medicaid, TRICARE], synonyms: [LOB, product line]}
+      - {name: enrollment_status, description: Enrollment status, datatype: string, sample_values: [Retroactive, Suspended, Terminated, Pending, Active], synonyms: [member status]}
+      - {name: plan_id, description: Plan identifier, datatype: string, sample_values: [], synonyms: [plan]}
+      - {name: product_id, description: Product identifier, datatype: string, sample_values: [], synonyms: [product]}
+      - {name: termination_reason, description: Reason for enrollment termination, datatype: string, sample_values: [], synonyms: []}
+  - fqn: aw_serverless_stable_catalog.aibi_member_claims.member_claims_member_metric_view_v4
+    sql_fqn: '`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_member_metric_view_v4`'
+    description: Validated member-dimension metric view for active member geography and demographics.
+    grain: one row represents one current member dimension record
+    row_count: 300
+    primary: false
+    measures:
+      - {name: Active Members by Geography, description: Distinct active member count by state, zip code, line of business, and demographics, datatype: numeric, aggregation_semantics: SEMI_ADDITIVE, kpis_supported: [M-3], synonyms: [members by state, geographic members]}
+    dimensions:
+      - {name: service_date, description: Member extract date, datatype: date, sample_values: [], synonyms: [extract date]}
+      - {name: service_month, description: Member extract month, datatype: date, sample_values: [], synonyms: [month]}
+      - {name: state, description: Member state, datatype: string, sample_values: [NY, PA, CA, OH, FL, NC, GA, TX], synonyms: [geography, member state]}
+      - {name: zip_code, description: Member ZIP code, datatype: string, sample_values: [], synonyms: [ZIP]}
+      - {name: line_of_business, description: Member line of business, datatype: string, sample_values: [], synonyms: [LOB]}
+      - {name: sex, description: Member sex, datatype: string, sample_values: [Unknown, Male, Female], synonyms: [gender]}
+      - {name: race, description: Member race, datatype: string, sample_values: [Other, White, Unknown, Black or African American], synonyms: []}
+      - {name: ethnicity, description: Member ethnicity, datatype: string, sample_values: [], synonyms: []}
+validated_kpis:
+  - {name: New Member Enrollment, kpi_id: M-1, definition: Count distinct members entering coverage in the period, metric_view: member_claims_enrollment_metric_view_v4, measure: New Member Enrollment, dimensions: [service_month, line_of_business, enrollment_status, plan_id, product_id], time_dimension: service_month}
+  - {name: Members by Line of Business, kpi_id: M-2, definition: Active member distribution across products, metric_view: member_claims_enrollment_metric_view_v4, measure: Active Members, dimensions: [service_month, line_of_business, enrollment_status], time_dimension: service_month}
+  - {name: Members by Geography, kpi_id: M-3, definition: Active member population by location, metric_view: member_claims_member_metric_view_v4, measure: Active Members by Geography, dimensions: [service_month, state, zip_code, line_of_business, sex, race, ethnicity], time_dimension: service_month}
+  - {name: Total Claims, kpi_id: C-1, definition: Count distinct claims, metric_view: member_claims_metric_view_v4, measure: Total Claims, dimensions: [service_month, claim_type, benefit_category, line_status], time_dimension: service_month}
+  - {name: Total Claim Lines, kpi_id: C-2, definition: Count claim service lines, metric_view: member_claims_metric_view_v4, measure: Total Claim Lines, dimensions: [service_month, claim_type, benefit_category, line_status], time_dimension: service_month}
+  - {name: Total Paid Amount, kpi_id: C-3, definition: Sum paid amount across all claim lines, metric_view: member_claims_metric_view_v4, measure: Total Paid Amount, dimensions: [service_month, claim_type, benefit_category], time_dimension: service_month}
+  - {name: Average Paid per Claim, kpi_id: C-4, definition: Total paid divided by distinct claims, metric_view: member_claims_metric_view_v4, measure: Average Paid per Claim, dimensions: [service_month, claim_type, benefit_category], time_dimension: service_month}
+  - {name: PMPM, kpi_id: MC-1, definition: Paid dollars per claim-observed member month, metric_view: member_claims_metric_view_v4, measure: PMPM, dimensions: [service_month, claim_type, benefit_category], time_dimension: service_month}
+  - {name: Claims per 1,000 Members, kpi_id: MC-2, definition: Claims normalized by member-month exposure, metric_view: member_claims_metric_view_v4, measure: Claims per 1,000 Members, dimensions: [service_month, claim_type, benefit_category], time_dimension: service_month}
+  - {name: Denial Rate, kpi_id: ADD-1, definition: Denied lines divided by total claim lines, metric_view: member_claims_metric_view_v4, measure: Denial Rate, dimensions: [service_month, claim_type, benefit_category, line_status], time_dimension: service_month}
+  - {name: Clean Claim Rate, kpi_id: ADD-2, definition: Clean lines divided by total claim lines, metric_view: member_claims_metric_view_v4, measure: Clean Claim Rate, dimensions: [service_month, claim_type, benefit_category, clean_claim_indicator], time_dimension: service_month}
+  - {name: Payment-to-Billed Ratio, kpi_id: ADD-3, definition: Total paid divided by total billed, metric_view: member_claims_metric_view_v4, measure: Payment-to-Billed Ratio, dimensions: [service_month, claim_type, benefit_category], time_dimension: service_month}
+  - {name: Payment-to-Allowed Ratio, kpi_id: ADD-4, definition: Total paid divided by total allowed, metric_view: member_claims_metric_view_v4, measure: Payment-to-Allowed Ratio, dimensions: [service_month, claim_type, benefit_category], time_dimension: service_month}
+  - {name: Average Paid per Member, kpi_id: ADD-5, definition: Total paid divided by distinct claim members, metric_view: member_claims_metric_view_v4, measure: Average Paid per Member, dimensions: [service_month, claim_type, benefit_category], time_dimension: service_month}
+  - {name: Claims per Member, kpi_id: ADD-6, definition: Claims divided by distinct claim members, metric_view: member_claims_metric_view_v4, measure: Claims per Member, dimensions: [service_month, claim_type, benefit_category], time_dimension: service_month}
+  - {name: Lines per Claim, kpi_id: ADD-7, definition: Claim lines divided by distinct claims, metric_view: member_claims_metric_view_v4, measure: Lines per Claim, dimensions: [service_month, claim_type, benefit_category], time_dimension: service_month}
+  - {name: Inpatient Paid Amount, kpi_id: ADD-8, definition: Paid amount for Institutional claims, metric_view: member_claims_metric_view_v4, measure: Inpatient Paid Amount, dimensions: [service_month, benefit_category], time_dimension: service_month}
+  - {name: Outpatient Paid Amount, kpi_id: ADD-9, definition: Paid amount for Professional claims, metric_view: member_claims_metric_view_v4, measure: Outpatient Paid Amount, dimensions: [service_month, benefit_category], time_dimension: service_month}
+  - {name: Participating Provider Rate, kpi_id: ADD-10, definition: Participating provider paid divided by total paid, metric_view: member_claims_metric_view_v4, measure: Participating Provider Rate, dimensions: [service_month, claim_type, benefit_category, provider_participation], time_dimension: service_month}
+unsupported_kpis:
+  - {kpi_id: MC-3, name: Utilization Rate, status: SKIPPED_UNSAFE_GRAIN, reason: Unsafe cross-fact grain/key mismatch between claims member key and enrollment member_sk.}
+  - {kpi_id: MC-4, name: High-Cost Member Count, status: NOT_IMPLEMENTED, reason: Requires HAVING over member-level pre-aggregation.}
+  - {kpi_id: W-1, name: Rolling 3-Month PMPM, status: NOT_IMPLEMENTED, reason: Requires rolling window over separately aggregated numerator and denominator.}
+  - {kpi_id: W-2, name: MoM Active Member Growth, status: NOT_IMPLEMENTED, reason: Requires LAG/prior-period offset.}

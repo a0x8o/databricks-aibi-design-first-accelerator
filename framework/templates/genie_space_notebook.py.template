@@ -425,8 +425,23 @@ if _gate_checks_loaded:
         print(f"   {str(e)[:300]}")
         raise
 
+# ── Compute manifest hashes for idempotency proof ──
+import hashlib as _hl
+_genie_source_raw = json.dumps({
+    "title": SPACE_TITLE,
+    "description": SPACE_DESCRIPTION,
+    "table_identifiers": TABLE_IDENTIFIERS,
+    "instructions_len": len(GENERAL_INSTRUCTIONS),
+    "sample_questions": len(SAMPLE_QUESTIONS),
+    "example_sqls": len(EXAMPLE_QUESTION_SQLS),
+}, sort_keys=True)
+SOURCE_HASH = _hl.sha256(_genie_source_raw.encode()).hexdigest()
+READBACK_HASH = _hl.sha256(json.dumps({"space_id": new_id, "title": result.get("title", SPACE_TITLE)}, sort_keys=True).encode()).hexdigest()
+print(f"  Source hash:   {SOURCE_HASH[:16]}...")
+print(f"  Readback hash: {READBACK_HASH[:16]}...")
+
 # Exit with space_id so orchestrator can validate without list API
-dbutils.notebook.exit(json.dumps({"space_id": new_id, "title": result.get("title", SPACE_TITLE)}))
+dbutils.notebook.exit(json.dumps({"space_id": new_id, "title": result.get("title", SPACE_TITLE), "source_hash": SOURCE_HASH, "readback_hash": READBACK_HASH}))
 
 # COMMAND ----------
 

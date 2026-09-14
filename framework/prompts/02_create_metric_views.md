@@ -3,6 +3,7 @@
 > **Guardrails:** Before executing this step, read and internalize:
 > 1. `framework/prompts/guardrails/00_global_rules.md` (ALWAYS — every step)
 > 2. `framework/prompts/guardrails/02_metric_view_guardrails.md` (THIS step's gates, rules, and anti-patterns)
+> 3. `framework/prompts/guardrails/sql_generation_rules.md` (ALL SQL generation — metric view DDL, validation queries)
 >
 > These guardrail files are BINDING. Violations are pipeline failures.
 
@@ -137,13 +138,20 @@ The resulting Metric Views must be: semantically correct, grain-aware, resistant
 ## ENFORCEMENT HEADER
 
 <!-- @enforcement
-  pattern: sql_statement_execution
+  pattern: declarative_artifact + sql_statement_execution
+  architecture: three_plane (generation → control → execution → verification → manifest)
   execution_context: sql_warehouse (Statement Execution API)
+  declarative_artifact: metric_view_spec.yaml (measures, dimensions, joins, filters)
   inline_spark_sql_forbidden: true
+  four_gate_model: structural → metadata → semantic → deployment
+  error_classifier: routes UNSUPPORTED_CLAUSE to deterministic fail, PARSE_SYNTAX_ERROR to LLM repair
   gates:
     - id: schema_profiled
       after_step: 2
       check: "file_exists('{OUTPUT_FOLDER}/metric_views/schema_profile.yaml')"
+    - id: profile_cross_checked
+      after_step: 2
+      check: "All profile columns verified against catalog via DESCRIBE TABLE (GATE 2.2)"
     - id: kpi_mapped
       after_step: 4
       check: "file_exists('{OUTPUT_FOLDER}/metric_views/kpi_metric_mapping.yaml')"
@@ -152,7 +160,7 @@ The resulting Metric Views must be: semantically correct, grain-aware, resistant
       check: "file_exists('{OUTPUT_FOLDER}/metric_views/metric_view_design.yaml')"
     - id: metric_view_created
       after_step: 8
-      check: "SHOW VIEWS IN {catalog}.{schema} LIKE '%{VERSION_SUFFIX}' returns >= 1"
+      check: "SHOW VIEWS IN {catalog}.{schema} LIKE '*{VERSION_SUFFIX}' returns >= 1"
     - id: validation_passed
       after_step: 10
       check: "file_exists('{OUTPUT_FOLDER}/metric_views/metric_view_validation.yaml')"
@@ -164,7 +172,7 @@ The resulting Metric Views must be: semantically correct, grain-aware, resistant
 
 0. **DO NOT classify enrollment/secondary-grain KPIs as NOT_IMPLEMENTED without creating their metric view** — if `fact_member_enrollment` (or any secondary fact table) has >= 2 KPIs with status READY, you MUST plan a secondary metric view in Step 4.5. Jumping straight to NOT_IMPLEMENTED because "it requires a different grain" is the #1 cause of metric view count divergence between runs. The correct flow is: mark READY in Step 4 → group by grain in Step 4.5 → create secondary MV → only mark NOT_IMPLEMENTED for HAVING/LAG/window KPIs.
 1. **DO NOT execute Metric View DDL via `spark.sql()`** — `WITH METRICS LANGUAGE YAML` is ONLY supported via SQL Warehouse (Statement Execution API). Spark Connect raises `UNSUPPORTED_CLAUSE_FOR_OPERATION`.
-2. **DO NOT invent columns** — every expr must reference confirmed physical columns.
+2. **DO NOT invent columns** — every expr must reference confirmed physical columns from **`table_spec.yaml`** (the authoritative column list). Do NOT trust `erd_parsed.yaml` for column names — the ERD may list columns that were dropped during DDL generation and never created. The template's Gate 2b validates this automatically: every column name in field/measure expressions is checked against the actual source table schema before compilation. If a column is missing, Gate 2b halts with the exact column name and expression.
 3. **DO NOT blindly guess join keys** from column-name similarity alone — use ONLY relationships declared in `semantic_model.yaml` (both ERD-declared and inferred). Relationship discovery happens upstream in the data layer (Step 3.4). Step 2.5 here only verifies those relationships via data probes. If a relationship is missing from `semantic_model.yaml`, do NOT infer it here — mark the KPI as SKIPPED_UNRESOLVED_RELATIONSHIP.
 4. **DO NOT implement KPIs marked UNSAFE or AMBIGUOUS** — skip with documented reason.
 5. **DO NOT use blind retry** — max 3 attempts, each with documented root cause and fix.
@@ -241,9 +249,10 @@ Uses **artifact-as-state** checkpointing (see `06_state_contract.md`). Before ea
 
 | Input | Authoritative For |
 |-------|------------------|
-| Physical schema (DESCRIBE TABLE / erd_parsed.yaml) | Columns, types, existence |
+| **table_spec.yaml** (Step 1 output) | **Columns, types, existence** — this is the ONLY authority for what columns actually exist in the catalog. `erd_parsed.yaml` may contain columns that were dropped during DDL generation. |
 | semantic_model.yaml | Relationships, grains, classifications |
 | KPI specification | Business intent, numerator/denominator, dimensions |
+| erd_parsed.yaml | Entity structure (for semantic context only — NOT for column lists) |
 
 ---
 
@@ -251,13 +260,28 @@ Uses **artifact-as-state** checkpointing (see `06_state_contract.md`). Before ea
 
 ## Greenfield Fast Path (MANDATORY when applicable)
 
-When `data_source.type = erd` AND `erd_parsed.yaml` + `semantic_model.yaml` + `data_layer_validation.yaml (PASS)` all exist:
+When `data_source.type = erd` AND `table_spec.yaml` + `semantic_model.yaml` + `data_layer_validation.yaml (PASS)` all exist:
 
-1. Read contracts directly (DO NOT run DESCRIBE TABLE individually)
-2. Run ONE SQL for table existence + row counts
-3. Run ONE SQL for **Join Key Diversity Pre-Check** (see below)
-4. Write `schema_profile.yaml` from contracts
-5. Skip section 2.2 entirely
+1. Read **`table_spec.yaml`** for column names and types (this is the authoritative source — it matches what was actually CREATE TABLE'd)
+2. Read `semantic_model.yaml` for relationships, grains, and classifications
+3. Run ONE SQL for table existence + row counts
+4. Run ONE SQL for **Join Key Diversity Pre-Check** (see below)
+5. Write `schema_profile.yaml` using ONLY columns from `table_spec.yaml`
+6. Skip section 2.2 entirely
+
+**CRITICAL: DO NOT read column lists from `erd_parsed.yaml`.** The ERD may contain
+columns that were dropped during DDL generation (Step 1 LLM may select a subset of
+ERD columns for `table_spec.yaml`). Using ERD columns directly introduces phantom
+columns into the schema profile that don't exist in the actual catalog tables.
+This causes Gate 2b failures downstream when metric view expressions reference
+columns that were never created.
+
+**Column authority chain:**
+```
+erd_parsed.yaml (N columns) → table_spec.yaml (≤N columns) → CREATE TABLE → Actual table
+                                     ↑
+                              USE THIS for schema_profile
+```
 
 **NEVER loop through tables calling DESCRIBE TABLE when contracts are available.**
 
@@ -301,6 +325,45 @@ unresolved_relationships: []
 ```
 
 **GATE 2.1**: schema_profile.yaml exists. HALT if missing.
+
+### MANDATORY: Post-Profile Catalog Cross-Check (GATE 2.2)
+
+After writing `schema_profile.yaml`, verify that every profiled column actually
+exists in the corresponding catalog table. This catches phantom columns — columns
+that appear in upstream contracts (ERD, semantic model) but were not included in
+`table_spec.yaml` and therefore never created via CREATE TABLE.
+
+**Protocol:**
+
+1. For each table entry in `schema_profile.yaml`, execute
+   `DESCRIBE TABLE {fqn}` via the Statement Execution API.
+   Batch into a single round-trip where possible.
+2. Collect the actual column names returned by the catalog for each table.
+3. For each table, check that every column listed in the profile's
+   `dimensions`, `keys`, `measures`, and `temporal_columns` arrays appears
+   in the catalog column set.
+4. Any column present in the profile but absent from the catalog is a
+   **phantom column**.
+
+**When phantom columns are found:**
+
+Do NOT halt. Instead, correct the profile in place:
+
+- Drop each phantom column from the relevant profile array
+  (dimensions, keys, measures, or temporal_columns).
+- Rewrite `schema_profile.yaml` with the corrected lists.
+- Log each correction:
+  `"PROFILE FIX: dropped phantom '{col}' from {table} — in contract but not in catalog"`
+- Continue to Step 2.5 with the corrected profile.
+
+**Rationale:** The Greenfield Fast Path reads `table_spec.yaml` for columns,
+but the LLM may still introduce phantom columns from other inputs (ERD,
+semantic model, domain knowledge). This gate is the last deterministic
+check before the profile feeds into metric view design. It costs one SQL
+round-trip and prevents an entire class of Gate 2b failures downstream.
+
+**GATE 2.2**: All profiled columns verified against catalog. Phantoms
+corrected if any. HALT only if DESCRIBE TABLE fails (table missing).
 
 ---
 
@@ -892,9 +955,13 @@ SHOW VIEWS IN {catalog}.{schema} LIKE '{intermediate_view_name}'
 
 ---
 
-# Step 8: Generate Metric View YAML
+# Step 8: Generate Metric View Spec (Declarative)
 
-**This step now iterates over ALL metric views in `metric_view_plan.yaml`.**
+**This step now produces a declarative spec consumed by the Deterministic Deployment Runtime.**
+
+Instead of writing DDL and executing via Statement Execution API directly, the LLM produces `metric_view_spec.yaml`. The `metric_view_notebook.py.template` reads this spec, compiles it to DDL, executes, and validates.
+
+**This step iterates over ALL metric views in `metric_view_plan.yaml`.**
 
 For each metric view in `metric_view_designs[]` from the design contract:
 
@@ -903,117 +970,148 @@ For each metric view in `metric_view_designs[]` from the design contract:
 - [ ] metric_view_design.yaml exists with this metric view's entry
 - [ ] All joins validated (no unresolved JOIN_FANOUT_FAILURE)
 - [ ] All READY KPIs assigned to this metric view have confirmed measure columns
-- [ ] Metric View FQN resolved: primary from `step_handoff.yaml`, additional from `metric_view_plan.yaml` (dynamically derived in Step 4.5)
+- [ ] Metric View FQN resolved: primary from `step_handoff.yaml`, additional from `metric_view_plan.yaml`
 - [ ] If sourced from an intermediate view: that view exists in catalog
 
-### DDL Syntax (ONLY correct form)
+### Produce `metric_view_spec.yaml`
+
+Write `{workspace.output_folder}/metric_views/metric_view_spec.yaml`:
+
+```yaml
+metric_views:
+  - name: <view_name_with_version>
+    yaml:
+      version: 1.1
+      comment: "..."
+      source: catalog.schema.source_table
+      fields:
+        - name: Dimension Name
+          expr: column_name
+          comment: "..."
+      measures:
+        - name: Claim Count
+          expr: COUNT(*)
+          comment: "..."
+          format:
+            type: number
+            decimal_places:
+              type: exact
+              places: 0
+      joins:
+        - name: header
+          source: catalog.schema.header_table
+          'on': source.claim_id = header.claim_id
+          rely:
+            at_most_one_match: true
+```
+
+**Required Join Fields (MANDATORY for every join entry):**
+
+Every entry under `joins:` MUST contain these fields — the Gate 1 structural validator asserts each one:
+
+| Field | Required | YAML Key | Notes |
+|------|----------|----------|-------|
+| `name` | YES | `name` | Short identifier for the joined table (e.g., `header`, `member`) |
+| `source` | YES | `source` | Fully qualified table name: `catalog.schema.table_name` |
+| `on` | YES | `'on'` (MUST be single-quoted — `on` is a YAML reserved keyword) | Join condition expression, e.g., `'on': source.claim_id = header.claim_id` |
+| `rely` | Recommended | `rely` | N:1 safety hint: `rely: { at_most_one_match: true }` |
+
+**Critical rules:**
+- `'on'` MUST be single-quoted in YAML because `on` is a reserved keyword. Writing `on:` without quotes will cause a YAML parse error or silently produce the wrong structure.
+- The `'on'` expression may ONLY reference `source.<col>` or `<this_join>.<col>` — NO chained joins (e.g., `other_join.col` is FORBIDDEN).
+- If a metric view does NOT need any joins (single-source, all columns in the source table), **omit the `joins` key entirely**. Do NOT include a `joins:` section with incomplete or empty entries.
+- A join entry missing any of `name`, `source`, or `'on'` will cause `AssertionError` in Gate 1 and halt the pipeline.
+
+**Example — metric view WITH a join:**
+```yaml
+joins:
+  - name: header
+    source: catalog.schema.fact_claim_header_v1
+    'on': source.clm_dtl_claim_nbr = header.clm_hdr_claim_nbr
+    rely:
+      at_most_one_match: true
+```
+
+**Example — metric view WITHOUT joins (omit the key entirely):**
+```yaml
+# No joins: key at all — source table has all needed columns
+measures:
+  - name: Active Members
+    expr: COUNT(DISTINCT member_sk)
+```
+
+**Key rules for the declarative spec:**
+- The `yaml` key contains the EXACT YAML content that the template will wrap in `CREATE OR REPLACE VIEW ... WITH METRICS LANGUAGE YAML AS $$ ... $$`
+- The LLM does NOT write DDL or execute SQL — only the declarative YAML spec
+- The template handles compilation, execution (Statement Execution API), and validation
+- All syntax rules from the DDL Syntax section below apply to the YAML content
+
+### DDL Syntax (reference — template generates this from spec)
+
+The template compiles the YAML to:
 
 ```sql
 CREATE OR REPLACE VIEW {catalog}.{schema}.{view_name} WITH METRICS LANGUAGE YAML AS
 $$
-version: 1.1
-comment: "..."
-source: catalog.schema.table
-
-fields:
-  - name: Dimension Name
-    expr: column_name
-    comment: "..."
-
-measures:
-  - name: Claim Count
-    expr: COUNT(*)
-    comment: "..."
-    format:
-      type: number
-      decimal_places:
-        type: exact
-        places: 0
-  - name: Total Paid Amount
-    expr: SUM(paid_amount)
-    comment: "..."
-    format:
-      type: currency
-      currency_code: USD
-      decimal_places:
-        type: exact
-        places: 2
-  - name: Denial Rate
-    expr: SUM(denied) / NULLIF(COUNT(*), 0)
-    comment: "..."
-    format:
-      type: percentage
-      decimal_places:
-        type: exact
-        places: 2
+<yaml content from spec>
 $$
 ```
 
-**CRITICAL: `format` must be a structured object.** Never use simple strings like `format: "#,##0"`. Valid `format.type` values: `number`, `currency`, `percentage`, `date`, `date_time`, `byte`. **For date/timestamp dimensions: OMIT `format` entirely** (safest) or include ALL mandatory sub-properties (`date_format` for `date`, both `date_format` + `time_format` for `date_time`). See Prohibited Action #19 and Validated Learning #8.
+### Execution Pattern (handled by template — NOT by LLM)
 
-### Key Syntax Rules
+The `metric_view_notebook.py.template` handles:
+1. Reading `metric_view_spec.yaml`
+2. Running Gate 1 (structural validation of spec)
+3. Running Gate 2 (metadata validation — source tables accessible)
+4. Running Gate 3 (semantic validation — join safety, duplicate detection)
+5. Compiling YAML to DDL
+6. Executing via Statement Execution API
+7. Verifying via SHOW VIEWS + MEASURE() smoke test
+8. Writing manifest with hash chain
 
-- **Allowed field/dimension properties:** `name`, `expr`, `comment`, `display_name`, `format`, `synonyms`, `window`
-- **Allowed measure properties:** `name`, `expr`, `comment`, `display_name`, `format`, `synonyms`, `window`
-- **Allowed join properties:** `name`, `source`, `on`, `rely`
-- `joins[].on`: SQL expression string (`source.col = join_name.col`) — NOT an object
-- `'on'` key MUST be quoted in YAML (reserved word)
-- `rely: {at_most_one_match: true}` for N:1 joins
-- When NO joins: bare column names in expr. When joins exist: MUST prefix with `source.` or `<join_name>.`
-- `MEASURE()` is for QUERYING metric views, NOT for creating them. Creation uses SQL agg in `expr`.
+**The LLM does NOT call `execute_sql` or `w.statement_execution` directly.**
 
-### Execution Pattern
+### Intermediate Views (Step 7.5 — unchanged)
 
-```python
-from databricks.sdk import WorkspaceClient
-from databricks.sdk.service.sql import StatementState
+If `metric_view_plan.yaml` specifies intermediate views, create them FIRST via Statement Execution API (these are regular MATERIALIZED VIEWs, not metric views). The intermediate view DDL can still be executed directly by the LLM.
 
-w = WorkspaceClient()
-response = w.statement_execution.execute_statement(
-    warehouse_id="{sql_warehouse_id}",
-    statement=ddl_statement,
-    wait_timeout="50s"
-)
-
-if response.status.state == StatementState.SUCCEEDED:
-    print("✓ Metric view created")
-elif response.status.state == StatementState.FAILED:
-    print(f"✗ Failed: {response.status.error.message}")
-    # HALT — do NOT retry with spark.sql()
-```
-
-### Timeout Rules
-
-- Use `"50s"` as default (valid range: 5s–50s)
-- If timeout: poll with `w.statement_execution.get_statement(statement_id)` — NEVER re-execute
-- If failed: HALT, fix YAML syntax, retry (max 3 attempts with documented root cause)
-
-### No Chained Joins
-
-```yaml
-# INVALID (causes UNRESOLVED_COLUMN):
-joins:
-  - name: header
-    source: catalog.schema.header
-    'on': source.claim_id = header.claim_id
-  - name: member
-    source: catalog.schema.member
-    'on': header.member_sk = member.member_sk   # ← ILLEGAL: references header
-
-# VALID workarounds:
-# 1. Direct FK in source → join dimension directly to source
-# 2. Separate metric view sourced from the intermediate table
-# 3. Skip dimension if FK only exists on intermediate
-```
-
-**GATE 8.1**: Metric view exists in catalog (`SHOW VIEWS`). HALT if missing.
-**GATE 8.2**: Basic `SELECT MEASURE(first_measure) FROM mv LIMIT 1` succeeds.
+**GATE 8.1**: `metric_view_spec.yaml` exists with all planned metric views. HALT if missing.
 
 ---
 
-# Step 9: Validate Metric Views
+# Step 9: Deploy and Validate Metric Views
 
-### BATCH VALIDATION (combine into 3-4 SQL calls)
+### Deploy via Deterministic Deployment Runtime
+
+**CRITICAL: Use `deploy_from_template` tool.** The template is a complete, tested notebook. The tool reads it verbatim and performs ONLY placeholder substitution. DO NOT use `import_notebook` for this — it will reject template-based paths (G-16 enforcement).
+
+Call `deploy_from_template` with:
+- `template_path`: `{DEPLOY_ROOT}/framework/templates/metric_view_notebook.py.template`
+- `output_path`: `{OUTPUT_FOLDER}/metric_views/metric_view_deployment.ipynb`
+- `placeholders`: `{"DOMAIN_NAME": "...", "OUTPUT_FOLDER": "...", "WAREHOUSE_ID": "...", "CATALOG": "...", "SCHEMA": "...", "VERSION_SUFFIX": "...", "DEPLOY_ROOT": "..."}`
+
+Then execute the notebook via `execute_notebook`.
+
+**DO NOT:**
+- Read the template yourself and do string manipulation — the tool handles everything
+- Use `import_notebook` for template-based notebooks
+- Rewrite, summarize, or "improve" any cell
+- Remove docstrings, comments, or validation code
+- Drop Gate 2b (column reference validation) or any other gate
+
+The template contains 9 cells with Gates 1–4, execution, verification, and manifest writing. All gates, including Gate 2b (column reference validation against DESCRIBE TABLE), are tested and MUST be preserved. The `deploy_from_template` tool guarantees the output has the same line count as the template.
+
+The template handles:
+- Gate 1 (structural validation of spec)
+- Gate 2 (metadata validation — source tables accessible via Statement Execution API)
+- Gate 2b (column reference validation — every expr column checked against DESCRIBE TABLE)
+- Gate 3 (semantic validation — join safety, duplicate detection)
+- Gate 4 (deployment — execute DDL, verify SHOW VIEWS, MEASURE() smoke test)
+- Manifest writing with hash chain (source_hash, generated_hash, readback_hash)
+
+### Batch Validation (if template validation is insufficient)
+
+If additional validation is needed beyond the template's smoke test, run these queries via Statement Execution API:
 
 **CRITICAL SQL SYNTAX RULE**: In Databricks SQL, `LIMIT` binds to the entire
 statement, NOT to individual sub-queries. Placing `LIMIT` inside a `UNION ALL`
@@ -1025,20 +1123,17 @@ Prefer separate calls — they are easier to diagnose on failure.
 
 ```sql
 -- BATCH 1: Structural (all measures/dimensions exist)
--- Run ONE query per metric view — do NOT combine with UNION ALL + LIMIT
 SELECT MEASURE(measure_1), MEASURE(measure_2), ... FROM metric_view LIMIT 1
 
 -- BATCH 2: Baseline reconciliation (direct SQL vs MEASURE)
 SELECT 'baseline_total_paid' check, SUM(col) val FROM source_table
 UNION ALL
 SELECT 'mv_total_paid', (SELECT MEASURE(total_paid) FROM metric_view)
-UNION ALL ...
 
 -- BATCH 3: Measure stability (pre-join vs post-join)
 SELECT 'pre_join' check, SUM(col) FROM source
 UNION ALL
 SELECT 'post_join', SUM(s.col) FROM source s JOIN dim d ON s.fk = d.pk
-UNION ALL ...
 
 -- BATCH 4: Dimension slices
 SELECT dim_col, MEASURE(total_paid) FROM metric_view GROUP BY dim_col LIMIT 10
@@ -1203,7 +1298,13 @@ Rule: ALWAYS backtick-quote measure names inside `MEASURE()` — even single-wor
 
 Values outside (e.g., `"60s"`) cause `INVALID_PARAMETER_VALUE`. Use `"50s"` as standard.
 
-**6. Single-source preferred for greenfield synthetic data**
+**6. Every column referenced in measures/fields MUST exist in the source table**
+
+The template's Gate 2b validates this: it extracts column identifiers from every `expr` and checks them against `DESCRIBE TABLE` results. Missing columns halt with an explicit error BEFORE the CREATE VIEW is attempted. This prevents `UNRESOLVED_COLUMN` errors at deployment time.
+
+Common failure mode: the LLM writes `COUNT(DISTINCT clm_dtl_member_nbr_sk)` in a measure, but the source table has a different column name (e.g., `member_nbr_sk` or `mbr_member_sk`). Gate 2b catches this before compilation.
+
+**7. Single-source preferred for greenfield synthetic data**
 
 Avoids fact-to-fact fanout from synthetic FK distributions. Add joins only after stability test passes.
 
@@ -1303,7 +1404,8 @@ Valid `format.type` values: `number` | `currency` | `percentage` | `date` | `dat
 | kpi_metric_mapping.yaml | `{OUTPUT_FOLDER}/metric_views/` | Every KPI mapped or skipped |
 | metric_view_plan.yaml | `{OUTPUT_FOLDER}/metric_views/` | ≥ 1 metric view planned, NOT_IMPLEMENTED KPIs have validated SQL |
 | metric_view_design.yaml | `{OUTPUT_FOLDER}/metric_views/` | All metric views designed, all joins validated safe |
-| {name}.yaml | `{OUTPUT_FOLDER}/metric_views/` | Raw YAML saved (one per metric view) |
+| **metric_view_spec.yaml** | `{OUTPUT_FOLDER}/metric_views/` | **Declarative spec consumed by template** |
+| metric_view_manifest.json | `{OUTPUT_FOLDER}/metric_views/` | Written by template with hash chain |
 | metric_view_validation.yaml | `{OUTPUT_FOLDER}/metric_views/` | `status: PASS`, all metric views validated |
 | sample_queries file | `{OUTPUT_FOLDER}/genie_space/` | 10-12 MEASURE() queries spanning all metric views |
 

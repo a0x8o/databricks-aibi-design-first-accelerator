@@ -29,6 +29,23 @@ class ToolExecutor:
         self._genie = services.get("genie")
         self._jobs = services.get("jobs")
         self._llm = llm_client
+        # Artifact-gated phase skip: set of absolute paths that are
+        # frozen (completed phases). Writes to these paths return early.
+        self._frozen_artifacts: set = set()
+
+    def set_frozen_artifacts(self, paths: set):
+        """Set the frozen artifact paths for artifact-gated phase skip.
+
+        Paths in this set will be protected from writes — the write handler
+        returns a SKIPPED message instead. This is the deterministic safety
+        net that prevents the LLM from overwriting completed phase artifacts.
+
+        Args:
+            paths: Set of absolute workspace paths to freeze.
+        """
+        self._frozen_artifacts = set(paths or [])
+        if self._frozen_artifacts:
+            logger.info(f"Frozen {len(self._frozen_artifacts)} artifacts: {self._frozen_artifacts}")
 
     def execute(self, tool_name: str, arguments: dict) -> str:
         """Execute a tool call and return the result string."""
@@ -43,8 +60,24 @@ class ToolExecutor:
             logger.error(error_msg, exc_info=True)
             return error_msg
 
+    # SQL statements that are unsupported or dangerous in Databricks SQL / UC
+    _SQL_BLOCKED_PATTERNS = [
+        ('TRUNCATE', 'TRUNCATE TABLE is not supported in Databricks SQL (Unity Catalog). '
+                     'Use DELETE FROM <table> instead, or DROP + CREATE.'),
+        ('VACUUM',   'VACUUM should not be called by the pipeline agent. '
+                     'It is a maintenance operation managed by Databricks.'),
+    ]
+
     def _handle_execute_sql(self, args: dict) -> str:
         statement = args["statement"]
+
+        # Pre-flight: block unsupported/dangerous SQL patterns
+        stmt_upper = statement.strip().upper()
+        for keyword, message in self._SQL_BLOCKED_PATTERNS:
+            if stmt_upper.startswith(keyword):
+                logger.warning(f"SQL BLOCKED: {keyword} statement rejected")
+                return f"SQL BLOCKED: {message}"
+
         try:
             result = self._sql.execute_and_wait(statement)
         except Exception as e:
@@ -98,6 +131,17 @@ class ToolExecutor:
     def _handle_write_workspace_file(self, args: dict) -> str:
         path = args["path"]
         content = args["content"]
+
+        # Artifact-gated phase skip: if this path is a frozen completion
+        # artifact, refuse the write and tell the agent it's already done.
+        if path in self._frozen_artifacts:
+            logger.info(f"IDEMPOTENT SKIP: {path} is a frozen artifact from a completed phase")
+            return (
+                f"SKIPPED: {path} already exists (completed phase artifact). "
+                f"This artifact is frozen and cannot be overwritten during resume. "
+                f"If you need its content, use read_workspace_file instead."
+            )
+
         self._ws.write_file(path, content)
         return f"SUCCESS: Written {len(content)} bytes to {path}"
 
@@ -111,41 +155,39 @@ class ToolExecutor:
             return "\n".join(lines)
         except Exception as e:
             err_str = str(e).lower()
-            if any(hint in err_str for hint in ('not found', 'does not exist', '404', 'resource_does_not_exist', 'no such file')):
-                return f"DIRECTORY_NOT_FOUND: {path} does not exist yet. It will be created when needed."
-            return f"ERROR: {str(e)}"
+            # Permission/auth errors should be reported as hard errors
+            if any(perm in err_str for perm in (
+                'permission', 'forbidden', '403', 'unauthorized', '401',
+                'access_denied', 'not_allowed',
+            )):
+                return f"ERROR: {str(e)}"
+            # Everything else (not found, invalid path, workspace errors for
+            # non-existent dirs) is treated as "directory doesn't exist yet".
+            # This is the most common case for list_workspace_directory and
+            # is NOT an error condition for the LLM.
+            return f"DIRECTORY_NOT_FOUND: {path} does not exist yet. It will be created when needed."
 
     def _handle_create_dashboard(self, args: dict) -> str:
-        display_name = args["display_name"]
-        serialized = args["serialized_dashboard"]
-        warehouse_id = args["warehouse_id"]
-        dashboard_id = args.get("dashboard_id")
-        # Resolve parent_path: use output_folder from config so the app SP
-        # creates dashboards under the project folder where it has CAN_MANAGE.
-        # Without this, the API defaults to the calling identity's home path
-        # which causes PermissionDenied when SP lacks access to user's home.
-        parent_path = args.get("parent_path") or getattr(self._config, 'output_folder', None) or getattr(self._config, 'deploy_root', None)
-        if dashboard_id:
-            # Explicit update of existing dashboard
-            result = self._lakeview.update_dashboard(
-                dashboard_id=dashboard_id, display_name=display_name,
-                serialized_dashboard=serialized, warehouse_id=warehouse_id)
-        else:
-            # Create new — if name already exists, delete old and recreate
-            existing = self._lakeview.find_by_name(display_name)
-            if existing:
-                self._lakeview.delete_dashboard(existing.dashboard_id)
-            result = self._lakeview.create_dashboard(
-                display_name=display_name, serialized_dashboard=serialized,
-                warehouse_id=warehouse_id, parent_path=parent_path)
-        # Result is a Dashboard dataclass — use attribute access
-        new_id = getattr(result, 'dashboard_id', None) or getattr(result, 'id', 'unknown')
-        return f"SUCCESS: Dashboard ID: {new_id}"
+        """Redirect: Dashboard creation uses the template notebook pattern."""
+        return (
+            "ERROR: create_dashboard tool is disabled. "
+            "Use the template notebook pattern instead (same as Genie space): "
+            "1) Read dashboard_notebook.py.template from the templates directory. "
+            "2) Write dashboard_design.yaml to the output folder (declarative spec). "
+            "3) Populate Cell 1 (config) from step_handoff.yaml. "
+            "4) Copy Cells 2-8 VERBATIM from template (helpers, schema discovery, build, deploy, validate). "
+            "5) Use import_notebook to save the notebook. "
+            "6) Use execute_notebook to run it (template handles Lakeview API calls). "
+            "This is the ONLY supported path for dashboard creation."
+        )
 
     def _handle_publish_dashboard(self, args: dict) -> str:
-        self._lakeview.publish_dashboard(
-            dashboard_id=args["dashboard_id"], warehouse_id=args["warehouse_id"])
-        return f"SUCCESS: Dashboard published."
+        """Redirect: Dashboard publishing is handled by the template notebook."""
+        return (
+            "ERROR: publish_dashboard tool is disabled. "
+            "Dashboard publishing is handled automatically by the template notebook (Cell 7). "
+            "Use the template notebook pattern — it deploys AND publishes in one step."
+        )
 
     def _handle_create_genie_space(self, args: dict) -> str:
         """Redirect: Genie space creation uses the template notebook pattern."""
@@ -199,12 +241,39 @@ class ToolExecutor:
                         "\n\nHINT: /Workspace paths are not local filesystem paths. "
                         "Use the write_workspace_file tool instead of os.makedirs + open()."
                     )
+                if ("copyfile" in stderr or "copy2" in stderr or "shutil" in stderr) and (
+                    "Workspace" in stderr or "No such file" in stderr or "FileNotFoundError" in stderr
+                ):
+                    stderr += (
+                        "\n\nHINT: shutil.copy/copy2 cannot copy /Workspace paths — they are "
+                        "API paths, not local filesystem paths. Use the copy_workspace_file "
+                        "tool to copy files between workspace paths, or use "
+                        "read_workspace_file + write_workspace_file to read then write content."
+                    )
                 return f"ERROR: {stderr}"
             return proc.stdout.strip() or "SUCCESS: executed (no output)."
         except _sp.TimeoutExpired:
             return "ERROR: Python execution timed out (120s limit)."
         except Exception as e:
             return f"ERROR: {type(e).__name__}: {e}"
+
+    def _handle_copy_workspace_file(self, args: dict) -> str:
+        """Copy a file between workspace paths via the Workspace API.
+
+        This is the ONLY safe way to copy files between /Workspace paths.
+        shutil.copy/copy2 will fail because /Workspace paths are API paths,
+        not local filesystem paths.
+        """
+        src = args["src"]
+        dst = args["dst"]
+        try:
+            content = self._ws.read_file(src)
+            if content is None:
+                return f"FILE_NOT_FOUND: Source file {src} does not exist."
+            self._ws.write_file(dst, content)
+            return f"SUCCESS: Copied {len(content)} bytes from {src} to {dst}"
+        except Exception as e:
+            return f"ERROR copying workspace file: {str(e)}"
 
     def _handle_call_vision_model(self, args: dict) -> str:
         image_path = args["image_path"]
@@ -278,11 +347,103 @@ class ToolExecutor:
             "status": args.get("status", "success"),
         })
 
+    # --- Template enforcement ---
+    # Known template filenames. If import_notebook receives content for a
+    # notebook whose filename contains one of these stems, it redirects to
+    # deploy_from_template to guarantee the template is used verbatim (G-16).
+    _TEMPLATE_STEMS = ('ddl_', 'dbldatagen_', 'metric_view_', 'dashboard_', 'genie_space_')
+
+    def _handle_deploy_from_template(self, args: dict) -> str:
+        """Deploy a notebook by reading a template and replacing placeholders.
+
+        This is the ONLY correct way to create deployment notebooks (G-16).
+        The LLM provides placeholder values; this tool reads the template
+        verbatim and performs deterministic string substitution.
+        """
+        template_path = args["template_path"]
+        output_path = args["output_path"]
+        placeholders = args.get("placeholders", {})
+        language = args.get("language", "PYTHON").upper()
+
+        # 1. Read the template
+        try:
+            template_content = self._ws.read_file(template_path)
+        except Exception as e:
+            return f"ERROR: Cannot read template at {template_path}: {e}"
+
+        if not template_content or not template_content.strip():
+            return f"ERROR: Template at {template_path} is empty."
+
+        # 2. Deterministic placeholder substitution
+        result = template_content
+        applied = []
+        missing = []
+        for key, value in placeholders.items():
+            placeholder = "{{" + key + "}}"
+            if placeholder in result:
+                result = result.replace(placeholder, str(value))
+                applied.append(key)
+            else:
+                missing.append(key)
+
+        # 3. Check for unreplaced placeholders in the result
+        import re
+        unreplaced = re.findall(r'\{\{([A-Z_]+)\}\}', result)
+        if unreplaced:
+            unique_unreplaced = sorted(set(unreplaced))
+            return (
+                f"ERROR: Template has unreplaced placeholders: {unique_unreplaced}. "
+                f"Provide values for ALL placeholders. Applied: {applied}. "
+                f"Template path: {template_path}"
+            )
+
+        # 4. Import as notebook
+        try:
+            self._ws.import_notebook(output_path, result, language=language)
+        except Exception as e:
+            return f"ERROR importing notebook from template: {e}"
+
+        template_lines = len(template_content.splitlines())
+        result_lines = len(result.splitlines())
+
+        report = (
+            f"SUCCESS: Deployed notebook from template.\n"
+            f"  Template: {template_path} ({template_lines} lines)\n"
+            f"  Output:   {output_path} ({result_lines} lines)\n"
+            f"  Placeholders applied: {applied}\n"
+            f"  Language: {language}"
+        )
+        if missing:
+            report += f"\n  WARNING: Placeholder keys not found in template: {missing}"
+
+        return report
+
     def _handle_import_notebook(self, args: dict) -> str:
-        """Import a notebook to workspace using the Workspace API."""
+        """Import a notebook to workspace using the Workspace API.
+
+        For template-based notebooks (DDL, dbldatagen, metric_view, dashboard,
+        genie_space), use deploy_from_template instead — it guarantees the
+        template is used verbatim per G-16.
+        """
         path = args["path"]
         nb_content = args["content"]
         language = args.get("language", "PYTHON").upper()
+
+        # Guard: redirect template notebooks to deploy_from_template
+        filename = path.rstrip('/').split('/')[-1].lower()
+        for stem in self._TEMPLATE_STEMS:
+            if stem in filename:
+                return (
+                    f"ERROR: This notebook path contains '{stem}' which indicates "
+                    f"a template-based deployment notebook. Per G-16, you MUST use "
+                    f"the deploy_from_template tool instead of import_notebook. "
+                    f"Call deploy_from_template with:\n"
+                    f"  template_path: the .py.template file path\n"
+                    f"  output_path: {path}\n"
+                    f"  placeholders: dict of {{{{KEY}}}}: value pairs\n"
+                    f"This ensures the template is used verbatim with only "
+                    f"placeholder substitution — no LLM modification."
+                )
 
         try:
             # Use workspace service to import notebook
@@ -367,10 +528,21 @@ class ToolExecutor:
                 continue
 
             # Skip non-Python cells (magic commands)
-            first_line = cell_stripped.split('\n')[0].strip()
-            if first_line.startswith('%') and not first_line.startswith('%%'):
-                if any(first_line.startswith(f'%{m}') for m in ['pip', 'sql', 'md', 'sh', 'r', 'scala', 'fs']):
+            # Look past DBTITLE / comment-only preamble lines to find the
+            # first real code line — it may be a cell magic like %pip.
+            cell_lines = cell_stripped.split('\n')
+            first_code_line = ''
+            for cl in cell_lines:
+                stripped = cl.strip()
+                if stripped and not stripped.startswith('#'):
+                    first_code_line = stripped
+                    break
+            if first_code_line.startswith('%') and not first_code_line.startswith('%%'):
+                if any(first_code_line.startswith(f'%{m}') for m in ['pip', 'sql', 'md', 'sh', 'r', 'scala', 'fs']):
                     continue
+            # Also skip if ANY line is a bare magic (e.g. %pip after comments)
+            if any(l.strip().startswith('%pip') for l in cell_lines):
+                continue
 
             # Skip cells that are pure comments/titles
             code_lines = [l for l in cell_stripped.split('\n')

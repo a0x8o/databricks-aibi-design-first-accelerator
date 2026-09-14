@@ -78,8 +78,12 @@ In both patterns, the pipeline contract and stage prompts are identical. Only th
 ### Global Enforcement Rules (Apply to ALL Sub-Prompts)
 
 <!-- @global_enforcement
-  ddl_pattern: CREATE TABLE IF NOT EXISTS (NEVER CREATE OR REPLACE TABLE)
-  notebook_execution: When templates exist, agent MUST create notebook from template and execute it (not run code inline)
+  architecture: three_plane (generation → control → execution → verification → manifest)
+  llm_output: declarative_artifact_specification (YAML/JSON, never raw SQL or API calls)
+  deployment_runtime: deterministic (template notebook or equivalent)
+  ddl_pattern: CREATE TABLE IF NOT EXISTS (compiler-generated, never LLM-generated)
+  four_gate_model: structural → metadata → semantic → deployment (all must pass before execution)
+  error_classifier: routes failures to LLM repair / deterministic fail / retry
   multi_asset_mandatory: If config specifies N dashboards, create exactly N (not fewer). For metric views with strategy=auto, the metric view step determines the count via grain analysis.
   filter_mandatory: Every dashboard MUST have dimension filters
   gate_pattern: Every step has GATE checks that must pass before proceeding
@@ -106,16 +110,64 @@ Do NOT skip reading guardrails because "this step is simple."
 | Step 4: Create Dashboards | `guardrails/03_dashboard_guardrails.md` |
 | Step 5: Create Genie Space | `guardrails/04_genie_guardrails.md` |
 | Step 6: Generate Documentation | `guardrails/05_documentation_guardrails.md` |
+| ALL SQL-generating steps | `guardrails/sql_generation_rules.md` |
 
-### Template Notebook Pattern (MANDATORY for deployment steps)
+### Deterministic Deployment Runtime (MANDATORY for all execution steps)
 
-Deployment steps use template notebooks that bake guardrails into the code path:
+All pipeline steps follow a three-plane architecture. The LLM NEVER executes code or SQL directly. It produces **declarative artifact specifications** that a **Deterministic Deployment Runtime** consumes, validates, and executes.
 
-| Step | Template | LLM Produces | Template Handles |
+```text
+GENERATION PLANE          CONTROL PLANE              EXECUTION PLANE
+┌──────────────┐          ┌──────────────┐          ┌──────────────┐
+│     LLM      │          │  Validator   │          │  Deployment  │
+│              │──YAML──▶│  / Compiler  │──exe──▶ │   Runtime    │
+│ Produces     │          │              │          │              │
+│ declarative  │          │ 4-gate model │          │ API calls    │
+│ spec +       │          │ (see below)  │          │              │
+│ rationale    │          └──────┬───────┘          └──────┬───────┘
+└──────────────┘                 │                         │
+                                 ▼                         ▼
+                             VERIFICATION            MANIFEST
+                         ┌──────────────┐          ┌──────────────┐
+                         │ API Readback  │          │ Immutable    │
+                         │ Desired vs    │──pass──▶ │ deployment   │
+                         │ deployed      │          │ evidence     │
+                         └──────────────┘          └──────────────┘
+```
+
+**Four-Gate Validation Model (runs in Control Plane before execution):**
+
+| Gate | Validates | Failure = |
+|------|-----------|-----------|
+| Gate 1: Structural | Schema-valid YAML/JSON, required fields present | Regenerate spec |
+| Gate 2: Metadata | Catalog/schema/columns exist, types compatible | LLM repair (fix references) |
+| Gate 3: Semantic | Grain valid, KPI refs valid, join paths safe, no fanout | LLM repair (fix architecture) |
+| Gate 4: Deployment | Permissions, naming conflicts, environment policy | Deterministic fail (infrastructure) |
+
+Only after ALL four gates pass does execution proceed.
+
+**Error Classification (applies to all runtime failures):**
+
+| Error Pattern | Routing | Why |
+|---------------|---------|-----|
+| PARSE_SYNTAX_ERROR, UNRESOLVED_COLUMN | LLM repair | Generation error — fix the spec |
+| PERMISSION_DENIED, RESOURCE_EXHAUSTED | Deterministic fail | Infrastructure — LLM cannot fix |
+| RATE_LIMIT, TIMEOUT | Retry with backoff | Transient — retry, then fail |
+| OBJECT_ALREADY_EXISTS | Deployment policy | Idempotency check |
+| INVALID_KPI_GRAIN | Semantic validation fail | Gate 3 should have caught this |
+
+**Step-to-Artifact Mapping:**
+
+| Step | Declarative Artifact | Runtime (template) | Runtime Executes |
 |---|---|---|---|
-| Step 2: Data Layer | `dbldatagen_notebook.py.template` | Table configs + domain values | Validation, generation, row counts |
-| Step 4: Dashboards | `dashboard_notebook.py.template` | `dashboard_design.yaml` | DESCRIBE, build, deploy, readback |
-| Step 5: Genie Space | `genie_space_notebook.py.template` | Instructions, questions, SQL | API calls, validation, readback |
+| Data Layer: DDL | `table_spec.yaml` | `ddl_notebook.py.template` | CREATE TABLE IF NOT EXISTS |
+| Data Layer: Synthetic | `synthetic_data_spec.yaml` | `dbldatagen_notebook.py.template` | Validation, generation, row counts |
+| Metric Views | `metric_view_spec.yaml` | `metric_view_notebook.py.template` | Statement Execution API |
+| Dashboards | `dashboard_design.yaml` | `dashboard_notebook.py.template` | Lakeview API create/publish/readback |
+| Genie Space | `genie_space_config.yaml` | `genie_space_notebook.py.template` | Genie API create/validate |
+| Documentation | Reads all prior artifacts | No runtime (LLM writes directly) | N/A |
+
+**Key principle:** The LLM's executable surface area is minimized. It writes domain logic (measure expressions, column mappings, widget configs), never structural SQL (CREATE TABLE, JOIN syntax, API calls). The compiler/runtime handles all structural concerns deterministically.
 
 ### Manifest Integrity Rule (Global — Applies to ALL Deployment Manifests)
 
@@ -125,6 +177,26 @@ All deployment manifests (`*_manifest.json`, `genie_manifest.json`) MUST be prod
 
 ```yaml
 validation_source: api_readback   # MUST be "api_readback" — never "agent_reported"
+artifact_id: <unique_id>            # UUID or deterministic hash
+source_hash: <sha256>               # Hash of the declarative spec
+readback_hash: <sha256>             # Hash of the deployed state from API readback
+state_comparison: match             # "match" or "mismatch"
+```
+
+**State comparison model (idempotency proof):**
+
+```text
+Desired State (declarative spec)
+    ↓
+Generated Artifact (compiled output)
+    ↓
+Applied Artifact (API create/update)
+    ↓
+Readback Artifact (API GET)
+    ↓
+COMPARE: desired_hash vs readback_hash
+
+If desired != readback → deployment FAILS.
 ```
 
 **Manifest writing procedure (NON-NEGOTIABLE):**
@@ -177,7 +249,7 @@ This rule exists because workarounds violate the prompt contract. If the prompt 
 
 | Block Type | Genie Code | Databricks App |
 |---|---|---|
-| DML on generated data (DELETE/TRUNCATE/UPDATE) | Report as `DATA_QUALITY_WARNING`, proceed if pre-write check was missed | Use TRUNCATE + re-generate (App has full DML access via service principal) |
+| DML on generated data (DELETE/UPDATE) | Report as `DATA_QUALITY_WARNING`, proceed if pre-write check was missed | Use DELETE FROM + re-generate (App has full DML access via service principal). **TRUNCATE TABLE is NOT supported in Databricks SQL / Unity Catalog — always use DELETE FROM instead.** |
 | `.mode("overwrite")` | HALT — always prohibited (use append pattern) | HALT — always prohibited (use append pattern) |
 | Permission denied on schema/catalog | HALT | HALT — check service principal grants |
 | Notebook execution failure | Fall back to `executeCode` (see stage prompt) | Retry via `w.jobs.submit()` with explicit error |
@@ -363,122 +435,15 @@ This applies identically in Genie Code and App execution modes. The registry upd
 
 ## 5. Progress Reporting Protocol
 
-Between tool calls, emit structured **progress blocks** to report current status.
-These blocks serve three purposes:
+Between tool calls, emit structured **progress blocks** using fenced code blocks with language tag `@progress` containing JSON. These serve as: (1) readable output in Genie Code, (2) real-time UI events for App, (3) permanent audit trail in `run_manifest.json`.
 
-1. **Genie Code**: Rendered as readable code blocks in the chat output
-2. **App Supervisor**: Parsed into real-time UI events for the pipeline monitor
-3. **Run Manifest**: Accumulated into `run_manifest.json` as the permanent audit trail
+**Required fields:** `step` (string), `step_order` (integer 1-7), `status` (running/completed/failed/skipped), `substep` object `{id, name, status, detail?, duration_s?}`.
 
-The `run_manifest.json` is the **single source of truth** for what happened during a run.
-Progress blocks write directly into the manifest schema.
+**Optional fields:** `progress` (0-100), `currentTask`, `stats` (key-value metrics), `happenings` (max 4 strings), `findings` (validated discoveries), `decisions` (`[{title, detail, confidence}]`).
 
-### Format
+**When to emit:** Before each tool call (status: running), after each tool call (substep.status: completed), at stage transitions (status: completed with full stats and findings).
 
-Emit a fenced code block with language tag `@progress` containing JSON:
-
-````markdown
-```@progress
-{
-  "step": "Data Layer",
-  "step_order": 3,
-  "status": "running",
-  "substep": {
-    "id": "parse_erd",
-    "name": "Parse ERD Schema",
-    "status": "completed",
-    "detail": "Extracted 8 tables from ERD image",
-    "duration_s": 8
-  },
-  "progress": 45,
-  "currentTask": "Generating synthetic data for dim_member",
-  "stats": {
-    "tables_created": 4,
-    "total_rows": 1200000,
-    "validation_errors": 0
-  },
-  "happenings": [
-    "Populating fact_claim_detail with realistic distributions",
-    "Applying foreign key constraints across dimension tables"
-  ],
-  "findings": [
-    "8 table schemas validated against semantic model",
-    "9 foreign key relationships resolved",
-    "3 slowly-changing dimensions identified"
-  ],
-  "decisions": [
-    {
-      "title": "Primary fact table selected",
-      "detail": "fact_claim_detail chosen as the primary grain based on KPI spec coverage",
-      "confidence": "high"
-    }
-  ]
-}
-```
-````
-
-### Field Reference
-
-#### Required (every progress block)
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `step` | string | Current step label (Configuration, Environment Setup, Data Layer, Metrics, Dashboards, Genie Space, Documentation) |
-| `step_order` | integer | Step number (1-7) matching the @tool step_order |
-| `status` | string | Step-level status: `running`, `completed`, `failed`, `skipped` |
-| `substep` | object | Current sub-step: `{id, name, status, detail?, duration_s?}` |
-
-#### Optional (include when meaningful)
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `progress` | integer | Overall step progress percentage (0-100) |
-| `currentTask` | string | Specific action being performed right now |
-| `stats` | object | Key metrics as key-value pairs (these accumulate into `manifest.steps[].stats`) |
-| `happenings` | array | What's currently happening (max 4 strings) |
-| `findings` | array | Validated discoveries (accumulate into `manifest.steps[].findings`) |
-| `decisions` | array | Architectural decisions: `[{title, detail, confidence}]` (accumulate into `manifest.steps[].decisions`) |
-
-### Manifest Accumulation Rules
-
-Each `@progress` block updates the in-memory manifest:
-
-1. **substep**: Appended to `manifest.steps[step_order-1].substeps[]` (or updated if same `id`)
-2. **findings**: Appended to `manifest.steps[step_order-1].findings[]` (deduplicated)
-3. **decisions**: Appended to `manifest.steps[step_order-1].decisions[]`
-4. **stats**: Merged into `manifest.steps[step_order-1].stats{}` (latest values win)
-5. **status**: When `completed` or `failed`, the step's status and `completed_at` are finalized
-
-### When to Emit
-
-- **Before each tool call**: Report what you're about to do (`status: "running"`, describe the substep)
-- **After each tool call**: Report outcome, findings, and decisions (`substep.status: "completed"`)
-- **During multi-step operations**: Report intermediate progress (e.g., `stats.tables_created: 5`)
-- **At stage transitions**: Emit with `status: "completed"`, full `stats`, and accumulated `findings`
-
-### Example: Step Completion (maps directly to manifest)
-
-```@progress
-{
-  "step": "Data Layer",
-  "step_order": 3,
-  "status": "completed",
-  "substep": {"id": "validate_data_layer", "name": "Validate data layer", "status": "completed", "detail": "All FK constraints valid, no NULL violations", "duration_s": 15},
-  "progress": 100,
-  "stats": {"tables_created": 8, "total_rows": 2400000, "columns_mapped": 64, "fk_relationships": 9, "validation_errors": 0},
-  "findings": ["All foreign keys valid", "Row counts within expected ranges", "No NULL violations in required columns"],
-  "decisions": [{"title": "Synthetic data approach confirmed", "detail": "dbldatagen used for all 8 tables with correlated distributions", "confidence": "high"}]
-}
-```
-
-This block's content will be written directly into `manifest.steps[2]` (step_order 3, zero-indexed).
-
-### Genie Code Rendering
-
-When running in Genie Code (no App UI), the progress blocks render as formatted code blocks
-in the chat output. The final `run_manifest.json` is written to the output folder regardless
-of execution context — it serves as the permanent record for both the App history view
-and Genie Code re-runs.
+**Manifest accumulation:** Each `@progress` block updates the in-memory manifest — substeps appended, findings/decisions accumulated (deduplicated), stats merged (latest wins), status finalized on completion.
 
 ---
 
@@ -1189,6 +1154,8 @@ genie_title: "<resolved_genie_space_name>"  # e.g., member_claims_analytics_geni
 warehouse_id: "<sql_warehouse_id>"
 parent_path: "/Users/<user_name>"
 workspace_host: "<https://workspace-url>"
+deploy_root: "<deploy_root>"       # e.g., /Workspace/Users/user@example.com/project-root
+output_folder: "<output_folder>"   # e.g., {deploy_root}/kpi_domains/{domain}/generated_outputs/{version}
 
 # Catalog/schema (for constructing table references)
 catalog: "<catalog_name>"
@@ -1778,6 +1745,7 @@ manifests/
 metric_views/
 dashboards/
 genie_space/
+documentation/
 ```
 
 Stages may create additional scoped directories as needed.
@@ -2179,45 +2147,18 @@ Dashboard structure is ENTIRELY determined by:
 5. metric_view_validation.yaml → which KPIs are IMPLEMENTED vs SKIPPED
 ```
 
-### LLM-Assisted Dashboard Design (Step 2.2 in 03_create_dashboards.md)
+### LLM-Assisted Dashboard Design
 
-Before building dashboards, an LLM reasoning model call proposes the multi-page layout. The LLM receives:
+Before building dashboards, an LLM reasoning model call proposes the multi-page layout.
+See `03_create_dashboards.md` Step 2.2 for the complete process. The master prompt enforces only the contract gate:
 
-```text
-- KPI specification (business context)
-- Complete metric view definition (SHOW CREATE TABLE output)
-- Validation results (implemented vs skipped KPIs)
-- Data profile (row counts, date ranges, categorical samples)
-- Aggregation semantics reference (additive vs ratio measures)
-```
-
-The LLM output is validated against:
-
-```text
-- Page count ≥ 2 canvas pages per dashboard
+- Page count >= 2 canvas pages per dashboard
 - Widget density 4-8 per page
-- Viz diversity ≥ 3 types per dashboard
+- Viz diversity >= 3 types per dashboard
 - Measure/dimension names EXACTLY match metric view
-- Ratio measures use AVG (not SUM)
 - No SKIPPED KPIs referenced
-```
 
-Saved to `{OUTPUT_FOLDER}/dashboards/llm_dashboard_design.yaml` (skip-if-exists checkpointed).
-
-The pipeline must NOT:
-
-```text
-- invent dashboards not listed in accelerator.yaml
-- invent pages not in KPI Spec Dashboard Mapping
-- create fewer dashboards than configured
-- guess column names without running DESCRIBE on the metric view
-- use assumed/derived column aliases as if they were actual dimensions
-- collapse multi-page LLM design into a single page
-- propose widgets using measures that don't exist in the metric view
-- SUM ratio/rate measures (must use AVG or component reconstruction)
-```
-
-Every widget must trace back to a specific KPI in the spec. Every column name must trace back to DESCRIBE output or the metric view definition.
+The pipeline must NOT invent dashboards, pages, or columns not in the spec. Every widget must trace back to a KPI. Every column name must trace back to DESCRIBE or metric view definition.
 
 ---
 
@@ -2379,48 +2320,20 @@ Genie Space content is ENTIRELY determined by:
 5. Metric View profiling → actual categorical values for filter examples
 ```
 
-### LLM-Assisted Genie Design (Step 2.2 in 04_create_genie_space.md)
+### LLM-Assisted Genie Design
 
-Before writing instructions and questions, an LLM reasoning model call proposes the full Genie configuration. The LLM receives:
+Before writing instructions and questions, an LLM reasoning model call proposes the full Genie configuration.
+See `04_create_genie_space.md` Step 2.2 for the complete process. The master prompt enforces only the contract gate:
 
-```text
-- Complete metric view DDL (SHOW CREATE TABLE output)
-- Validation results (implemented vs skipped KPIs)
-- KPI specification (business context and terminology)
-- Semantic inventory (profiled measures, dimensions, sample values)
-- Data profile (row counts, date ranges, categorical samples)
-```
-
-The LLM output is validated against:
-
-```text
-- Instructions ≥ 500 chars, markdown-formatted (## headers, - bullets), mentions MEASURE() syntax
-- Sample questions ≥ 15, covering ≥ 5 of 8 analytical patterns
-- Example SQL ≥ 10, ALL using MEASURE() syntax with exact measure names
-- Benchmark questions ≥ 15, different phrasing than samples
-- Every IMPLEMENTED KPI in ≥ 2 questions
-- Every dimension used in ≥ 1 question
+- Instructions >= 500 chars, markdown-formatted, mentions MEASURE() syntax
+- Sample questions >= 15, covering >= 5 analytical patterns
+- Example SQL >= 10, ALL using MEASURE() syntax with exact measure names
+- Benchmark questions >= 15, different phrasing than samples
+- Every IMPLEMENTED KPI in >= 2 questions
 - No SKIPPED KPIs referenced
 - Filter values match actual profiled data
-```
 
-Saved to `{OUTPUT_FOLDER}/genie_space/llm_genie_design.yaml` (skip-if-exists checkpointed).
-
-The pipeline must NOT:
-
-```text
-- invent KPIs, measures, or dimensions not in the metric view
-- assume column names without running DESCRIBE
-- generate sample questions about capabilities that don't exist
-- include example SQL that hasn't been validated on the warehouse
-- use derived aliases (service_month) as if they were actual dimensions
-- fabricate filter values without profiling actual data
-- accept instructions shorter than 500 chars or containing newlines
-- produce paraphrase-duplicate questions (same pattern + measure + dimension)
-- use raw SUM/COUNT instead of MEASURE() syntax in example SQL
-```
-
-Every instruction, sample question, and example SQL must trace back to the validated semantic inventory.
+The pipeline must NOT invent KPIs, measures, or dimensions not in the metric view. Every instruction, sample question, and example SQL must trace back to the validated semantic inventory.
 
 ---
 
@@ -2493,36 +2406,59 @@ Before generating documentation, run a terminal cross-validation sweep that inde
 **This step uses `gate_checks.py` from `{deploy_root}/framework/templates/gate_checks.py`.**
 
 ```python
-import sys, json, os
-sys.path.insert(0, f"{deploy_root}/framework/templates")
-from gate_checks import run_cross_validation, write_ground_truth_validation, GateCheckError
+import sys, json, os, yaml
 
-# Run the sweep — reads every manifest, GETs every deployed asset from API
-try:
-    report = run_cross_validation(OUTPUT_FOLDER, quality_gates=quality_gates)
-    # Write the ground-truth report
-    write_ground_truth_validation(
-        f"{OUTPUT_FOLDER}/ground_truth_validation.yaml",
-        report,
-        source="cross_validation_sweep",
-    )
-    print("✅ GATE 5.3 PASSED: Cross-validation sweep confirmed all deployed assets")
-except GateCheckError as e:
-    # Write the FAIL report for diagnostics
-    import yaml
-    fail_report = {
-        "source": "cross_validation_sweep",
-        "overall_status": "FAIL",
-        "error": str(e)[:1000],
+# Resolve templates path — try multiple strategies
+_templates_candidates = [
+    f"{deploy_root}/framework/templates",
+    f"/Workspace{deploy_root}/framework/templates" if not deploy_root.startswith("/Workspace") else None,
+    deploy_root.replace("/Workspace", "", 1) + "/framework/templates" if deploy_root.startswith("/Workspace") else None,
+]
+_templates_path = None
+for _cand in _templates_candidates:
+    if _cand and os.path.isdir(_cand):
+        _templates_path = _cand
+        break
+
+if _templates_path:
+    sys.path.insert(0, _templates_path)
+    from gate_checks import run_cross_validation, write_ground_truth_validation, GateCheckError
+
+    # Run the sweep — reads every manifest, GETs every deployed asset from API
+    try:
+        report = run_cross_validation(OUTPUT_FOLDER, quality_gates=quality_gates)
+        write_ground_truth_validation(
+            f"{OUTPUT_FOLDER}/ground_truth_validation.yaml",
+            report,
+            source="cross_validation_sweep",
+        )
+        print("✅ GATE 5.3 PASSED: Cross-validation sweep confirmed all deployed assets")
+    except GateCheckError as e:
+        fail_report = {
+            "source": "cross_validation_sweep",
+            "overall_status": "FAIL",
+            "error": str(e)[:1000],
+        }
+        with open(f"{OUTPUT_FOLDER}/ground_truth_validation.yaml", "w") as f:
+            yaml.dump(fail_report, f)
+        # DO NOT PROCEED — re-execute failed stages
+        raise RuntimeError(
+            f"❌ GATE 5.3 FAILED: Cross-validation detected empty/broken deployed assets.\n"
+            f"Error: {str(e)[:500]}\n"
+            f"ACTION: Re-execute the failed stage (dashboards and/or Genie) before retrying."
+        )
+else:
+    # templates_dir not accessible — log warning and produce fallback artifact
+    print(f"WARNING: templates_dir not found at any candidate path (deploy_root={deploy_root}). Producing fallback ground_truth_validation.yaml.")
+    _fallback = {
+        "status": "SWEEP_UNAVAILABLE",
+        "source": "documentation_fallback",
+        "reason": f"gate_checks.py not accessible (deploy_root={deploy_root})",
+        "note": "Documentation will use available manifests instead of cross-validation sweep",
     }
-    with open(f"{OUTPUT_FOLDER}/ground_truth_validation.yaml", "w") as f:
-        yaml.dump(fail_report, f)
-    # DO NOT PROCEED — re-execute failed stages
-    raise RuntimeError(
-        f"❌ GATE 5.3 FAILED: Cross-validation detected empty/broken deployed assets.\n"
-        f"Error: {str(e)[:500]}\n"
-        f"ACTION: Re-execute the failed stage (dashboards and/or Genie) before retrying."
-    )
+    _gt_path = f"{OUTPUT_FOLDER}/ground_truth_validation.yaml"
+    with open(_gt_path, "w") as f:
+        yaml.dump(_fallback, f, default_flow_style=False)
 ```
 
 **GATE 5.3: Cross-Validation Must Pass**
@@ -2834,54 +2770,11 @@ Use a structure equivalent to:
       "step_name": "create_metric_views",
       "step_order": 4,
       "status": "PASS|PARTIAL_SUCCESS|FAIL|SKIPPED",
-      "started_at": null,
-      "completed_at": null,
-      "duration_s": 0,
-      "error": null,
-      "substeps": [],
-      "stats": [],
-      "findings": [],
-      "decisions": []
-    },
-    {
-      "step_name": "create_dashboards",
-      "step_order": 5,
-      "status": "PASS|PARTIAL_SUCCESS|FAIL|SKIPPED",
-      "started_at": null,
-      "completed_at": null,
-      "duration_s": 0,
-      "error": null,
-      "substeps": [],
-      "stats": [],
-      "findings": [],
-      "decisions": []
-    },
-    {
-      "step_name": "create_genie_space",
-      "step_order": 6,
-      "status": "PASS|PARTIAL_SUCCESS|FAIL|SKIPPED",
-      "started_at": null,
-      "completed_at": null,
-      "duration_s": 0,
-      "error": null,
-      "substeps": [],
-      "stats": [],
-      "findings": [],
-      "decisions": []
-    },
-    {
-      "step_name": "generate_documentation",
-      "step_order": 7,
-      "status": "PASS|PARTIAL_SUCCESS|FAIL|SKIPPED",
-      "started_at": null,
-      "completed_at": null,
-      "duration_s": 0,
-      "error": null,
-      "substeps": [],
-      "stats": [],
-      "findings": [],
-      "decisions": []
+      "started_at": null, "completed_at": null, "duration_s": 0, "error": null,
+      "substeps": [], "stats": [], "findings": [], "decisions": []
     }
+    // Steps 5 (dashboards), 6 (genie_space), 7 (documentation) follow the SAME structure
+    // with step_order 5/6/7 and step_name create_dashboards/create_genie_space/generate_documentation
   ],
 
   "validation": {

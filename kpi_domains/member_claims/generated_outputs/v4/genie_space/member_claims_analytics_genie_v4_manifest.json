@@ -1,0 +1,27 @@
+{
+  "space_id": "01f1b044eab6158fba0f43ea8c9a54ca",
+  "title": "member_claims_analytics_genie_v4",
+  "description": "Production Genie Space for Member Claims analytics over validated Databricks Metric Views. Provides natural-language access to claims financials, claim volume, denial and clean-claim performance, provider participation, enrollment, active members, and member geography using governed Metric View semantics.",
+  "warehouse_id": "2d8e531640ffa469",
+  "validation_source": "api_readback",
+  "tables": [
+    "aw_serverless_stable_catalog.aibi_member_claims.member_claims_metric_view_v4",
+    "aw_serverless_stable_catalog.aibi_member_claims.member_claims_enrollment_metric_view_v4",
+    "aw_serverless_stable_catalog.aibi_member_claims.member_claims_member_metric_view_v4"
+  ],
+  "metric_views": [
+    "aw_serverless_stable_catalog.aibi_member_claims.member_claims_metric_view_v4",
+    "aw_serverless_stable_catalog.aibi_member_claims.member_claims_enrollment_metric_view_v4",
+    "aw_serverless_stable_catalog.aibi_member_claims.member_claims_member_metric_view_v4"
+  ],
+  "sample_questions_count": 15,
+  "sample_question_count": 15,
+  "example_sqls_count": 15,
+  "example_sql_count": 15,
+  "benchmarks_count": 15,
+  "benchmark_count": 15,
+  "instruction_chars": 2809,
+  "notebook_path": "/Workspace/Users/arun.wagle@databricks.com/databricks-aibi-design-first-accelerator/kpi_domains/member_claims/generated_outputs/v4/genie_space/genie_space_configuration_member_claims",
+  "configured": true,
+  "validated": true
+}

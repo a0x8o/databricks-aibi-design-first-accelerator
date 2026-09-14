@@ -272,12 +272,12 @@ class LakebaseStore:
             if domain:
                 cur.execute(
                     "SELECT * FROM agent_runs WHERE domain = %s "
-                    "ORDER BY created_at DESC LIMIT %s",
+                    "ORDER BY COALESCE(started_at, created_at) DESC LIMIT %s",
                     (domain, limit)
                 )
             else:
                 cur.execute(
-                    "SELECT * FROM agent_runs ORDER BY created_at DESC LIMIT %s",
+                    "SELECT * FROM agent_runs ORDER BY COALESCE(started_at, created_at) DESC LIMIT %s",
                     (limit,)
                 )
             return [dict(r) for r in cur.fetchall()]

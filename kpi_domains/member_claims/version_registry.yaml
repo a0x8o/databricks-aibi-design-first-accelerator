@@ -1,30 +1,50 @@
 domain: member_claims
 versions:
 - version: 1
-  status: completed
-  created_by: genie_code
-  run_id: ecc9afea-f097-4ab5-8aad-b7bd51b2e57d
-  started_at: '2026-09-03T13:07:57.585441+00:00'
+  status: failed
+  created_by: app
+  run_id: 86ccea09-4f47-48d4-b81d-a250f0d1fdf9
+  started_at: '2026-09-11T21:40:49.687163+00:00'
   assets_created: {}
-  completed_at: '2026-09-03T13:55:25.641390+00:00'
-  dashboards:
-  - name: member_claims_kpis_dashboard_v1
-    id: 01f1a79e16b71fe5a03c998672132df7
-  - name: member_claims_utilization_dashboard_v1
-    id: 01f1a79e3f0c1403ae74c90063fb984d
-  genie_space:
-    name: member_claims_analytics_genie_v1
-    id: 01f1a79eebc217808072e6a6880c79cf
+  completed_at: '2026-09-11T21:49:18.084852+00:00'
+  error_summary: 'Critical failure in ''execute_notebook'': NOTEBOOK ERROR (run_id=1055369662870256):
+    AssertionError: Unbalanced datatype: DECIMAL(28'
 - version: 2
   status: failed
   created_by: app
-  run_id: ab4afe9c-ea18-4bd9-af24-ff31e8e0cbeb
-  started_at: '2026-09-03T14:27:03.919826+00:00'
+  run_id: 55683c5a-4ad9-4792-ba8d-2827c81badda
+  started_at: '2026-09-11T23:36:10.624171+00:00'
   assets_created: {}
-  completed_at: '2026-09-03T19:36:54.379828+00:00'
-  error_summary: "Critical failure in 'execute_python': ERROR: Traceback (most recent\
-    \ call last):\n  File \"<string>\", line 24, in <module>\n  File \"/usr/lib/python3.11/shutil.py\"\
-    , line 448, in copy2\n    copyfile(src, dst, follow_symlinks=follow_symlinks)\n\
-    \  File \"/usr/lib/python3.11/shutil.py\", line 256, in copyfile\n    with open(src,\
-    \ 'rb') as fsrc:\n         ^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such\
-    \ file or directory: '/Workspace/Users/arun.wagle@databricks.com/databricks-aibi-design-first-accelerator/fra"
+  completed_at: '2026-09-11T23:53:52.219233+00:00'
+  error_summary: 'Critical failure in ''execute_notebook'': NOTEBOOK ERROR (run_id=1005732918889946):
+    [DELTA_EXCEED_CHAR_VARCHAR_LIMIT] Value "FME-00000001" exceeds char/varchar type
+    length limitation. Failed check: ((mbr_enr_insured_code IS NULL) OR (length(mbr_enr_insured_code)
+    <= 2)). SQLSTATE: 22001'
+- version: 3
+  status: running
+  created_by: app
+  run_id: 126b1c7c-fa86-40a2-9fcc-89b447e1ae60
+  started_at: '2026-09-12T00:59:09.973106+00:00'
+  assets_created: {}
+  completed_at: '2026-09-12T02:42:16.164583+00:00'
+  error_summary: "Critical failure in 'execute_notebook': NOTEBOOK ERROR (run_id=877105355557743):\
+    \ RuntimeError: Dataset 'ds_`member_claims_metric_view_v3`' SQL FAILED:\n  SQL:\
+    \ SELECT `adjudication_status`, `average_paid_per_claim`, `average_paid_per_member`,\
+    \ `claim_type`, `claims_per_member`, `clean_claim_indicator`, `clean_claim_rate`,\
+    \ `clean_lines`, `denial_rate`, `denied_lines`, `inpatient_paid_amount`, `line_status`,\
+    \ `lines_per_claim`, `outpatient_paid_amount`, `parti\n  Error: SQL execution\
+    \ failed (state=Stat"
+- version: 4
+  status: completed
+  created_by: app
+  run_id: 0e8058b5-d7be-427e-8898-e1bd0350fa93
+  started_at: '2026-09-12T03:20:52.333091+00:00'
+  assets_created: {}
+  completed_at: '2026-09-14T14:10:33.360425+00:00'
+  error_summary: 'Critical failure in ''execute_notebook'': NOTEBOOK ERROR (run_id=763263647291738):
+    InvalidParameterValue: validation failed: [resource names should only contain
+    alphanumeric characters (a-z, A-Z, 0-9), hyphens (-), or underscores (_) [widget-0-Total
+    Claims], resource names should only contain alphanumeric characters (a-z, A-Z,
+    0-9), hyphens (-), or underscores (_) [widget-1-Total Paid Amount], resource names
+    should only contain alphanumeric characters (a-z, A-Z, 0-9), hyphens (-), or underscores
+    ('

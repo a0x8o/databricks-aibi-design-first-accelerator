@@ -220,10 +220,11 @@ Each phase produces a durable artifact. The artifact IS the state:
 |-------|----------|-------------|
 | parse_erd | erd_parsed.yaml | file exists + tables array non-empty |
 | build_semantic_model | semantic_model.yaml | file exists |
-| generate_ddl | Tables in catalog | `SHOW TABLES LIKE '%_vN'` returns expected count |
+| generate_ddl | Tables in catalog | `SHOW TABLES LIKE '*_vN'` returns expected count |
 | generate_synthetic_data | Row count > 0 | `SELECT COUNT(*) > 0` for each table |
 | validate_data | data_layer_validation.yaml | file exists |
 | profile_schema | schema_profile.yaml | file exists |
+| cross_check_profile | schema_profile.yaml (corrected) | DESCRIBE TABLE columns match profile columns (GATE 2.2) |
 | map_kpis | kpi_metric_mapping.yaml | file exists |
 | plan_metric_views | metric_view_plan.yaml | file exists + ≥ 1 metric view planned |
 | design_metric_views | metric_view_design.yaml | file exists |
@@ -575,6 +576,7 @@ These gates are the **artifact verification points** for this state contract:
 | 01 | `synthetic_data_populated` | COUNT(*) > 0 per table | generate_synthetic_data |
 | 01 | `validation_passed` | data_layer_validation.yaml exists | validate_data |
 | 02 | `schema_profiled` | schema_profile.yaml exists | profile_schema |
+| 02 | `profile_cross_checked` | All profile columns verified against catalog via DESCRIBE TABLE (GATE 2.2) | cross_check_profile |
 | 02 | `kpi_mapped` | kpi_metric_mapping.yaml exists | map_kpis |
 | 02 | `design_validated` | metric_view_design.yaml exists | design_metric_views |
 | 02 | `metric_view_created` | SHOW VIEWS returns >= 1 | generate_metric_views |

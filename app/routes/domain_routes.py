@@ -126,9 +126,11 @@ def _get_latest_version_info(domain_name, config):
         warehouse_id = current_app.config.get('SQL_WAREHOUSE_ID', '')
         suffix = f'_v{latest_version}'
 
+        # NOTE: SHOW TABLES/VIEWS LIKE uses GLOB syntax (* = wildcard),
+        # NOT SQL LIKE syntax (% = wildcard). See G-15.
         tables_resp = w.statement_execution.execute_statement(
             warehouse_id=warehouse_id,
-            statement=f"SHOW TABLES IN {catalog}.{schema} LIKE '%{suffix}'",
+            statement=f"SHOW TABLES IN {catalog}.{schema} LIKE '*{suffix}'",
             wait_timeout='30s',
         )
         if tables_resp.status and tables_resp.status.state == StatementState.SUCCEEDED:
@@ -137,7 +139,7 @@ def _get_latest_version_info(domain_name, config):
 
         views_resp = w.statement_execution.execute_statement(
             warehouse_id=warehouse_id,
-            statement=f"SHOW VIEWS IN {catalog}.{schema} LIKE '%{suffix}'",
+            statement=f"SHOW VIEWS IN {catalog}.{schema} LIKE '*{suffix}'",
             wait_timeout='30s',
         )
         if views_resp.status and views_resp.status.state == StatementState.SUCCEEDED:
@@ -147,18 +149,18 @@ def _get_latest_version_info(domain_name, config):
         output_subpath = config.get('workspace', {}).get('output_subpath', 'generated_outputs')
         version_path = f"{_get_examples_path()}/{domain_name}/{output_subpath}/v{latest_version}"
 
-        # Count dashboards
+        # Count dashboards — look for DASHBOARD objects or .lvdash.json files
         try:
             dash_items = list(w.workspace.list(path=f"{version_path}/dashboards"))
             result['dashboards'] = sum(
                 1 for item in dash_items
-                if item.object_type == ObjectType.DASHBOARD_V3
-                   or ((item.path or '').endswith('_manifest.json'))
+                if item.object_type in (ObjectType.DASHBOARD, getattr(ObjectType, 'DASHBOARD_V3', None))
+                   or (item.path or '').endswith('.lvdash.json')
             )
         except Exception:
             pass
 
-        # Count Genie spaces
+        # Count Genie spaces — manifest files indicate created spaces
         try:
             genie_items = list(w.workspace.list(path=f"{version_path}/genie_space"))
             result['genie_spaces'] = sum(
@@ -471,6 +473,35 @@ def upload_erd_image(domain_name):
     except Exception as e:
         logger.warning(f"ERD upload failed for {erd_ws_path}: {e}")
         return jsonify({'error': f'Upload failed: {e}'}), 500
+
+
+@domain_bp.route('/<domain_name>/input-file/<path:filename>', methods=['GET'])
+def get_input_file(domain_name, filename):
+    """Serve an input file for preview (markdown as text, images as binary)."""
+    domain_ws_path = f"{_get_examples_path()}/{domain_name}"
+    file_ws_path = posixpath.normpath(f"{domain_ws_path}/inputs/{filename}")
+
+    ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
+
+    # Image files: return binary
+    if ext in ('png', 'jpg', 'jpeg', 'gif', 'svg'):
+        try:
+            w = _get_client()
+            resp = w.workspace.export(path=file_ws_path, format=ExportFormat.AUTO)
+            image_bytes = base64.b64decode(resp.content)
+            mime = {'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
+                    'svg': 'image/svg+xml', 'gif': 'image/gif'}.get(ext, 'application/octet-stream')
+            return Response(image_bytes, status=200, mimetype=mime,
+                            headers={'Cache-Control': 'public, max-age=3600'})
+        except Exception as e:
+            return Response(f"Failed to load {filename}: {e}", status=500, mimetype='text/plain')
+
+    # Text files: return content as JSON
+    try:
+        content = _read_workspace_file(file_ws_path)
+        return jsonify({'filename': filename, 'content': content, 'type': ext})
+    except Exception as e:
+        return jsonify({'error': f'Failed to load {filename}: {e}'}), 404
 
 
 @domain_bp.route('/<domain_name>/summary/<run_id>', methods=['GET'])

@@ -1,0 +1,84 @@
+overall_status: PASS
+schema:
+  tables_expected: 8
+  tables_created: 8
+  missing: []
+  unexpected: []
+  tables:
+    - dim_member_v4
+    - dim_address_v4
+    - dim_provider_v4
+    - dim_member_identifier_v4
+    - dim_member_history_v4
+    - fact_member_enrollment_v4
+    - fact_claim_header_v4
+    - fact_claim_detail_v4
+row_counts:
+  dim_member_v4: 300
+  dim_address_v4: 400
+  dim_provider_v4: 250
+  dim_member_identifier_v4: 500
+  dim_member_history_v4: 500
+  fact_member_enrollment_v4: 800
+  fact_claim_header_v4: 500
+  fact_claim_detail_v4: 2500
+primary_keys:
+  tested: 8
+  failures: []
+  results:
+    dim_member_v4: {rows: 300, pk_distinct: 300, pk_dups: 0, status: PASS}
+    dim_address_v4: {rows: 400, pk_distinct: 400, pk_dups: 0, status: PASS}
+    dim_provider_v4: {rows: 250, pk_distinct: 250, pk_dups: 0, status: PASS}
+    dim_member_identifier_v4: {rows: 500, pk_distinct: 500, pk_dups: 0, status: PASS}
+    dim_member_history_v4: {rows: 500, pk_distinct: 500, pk_dups: 0, status: PASS}
+    fact_member_enrollment_v4: {rows: 800, pk_distinct: 800, pk_dups: 0, status: PASS}
+    fact_claim_header_v4: {rows: 500, pk_distinct: 500, pk_dups: 0, status: PASS}
+    fact_claim_detail_v4: {rows: 2500, pk_distinct: 2500, pk_dups: 0, status: PASS}
+foreign_keys:
+  tested: 8
+  orphan_counts:
+    dim_address_v4.entity_dimension_key: 0
+    dim_provider_v4.provider_address_sk: 0
+    dim_member_identifier_v4.member_sk: 0
+    dim_member_history_v4.member_sk: 0
+    fact_member_enrollment_v4.member_sk: 0
+    fact_claim_header_v4.clm_member_sk: 0
+    fact_claim_header_v4.clm_service_facility_address_sk: 0
+    fact_claim_detail_v4.clm_dtl_claim_id: 0
+  diversity:
+    dim_address_v4.entity_dimension_key: 300
+    dim_provider_v4.provider_address_sk: 250
+    dim_member_identifier_v4.member_sk: 300
+    dim_member_history_v4.member_sk: 300
+    fact_member_enrollment_v4.member_sk: 300
+    fact_claim_header_v4.clm_member_sk: 300
+    fact_claim_header_v4.clm_service_facility_address_sk: 400
+    fact_claim_detail_v4.clm_dtl_claim_id: 500
+  failures: []
+join_stability:
+  tested: 8
+  fanout_failures: []
+  results:
+    dim_address_to_dim_member: {before_rows: 400, after_rows: 400, status: PASS}
+    dim_provider_to_dim_address: {before_rows: 250, after_rows: 250, status: PASS}
+    dim_member_identifier_to_dim_member: {before_rows: 500, after_rows: 500, status: PASS}
+    dim_member_history_to_dim_member: {before_rows: 500, after_rows: 500, status: PASS}
+    fact_member_enrollment_to_dim_member: {before_rows: 800, after_rows: 800, status: PASS}
+    fact_claim_header_to_dim_member: {before_rows: 500, after_rows: 500, status: PASS}
+    fact_claim_header_to_dim_address: {before_rows: 500, after_rows: 500, status: PASS}
+    fact_claim_detail_to_fact_claim_header: {before_rows: 2500, after_rows: 2500, status: PASS}
+semantic_constraints:
+  tested: 2
+  failures: []
+domain_values:
+  columns_checked: 5
+  generic_value_failures: []
+  checked_columns:
+    dim_member_v4.mbr_line_of_business: {distinct_vals: 5, generic_rows: 0, status: PASS}
+    fact_claim_header_v4.clm_claim_type: {distinct_vals: 5, generic_rows: 0, status: PASS}
+    fact_claim_detail_v4.clm_dtl_claim_type: {distinct_vals: 5, generic_rows: 0, status: PASS}
+    fact_claim_detail_v4.clm_dtl_line_status: {distinct_vals: 5, generic_rows: 0, status: PASS}
+    fact_member_enrollment_v4.mbr_enr_status: {distinct_vals: 5, generic_rows: 0, status: PASS}
+data_quality:
+  null_violations: []
+  generic_fallback_columns: []

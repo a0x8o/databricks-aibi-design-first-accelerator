@@ -1,0 +1,64 @@
+source: api_readback
+status: PASS
+validated_at: '2026-09-12T03:00:15Z'
+dashboards:
+  - dashboard_id: 01f1ae560f9a1f6baf0a041336221574
+    display_name: member_claims_kpis_dashboard_v3
+    published: true
+    validation_file: member_claims_kpis_dashboard_v3_validation.yaml
+    manifest_file: member_claims_kpis_dashboard_dashboard_manifest.json
+    api_readback:
+      status: PASS
+      datasets: 2
+      total_pages: 4
+      canvas_pages: 3
+      filter_pages: 1
+      total_canvas_widgets: 18
+      total_filters: 4
+      issues: []
+    filter_impact_tests:
+      - name: claim_type_professional_total_paid
+        status: PASS
+        unfiltered_value: 3123750.00
+        filtered_value: 1341934.00
+        interpretation: filtered result is constrained relative to unfiltered result
+      - name: participating_provider_y_total_paid
+        status: PASS
+        filtered_value: null
+        interpretation: query executed successfully; selected category has no paid amount in current synthetic data
+  - dashboard_id: 01f1ae5612391a91bb96950858929a76
+    display_name: member_claims_utilization_dashboard_v3
+    published: true
+    validation_file: member_claims_utilization_dashboard_v3_validation.yaml
+    manifest_file: member_claims_utilization_dashboard_dashboard_manifest.json
+    api_readback:
+      status: PASS
+      datasets: 1
+      total_pages: 4
+      canvas_pages: 3
+      filter_pages: 1
+      total_canvas_widgets: 18
+      total_filters: 4
+      issues: []
+    filter_impact_tests:
+      - name: claim_type_professional_total_paid
+        status: PASS
+        unfiltered_value: 3123750.00
+        filtered_value: 1341934.00
+        interpretation: filtered result is constrained relative to unfiltered result
+kpi_coverage:
+  implemented_and_validated_kpis: 17
+  dashboard_rendered_kpis: 17
+  skipped_not_implemented_kpis: 6
+  status: PASS
+checks:
+  validated_kpis_mapped: PASS
+  dataset_sql: PASS
+  widget_definitions: PASS
+  page_layout_validation: PASS
+  create_api: PASS
+  persisted_draft_get: PASS
+  publish_api: PASS
+  filters: PASS
+  kpi_coverage: PASS
+  overall: PASS

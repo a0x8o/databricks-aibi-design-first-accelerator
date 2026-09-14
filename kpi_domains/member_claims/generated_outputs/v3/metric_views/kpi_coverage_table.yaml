@@ -1,0 +1,28 @@
+coverage:
+  - {kpi: C-1, source: fact_claim_detail_v3, grain: claim service/detail line, measure: total_claims, join_safety: direct_source, status: READY}
+  - {kpi: C-2, source: fact_claim_detail_v3, grain: claim service/detail line, measure: total_claim_lines, join_safety: direct_source, status: READY}
+  - {kpi: C-3, source: fact_claim_detail_v3, grain: claim service/detail line, measure: total_paid_amount, join_safety: direct_source, status: READY}
+  - {kpi: C-4, source: fact_claim_detail_v3, grain: claim service/detail line, measure: average_paid_per_claim, join_safety: direct_source, status: READY}
+  - {kpi: D-1, source: fact_claim_detail_v3, grain: claim service/detail line, measure: denial_rate, join_safety: direct_source, status: READY}
+  - {kpi: D-2, source: fact_claim_detail_v3, grain: claim service/detail line, measure: clean_claim_rate, join_safety: direct_source, status: READY}
+  - {kpi: D-3, source: fact_claim_detail_v3, grain: claim service/detail line, measure: payment_to_billed_ratio, join_safety: direct_source, status: READY}
+  - {kpi: D-4, source: fact_claim_detail_v3, grain: claim service/detail line, measure: payment_to_allowed_ratio, join_safety: direct_source, status: READY}
+  - {kpi: D-5, source: fact_claim_detail_v3, grain: claim service/detail line, measure: average_paid_per_member, join_safety: direct_source, status: READY}
+  - {kpi: D-6, source: fact_claim_detail_v3, grain: claim service/detail line, measure: claims_per_member, join_safety: direct_source, status: READY}
+  - {kpi: D-7, source: fact_claim_detail_v3, grain: claim service/detail line, measure: lines_per_claim, join_safety: direct_source, status: READY}
+  - {kpi: D-8, source: fact_claim_detail_v3, grain: claim service/detail line, measure: inpatient_paid_amount, join_safety: direct_source, status: READY}
+  - {kpi: D-9, source: fact_claim_detail_v3, grain: claim service/detail line, measure: outpatient_paid_amount, join_safety: direct_source, status: READY}
+  - {kpi: D-10, source: fact_claim_detail_v3, grain: claim service/detail line, measure: participating_provider_rate, join_safety: direct_source, status: READY}
+  - {kpi: M-1, source: fact_member_enrollment_v3, grain: member enrollment/event row, measure: new_member_enrollments, join_safety: N:1_PASS_to_dim_member, status: READY}
+  - {kpi: M-2, source: fact_member_enrollment_v3, grain: member enrollment/event row, measure: active_members, join_safety: N:1_PASS_to_dim_member, status: READY}
+  - {kpi: M-3, source: fact_member_enrollment_v3, grain: member enrollment/event row, measure: members_by_geography, join_safety: N:1_PASS_to_dim_member, status: READY}
+  - {kpi: MC-1, source: fact_claim_detail_v3 + fact_member_enrollment_v3, grain: cross-fact monthly aggregate, measure: reference_sql, join_safety: cross_grain_not_metric_view_safe, status: NOT_IMPLEMENTED}
+  - {kpi: MC-2, source: fact_claim_detail_v3 + fact_member_enrollment_v3, grain: cross-fact monthly aggregate, measure: reference_sql, join_safety: cross_grain_not_metric_view_safe, status: NOT_IMPLEMENTED}
+  - {kpi: MC-3, source: fact_claim_detail_v3 + fact_member_enrollment_v3, grain: cross-fact monthly aggregate, measure: reference_sql, join_safety: unresolved_claim_member_relationship, status: NOT_IMPLEMENTED}
+  - {kpi: MC-4, source: fact_claim_detail_v3, grain: member pre-aggregate, measure: reference_sql, join_safety: direct_source_but_requires_having, status: NOT_IMPLEMENTED}
+  - {kpi: W-1, source: fact_claim_detail_v3 + fact_member_enrollment_v3, grain: rolling monthly aggregate, measure: reference_sql, join_safety: window_cross_grain, status: NOT_IMPLEMENTED}
+  - {kpi: W-2, source: fact_member_enrollment_v3, grain: monthly enrollment aggregate, measure: reference_sql, join_safety: direct_source_but_requires_lag, status: NOT_IMPLEMENTED}
+summary:
+  ready_for_metric_view: 17
+  not_implemented_documentation_only: 6
+  skipped: 0

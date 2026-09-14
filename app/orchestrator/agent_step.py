@@ -55,6 +55,14 @@ class AgentStep:
         self._tool_executor = ToolExecutor(config, services, llm_client=llm_client)
         self._agent = AgentLoop(llm_client, self._tool_executor, config)
 
+    def set_frozen_artifacts(self, paths: set):
+        """Set frozen artifact paths for artifact-gated phase skip.
+
+        Must be called BEFORE execute() to protect completed-phase artifacts
+        from being overwritten by the LLM agent.
+        """
+        self._tool_executor.set_frozen_artifacts(paths)
+
     def execute(
         self,
         callback: Optional[Callable] = None,

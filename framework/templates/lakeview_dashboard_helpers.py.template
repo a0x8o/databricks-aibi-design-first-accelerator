@@ -26,8 +26,45 @@ import time
 from typing import Any
 
 from databricks.sdk import WorkspaceClient
+from databricks.sdk.service.sql import StatementState
 
 w = WorkspaceClient()
+
+
+def _execute_sql_via_api(stmt: str, warehouse_id: str, timeout: str = "50s"):
+    """Execute SQL via Statement Execution API (no spark dependency).
+
+    All SQL in the dashboard deployment runtime MUST go through this function.
+    Never use spark.sql() — spark is not guaranteed to be available in the
+    notebook execution context (e.g. serverless compute, job tasks).
+
+    Returns a list of column-name/value dicts on success.
+    Raises RuntimeError with the SQL error on failure.
+    """
+    response = w.statement_execution.execute_statement(
+        warehouse_id=warehouse_id,
+        statement=stmt,
+        wait_timeout=timeout,
+    )
+    if response.status is None or response.status.state != StatementState.SUCCEEDED:
+        error_msg = "unknown"
+        if response.status and hasattr(response.status, "error") and response.status.error:
+            error_msg = response.status.error.message or str(response.status.error)
+        raise RuntimeError(
+            f"SQL execution failed (state={response.status.state if response.status else 'None'}): {error_msg}\n"
+            f"  SQL: {stmt[:300]}"
+        )
+    columns = None
+    if response.manifest and response.manifest.schema and response.manifest.schema.columns:
+        columns = [c.name for c in response.manifest.schema.columns]
+    rows = []
+    if response.result and response.result.data_array:
+        for arr in response.result.data_array:
+            row = {}
+            for idx, col_name in enumerate(columns or range(len(arr))):
+                row[col_name if columns else f"col_{idx}"] = arr[idx]
+            rows.append(row)
+    return columns or [], rows
 
 # ════════════════════════════════════════════════════════════════════════════
 # Gate Checks integration — programmatic enforcement layer
@@ -66,18 +103,26 @@ except ImportError:
 # This section MUST be used before building datasets or widgets.
 # It prevents the #1 failure: LLM referencing columns that don't exist.
 
-def describe_metric_view(metric_view_fqn: str) -> dict:
+def describe_metric_view(metric_view_fqn: str, warehouse_id: str) -> dict:
     """Discover actual columns from a metric view via DESCRIBE.
     Returns {col_name: {'type': str, 'is_dimension': bool, 'is_measure': bool}}.
 
     This is the SINGLE SOURCE OF TRUTH for all column references.
     ALWAYS call this before building datasets or widgets.
+
+    Args:
+        metric_view_fqn: Fully qualified metric view name (catalog.schema.view).
+        warehouse_id: SQL warehouse ID for Statement Execution API.
     """
-    rows = spark.sql(f"DESCRIBE TABLE {metric_view_fqn}").collect()
+    columns_list, rows = _execute_sql_via_api(
+        f"DESCRIBE TABLE {metric_view_fqn}", warehouse_id
+    )
+    col_col = "col_name" if "col_name" in columns_list else columns_list[0] if columns_list else "col_name"
+    type_col = "data_type" if "data_type" in columns_list else columns_list[1] if len(columns_list) > 1 else "data_type"
     columns = {}
     for row in rows:
-        col_name = row['col_name'].strip()
-        data_type = row['data_type'].strip()
+        col_name = str(row.get(col_col, "")).strip()
+        data_type = str(row.get(type_col, "")).strip()
         if not col_name or col_name.startswith('#') or not data_type:
             break
         # Measures are numeric types that represent aggregatable values
@@ -112,17 +157,17 @@ def validate_column_refs(mv_columns: dict, refs: list, context: str) -> None:
         )
 
 
-def validate_dataset_sql(sql: str, dataset_name: str) -> list:
+def validate_dataset_sql(sql: str, dataset_name: str, warehouse_id: str) -> list:
     """Execute dataset SQL with LIMIT 1 to verify it runs.
     Returns the list of result column names on success.
     Raises RuntimeError with clear message on failure.
 
     MUST be called for EVERY dataset before building the dashboard.
+    Uses Statement Execution API (no spark dependency).
     """
     try:
         test_sql = f"SELECT * FROM ({sql}) _validate LIMIT 1"
-        result = spark.sql(test_sql)
-        col_names = [f.name for f in result.schema.fields]
+        col_names, _ = _execute_sql_via_api(test_sql, warehouse_id)
         print(f"  ✓ Dataset '{dataset_name}' validated: {len(col_names)} columns")
         return col_names
     except Exception as e:
@@ -134,11 +179,12 @@ def validate_dataset_sql(sql: str, dataset_name: str) -> list:
         )
 
 
-def build_validated_dataset(name: str, sql: str, display_name: str = "") -> dict:
+def build_validated_dataset(name: str, sql: str, display_name: str = "", warehouse_id: str = "") -> dict:
     """Build a dataset AND validate its SQL in one call.
     This is the PREFERRED dataset builder — combines build_dataset + validation.
-    Raises RuntimeError if SQL is invalid."""
-    validate_dataset_sql(sql, name)
+    Raises RuntimeError if SQL is invalid.
+    """
+    validate_dataset_sql(sql, name, warehouse_id)
     return build_dataset(name, sql, display_name)
 
 

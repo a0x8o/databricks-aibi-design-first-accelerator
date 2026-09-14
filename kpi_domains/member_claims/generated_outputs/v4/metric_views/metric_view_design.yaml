@@ -1,0 +1,142 @@
+metric_view_designs:
+  - metric_view:
+      name: member_claims_metric_view_v4
+      sql_fqn: aw_serverless_stable_catalog.aibi_member_claims.member_claims_metric_view_v4
+      source_table: aw_serverless_stable_catalog.aibi_member_claims.fact_claim_detail_v4
+      source_grain: one row represents one claim detail line
+      common_time_dimension: service_month
+    measures:
+      - Total Claims
+      - Total Claim Lines
+      - Total Paid Amount
+      - Total Billed Amount
+      - Total Allowed Amount
+      - Unique Claim Members
+      - Claim Member Months
+      - Denied Lines
+      - Clean Lines
+      - Participating Provider Paid Amount
+      - Inpatient Paid Amount
+      - Outpatient Paid Amount
+      - Average Paid per Claim
+      - PMPM
+      - Claims per 1,000 Members
+      - Denial Rate
+      - Clean Claim Rate
+      - Payment-to-Billed Ratio
+      - Payment-to-Allowed Ratio
+      - Average Paid per Member
+      - Claims per Member
+      - Lines per Claim
+      - Participating Provider Rate
+    dimensions:
+      - {name: service_date, expr: clm_dtl_specific_dos_date}
+      - {name: service_month, expr: DATE_TRUNC('MONTH', clm_dtl_specific_dos_date)}
+      - {name: claim_type, expr: clm_dtl_claim_type}
+      - {name: benefit_category, expr: clm_dtl_benefit_category}
+      - {name: benefit_level, expr: clm_dtl_benefit_level}
+      - {name: line_status, expr: clm_dtl_line_status}
+      - {name: clean_claim_indicator, expr: clm_dtl_clean_claim_ind}
+      - {name: provider_participation, expr: clm_dtl_participating_provider}
+      - {name: place_of_service, expr: clm_dtl_place_of_service}
+      - {name: procedure_code, expr: clm_dtl_procedure_code}
+      - {name: rendering_provider_type, expr: clm_dtl_rendering_provider_type}
+      - {name: rendering_provider_specialty, expr: clm_dtl_rendering_provider_spec}
+    joins: []
+    kpis_supported: [C-1, C-2, C-3, C-4, MC-1, MC-2, ADD-1, ADD-2, ADD-3, ADD-4, ADD-5, ADD-6, ADD-7, ADD-8, ADD-9, ADD-10]
+    kpis_skipped: []
+    data_quality_blockers: []
+  - metric_view:
+      name: member_claims_enrollment_metric_view_v4
+      sql_fqn: aw_serverless_stable_catalog.aibi_member_claims.member_claims_enrollment_metric_view_v4
+      source_table: aw_serverless_stable_catalog.aibi_member_claims.fact_member_enrollment_v4
+      source_grain: one row represents one member enrollment event or enrollment period
+      common_time_dimension: service_month
+    measures:
+      - New Member Enrollment
+      - Active Members
+      - Enrollment Records
+    dimensions:
+      - {name: service_date, expr: mbr_enr_effective_date}
+      - {name: service_month, expr: DATE_TRUNC('MONTH', mbr_enr_effective_date)}
+      - {name: line_of_business, expr: mbr_enr_line_of_business}
+      - {name: enrollment_status, expr: mbr_enr_status}
+      - {name: plan_id, expr: mbr_enr_plan_id}
+      - {name: product_id, expr: mbr_enr_product_id}
+      - {name: termination_reason, expr: mbr_enr_termination_reason}
+    joins: []
+    kpis_supported: [M-1, M-2]
+    kpis_skipped: []
+    data_quality_blockers: []
+  - metric_view:
+      name: member_claims_member_metric_view_v4
+      sql_fqn: aw_serverless_stable_catalog.aibi_member_claims.member_claims_member_metric_view_v4
+      source_table: aw_serverless_stable_catalog.aibi_member_claims.dim_member_v4
+      source_grain: one row represents one current member dimension record
+      common_time_dimension: service_month
+    measures:
+      - Active Members by Geography
+    dimensions:
+      - {name: service_date, expr: mbr_extract_date}
+      - {name: service_month, expr: DATE_TRUNC('MONTH', mbr_extract_date)}
+      - {name: state, expr: mbr_state}
+      - {name: zip_code, expr: mbr_zip_code}
+      - {name: line_of_business, expr: mbr_line_of_business}
+      - {name: sex, expr: mbr_sex}
+      - {name: race, expr: mbr_race}
+      - {name: ethnicity, expr: mbr_ethnicity}
+    joins: []
+    kpis_supported: [M-3]
+    kpis_skipped: []
+    data_quality_blockers: []
+not_implemented_kpis:
+  - kpi: MC-4
+    name: High-Cost Member Count
+    reason: Requires HAVING over member-level pre-aggregation.
+    reference_sql: See metric_view_plan.yaml
+  - kpi: W-1
+    name: Rolling 3-Month PMPM
+    reason: Requires rolling window over separately aggregated numerator and denominator.
+    reference_sql: See metric_view_plan.yaml
+  - kpi: W-2
+    name: MoM Active Member Growth
+    reason: Requires LAG/prior-period offset.
+    reference_sql: See metric_view_plan.yaml
+skipped_kpis:
+  - kpi: MC-3
+    name: Utilization Rate
+    status: SKIPPED_UNSAFE_GRAIN
+    reason: Unsafe cross-fact grain/key mismatch.
+intermediate_views: []
+join_validation:
+  status: PASS
+  joins_designed: 0
+  rationale: All metric views source directly from a single table. Semantic relationships were verified in schema_profile.yaml but not needed for direct metric-view design.
+measure_stability:
+  - {check_name: claims_paid_no_join, metric_value: 3123750.00, status: PASS}
+  - {check_name: enrollment_distinct_members_no_join, metric_value: 300, status: PASS}
+  - {check_name: member_distinct_members_no_join, metric_value: 300, status: PASS}
+kpi_coverage_table:
+  - {kpi: M-1, source: fact_member_enrollment_v4, grain: member enrollment period/event, measure: New Member Enrollment, join_safety: direct source/no join, status: READY}
+  - {kpi: M-2, source: fact_member_enrollment_v4, grain: member enrollment period/event, measure: Active Members, join_safety: direct source/no join, status: READY}
+  - {kpi: M-3, source: dim_member_v4, grain: current member dimension, measure: Active Members by Geography, join_safety: direct source/no join, status: READY}
+  - {kpi: C-1, source: fact_claim_detail_v4, grain: claim detail line, measure: Total Claims, join_safety: direct source/no join, status: READY}
+  - {kpi: C-2, source: fact_claim_detail_v4, grain: claim detail line, measure: Total Claim Lines, join_safety: direct source/no join, status: READY}
+  - {kpi: C-3, source: fact_claim_detail_v4, grain: claim detail line, measure: Total Paid Amount, join_safety: direct source/no join, status: READY}
+  - {kpi: C-4, source: fact_claim_detail_v4, grain: claim detail line, measure: Average Paid per Claim, join_safety: direct source/no join, status: READY}
+  - {kpi: MC-1, source: fact_claim_detail_v4, grain: claim detail line, measure: PMPM, join_safety: direct source/no join, status: READY}
+  - {kpi: MC-2, source: fact_claim_detail_v4, grain: claim detail line, measure: Claims per 1,000 Members, join_safety: direct source/no join, status: READY}
+  - {kpi: MC-3, source: fact_claim_detail_v4 + fact_member_enrollment_v4, grain: cross fact, measure: Utilization Rate, join_safety: unsafe cross-grain/key mismatch, status: SKIPPED_UNSAFE_GRAIN}
+  - {kpi: MC-4, source: fact_claim_detail_v4, grain: member pre-aggregation, measure: High-Cost Member Count, join_safety: direct reference SQL, status: NOT_IMPLEMENTED}
+  - {kpi: W-1, source: fact_claim_detail_v4, grain: monthly window, measure: Rolling 3-Month PMPM, join_safety: direct reference SQL, status: NOT_IMPLEMENTED}
+  - {kpi: W-2, source: fact_member_enrollment_v4, grain: monthly window, measure: MoM Active Member Growth, join_safety: direct reference SQL, status: NOT_IMPLEMENTED}
+  - {kpi: ADD-1, source: fact_claim_detail_v4, grain: claim detail line, measure: Denial Rate, join_safety: direct source/no join, status: READY}
+  - {kpi: ADD-2, source: fact_claim_detail_v4, grain: claim detail line, measure: Clean Claim Rate, join_safety: direct source/no join, status: READY}
+  - {kpi: ADD-3, source: fact_claim_detail_v4, grain: claim detail line, measure: Payment-to-Billed Ratio, join_safety: direct source/no join, status: READY}
+  - {kpi: ADD-4, source: fact_claim_detail_v4, grain: claim detail line, measure: Payment-to-Allowed Ratio, join_safety: direct source/no join, status: READY}
+  - {kpi: ADD-5, source: fact_claim_detail_v4, grain: claim detail line, measure: Average Paid per Member, join_safety: direct source/no join, status: READY}
+  - {kpi: ADD-6, source: fact_claim_detail_v4, grain: claim detail line, measure: Claims per Member, join_safety: direct source/no join, status: READY}
+  - {kpi: ADD-7, source: fact_claim_detail_v4, grain: claim detail line, measure: Lines per Claim, join_safety: direct source/no join, status: READY}
+  - {kpi: ADD-8, source: fact_claim_detail_v4, grain: claim detail line, measure: Inpatient Paid Amount, join_safety: direct source/no join, status: READY}
+  - {kpi: ADD-9, source: fact_claim_detail_v4, grain: claim detail line, measure: Outpatient Paid Amount, join_safety: direct source/no join, status: READY}
+  - {kpi: ADD-10, source: fact_claim_detail_v4, grain: claim detail line, measure: Participating Provider Rate, join_safety: direct source/no join, status: READY}
