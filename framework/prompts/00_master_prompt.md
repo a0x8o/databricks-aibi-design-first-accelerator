@@ -2892,6 +2892,13 @@ Before calling `execute_sql` (App) or `executeCode` with SQL (Genie Code), verif
 5. **Explicit aliases**: Every computed expression or literal must have `AS alias_name`.
 6. **Balanced parentheses**: Every `(` must have a matching `)`. Count them in subqueries.
 
+### Python Code Quality Rules
+
+Before calling `execute_notebook`, `create_notebook`, or writing Python code:
+
+1. **No JSON-style booleans**: Use Python `True`/`False`/`None`, NEVER JSON `true`/`false`/`null`. This causes `NameError: name 'true' is not defined` at runtime. Common in dict literals: `{"visible": true}` must be `{"visible": True}`.
+2. **Python 3.11 f-string rule**: No backslashes inside f-string `{expressions}`. Assign to a variable first.
+
 If you detect your generated SQL exceeds 30 lines, pause and verify structure mentally before executing.
 
 ---

@@ -643,6 +643,12 @@ class ToolExecutor:
                     f"  Fix: Assign to variable first, e.g.: sep = '\\n'; f\"{{sep.join(...)}}\""
                 )
 
+        # Gate 3: Detect JSON-style booleans/null (true/false/null instead of True/False/None)
+        # LLMs frequently emit JSON booleans in Python code. compile() won't catch these
+        # because `true`, `false`, `null` are valid identifiers — they cause NameError at runtime.
+        json_bool_errors = self._detect_json_booleans(source)
+        errors.extend(json_bool_errors)
+
         if errors:
             error_list = "\n".join(errors)
             return (
@@ -694,6 +700,44 @@ class ToolExecutor:
                         break
                     i += 1
 
+        return issues
+
+    @staticmethod
+    def _detect_json_booleans(source: str) -> list:
+        """Detect JSON-style booleans/null used as Python identifiers.
+
+        LLMs frequently emit `true`/`false`/`null` instead of Python's
+        `True`/`False`/`None`. These compile fine (valid identifiers) but
+        cause NameError at runtime.
+
+        Returns list of error description strings.
+        """
+        import re
+        issues = []
+        cell_separator = "# COMMAND ----------"
+        cells = source.split(cell_separator)
+
+        for idx, cell in enumerate(cells):
+            for lineno, line in enumerate(cell.split('\n'), 1):
+                stripped = line.strip()
+                if not stripped or stripped.startswith('#'):
+                    continue
+                # Check for bare true/false/null as standalone identifiers
+                for json_kw, py_kw in [('true', 'True'), ('false', 'False'), ('null', 'None')]:
+                    if re.search(r'\b' + json_kw + r'\b', line):
+                        # Exclude occurrences inside string literals (simple heuristic)
+                        # Remove single and double quoted strings, then re-check
+                        no_strings = re.sub(r'""".*?"""', '', line, flags=re.DOTALL)
+                        no_strings = re.sub(r"'''.*?'''", '', no_strings, flags=re.DOTALL)
+                        no_strings = re.sub(r'"[^"]*"', '', no_strings)
+                        no_strings = re.sub(r"'[^']*'", '', no_strings)
+                        if re.search(r'\b' + json_kw + r'\b', no_strings):
+                            issues.append(
+                                f"Cell {idx + 1}, line {lineno}: "
+                                f"JSON-style `{json_kw}` found (causes NameError at runtime). "
+                                f"Replace with Python `{py_kw}`.\n"
+                                f"  Code: {stripped}"
+                            )
         return issues
 
     def _handle_cleanup_path(self, args: dict) -> str:

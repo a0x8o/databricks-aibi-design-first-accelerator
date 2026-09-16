@@ -402,3 +402,21 @@ execute_sql("CREATE MATERIALIZED VIEW cat.sch.v AS ...")
 ```
 
 **Impact:** The second statement triggers `PARSE_SYNTAX_ERROR: extra input 'CREATE'` after the first statement's semicolon. The App's `execute_sql` handler auto-splits multi-statement SQL as a safety net, but the Genie Code path does NOT — always issue one statement per call.
+
+---
+
+## G-18: No JSON-Style Booleans in Python Code
+
+Python uses `True`/`False`/`None`. JSON uses `true`/`false`/`null`. These are **not interchangeable**.
+
+LLMs frequently emit JSON booleans when generating Python dict literals, Lakeview dashboard configs, or API payloads. `compile()` won't catch this because `true`/`false`/`null` are valid Python identifiers — the error surfaces only at runtime as `NameError: name 'true' is not defined`.
+
+```text
+# WRONG (JSON booleans — causes NameError at runtime):
+config = {"visible": true, "enabled": false, "value": null}
+
+# CORRECT (Python booleans):
+config = {"visible": True, "enabled": False, "value": None}
+```
+
+**Impact:** Dashboard creation notebooks, widget configs, and API payload construction are the most common failure sites. The App's pre-flight gate (Gate 3 in `_py_compile_check`) detects this before execution, but the Genie Code path does NOT — always use Python booleans.
