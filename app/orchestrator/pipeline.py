@@ -483,7 +483,7 @@ class PipelineRunner:
         # Persist initial phase rows to Lakebase so update_phase() has rows to update
         # and get_phases_for_step() can return data after app restarts.
         if phases and self._run_store:
-            self._run_store.save_phases(self._current_run_id, step_name, phases)
+            self._run_store.create_phases(self._current_run_id, step_name, phases)
 
         # Build phase callback that emits SSE events and persists to RunStore
         def phase_callback(phase_name, event, **kwargs):

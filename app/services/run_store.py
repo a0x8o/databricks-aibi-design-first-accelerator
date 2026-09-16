@@ -237,9 +237,9 @@ class RunStore:
 
             # Attach phases to each step (needed for accordion detail in UI)
             for step in run['steps']:
-                step_name = step.get('step_name') or step.get('name')
-                if step_name:
-                    step['phases'] = self.get_phases_for_step(run_id, step_name)
+                sn = step.get('step_name') or step.get('name')
+                if sn:
+                    step['phases'] = self.get_phases_for_step(run_id, sn)
 
             return run
         except Exception as e:
