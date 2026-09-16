@@ -71,6 +71,20 @@ class ToolExecutor:
     def _handle_execute_sql(self, args: dict) -> str:
         statement = args["statement"]
 
+        # Multi-statement detection: Databricks SQL allows only ONE statement per call.
+        # If the LLM sends "DROP ...; CREATE ...", split and execute sequentially.
+        statements = self._split_sql_statements(statement)
+        if len(statements) > 1:
+            logger.info(f"Multi-statement SQL detected: splitting into {len(statements)} statements")
+            results = []
+            for i, stmt in enumerate(statements, 1):
+                result = self._handle_execute_sql({"statement": stmt})
+                results.append(f"[Statement {i}] {result}")
+                if result.startswith("SQL ERROR") or result.startswith("SQL BLOCKED"):
+                    results.append(f"(Remaining {len(statements) - i} statement(s) skipped due to error)")
+                    break
+            return "\n".join(results)
+
         # Pre-flight: block unsupported/dangerous SQL patterns
         stmt_upper = statement.strip().upper()
         for keyword, message in self._SQL_BLOCKED_PATTERNS:
@@ -94,6 +108,62 @@ class ToolExecutor:
         elif result.status == "FAILED":
             return f"SQL ERROR: {result.error or 'Unknown error'}"
         return f"SQL status: {result.status}"
+
+    @staticmethod
+    def _split_sql_statements(sql: str) -> list:
+        """Split a multi-statement SQL string into individual statements.
+
+        Handles semicolons inside string literals and comments.
+        Returns a list of non-empty, stripped statements.
+        """
+        statements = []
+        current = []
+        in_single_quote = False
+        in_line_comment = False
+        in_block_comment = False
+        i = 0
+        chars = sql
+
+        while i < len(chars):
+            c = chars[i]
+
+            # Track string literals
+            if c == "'" and not in_line_comment and not in_block_comment:
+                in_single_quote = not in_single_quote
+                current.append(c)
+            # Track line comments (-- ...)
+            elif c == '-' and i + 1 < len(chars) and chars[i + 1] == '-' and not in_single_quote and not in_block_comment:
+                in_line_comment = True
+                current.append(c)
+            elif c == '\n' and in_line_comment:
+                in_line_comment = False
+                current.append(c)
+            # Track block comments (/* ... */)
+            elif c == '/' and i + 1 < len(chars) and chars[i + 1] == '*' and not in_single_quote and not in_line_comment:
+                in_block_comment = True
+                current.append(c)
+            elif c == '*' and i + 1 < len(chars) and chars[i + 1] == '/' and in_block_comment:
+                in_block_comment = False
+                current.append(c)
+                current.append(chars[i + 1])
+                i += 2
+                continue
+            # Semicolon outside of strings/comments = statement separator
+            elif c == ';' and not in_single_quote and not in_line_comment and not in_block_comment:
+                stmt = ''.join(current).strip()
+                if stmt:
+                    statements.append(stmt)
+                current = []
+            else:
+                current.append(c)
+            i += 1
+
+        # Last statement (no trailing semicolon)
+        stmt = ''.join(current).strip()
+        if stmt:
+            statements.append(stmt)
+
+        return statements
 
     def _handle_read_workspace_file(self, args: dict) -> str:
         path = args["path"]
