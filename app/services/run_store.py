@@ -234,6 +234,13 @@ class RunStore:
                 f"SELECT * FROM {self._steps_table} WHERE run_id = '{run_id}' ORDER BY step_index"
             )
             run['steps'] = [self._row_to_dict(steps_result.columns, row) for row in steps_result.data]
+
+            # Attach phases to each step (needed for accordion detail in UI)
+            for step in run['steps']:
+                step_name = step.get('step_name') or step.get('name')
+                if step_name:
+                    step['phases'] = self.get_phases_for_step(run_id, step_name)
+
             return run
         except Exception as e:
             logger.error(f"RunStore: failed to get run {run_id}: {e}")

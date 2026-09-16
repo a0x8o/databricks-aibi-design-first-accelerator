@@ -1222,11 +1222,40 @@ def list_runs():
 
     try:
         runs = run_store.list_runs(limit=limit, domain=domain)
-        # Zombie detection: runs showing 'running' in Lakebase but with no
-        # active thread in memory are zombies from a prior app restart.
-        # Show them as 'failed' so the UI renders "Resume" instead of "Running".
+
+        # Reconcile Lakebase status with version_registry.yaml (source of truth).
+        # The registry is updated atomically at pipeline completion, while Lakebase
+        # may have stale 'running' status if the app restarted before the final write.
+        registry_status = {}  # run_id -> status from registry
+        if domain:
+            try:
+                import yaml as _yaml
+                from config import get_config
+                app_config = get_config()
+                reg_path = f"{app_config.WORKSPACE_ROOT}/kpi_domains/{domain}/version_registry.yaml"
+                from databricks.sdk import WorkspaceClient
+                _w = WorkspaceClient()
+                with _w.workspace.download(reg_path) as reader:
+                    reg = _yaml.safe_load(reader.read().decode('utf-8'))
+                for v in (reg or {}).get('versions', []):
+                    rid = v.get('run_id')
+                    if rid:
+                        registry_status[rid] = v.get('status', 'unknown')
+            except Exception:
+                pass  # Registry not available — fall through to zombie detection
+
         for r in runs:
-            if r.get('status') == 'running' and r.get('run_id') not in _runs:
+            rid = r.get('run_id')
+            # Registry reconciliation: if registry says completed/failed, trust it
+            if rid in registry_status:
+                reg_st = registry_status[rid]
+                if reg_st in ('completed', 'failed') and r.get('status') != reg_st:
+                    r['status'] = reg_st
+                    if reg_st == 'completed':
+                        r.pop('error', None)  # Clear stale error message
+                    continue
+            # Zombie detection: runs in Lakebase as 'running' but no active thread
+            if r.get('status') == 'running' and rid not in _runs:
                 r['status'] = 'failed'
                 r['error'] = r.get('error') or 'Interrupted: app restarted during execution'
         return jsonify(runs)
