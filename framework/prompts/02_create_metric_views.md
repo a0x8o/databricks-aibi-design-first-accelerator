@@ -943,7 +943,7 @@ DDL Pattern: CREATE MATERIALIZED VIEW {catalog}.{schema}.{intermediate_view_name
   JOIN {catalog}.{schema}.{header_table} h ON d.{fk_col} = h.{pk_col}
 ```
 
-If the view already exists, drop and recreate it. **Execute via Statement Execution API** (same pattern as metric view DDL). Do NOT use `spark.sql()`.
+Use CREATE OR REPLACE MATERIALIZED VIEW to handle the case where the view already exists. If a pre-removal step is needed, execute it as a SEPARATE call — Databricks SQL allows only ONE statement per call (never combine with semicolons). Do NOT use `spark.sql()`.
 
 3. **Verify the materialized view exists:**
 

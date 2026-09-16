@@ -60,7 +60,7 @@ This prompt can be invoked from:
 
 - User opens a file in the example folder and pastes/references this prompt
 - Agent reads files using workspace tools (`readAssetById`)
-- Agent executes SQL via `executeCode`
+- Agent executes SQL via `executeCode` with `language: "sql"` — **ONE statement per call** (no semicolon-separated batches; `DROP` and `CREATE` must be separate calls)
 - Agent calls REST APIs via `executeCode` using the Databricks SDK (`w.api_client.do()`)
 - NEVER extract auth tokens manually or use `requests.post()` with raw tokens — this triggers safety guardrails
 - For long-running LLM calls (vision, reasoning): use `WorkspaceClient(config=Config(http_timeout_seconds=600))`
@@ -2883,13 +2883,14 @@ Do not provide vague failure messages.
 
 # SQL Generation Quality Rules
 
-Before calling `execute_sql`, verify the generated SQL meets these constraints:
+Before calling `execute_sql` (App) or `executeCode` with SQL (Genie Code), verify the generated SQL meets these constraints:
 
-1. **UNION ALL alignment**: Every SELECT in a UNION ALL must have the same number of columns. Count them.
-2. **No trailing commas**: Never leave a comma immediately before `FROM`, `WHERE`, `GROUP BY`, `UNION`, `)`, or end-of-statement.
-3. **Complete identifiers**: Never truncate column or table names. Use the full identifier.
-4. **Explicit aliases**: Every computed expression or literal must have `AS alias_name`.
-5. **Balanced parentheses**: Every `(` must have a matching `)`. Count them in subqueries.
+1. **ONE statement per call (MANDATORY)**: Databricks SQL executes exactly ONE statement per call. Never combine multiple statements with semicolons. Incorrect: `DROP VIEW IF EXISTS v; CREATE VIEW v AS ...`. Correct: execute `DROP VIEW IF EXISTS v` first, then execute `CREATE VIEW v AS ...` in a separate call. This applies to BOTH `execute_sql` (App tool) and `executeCode` with `language: "sql"` (Genie Code).
+2. **UNION ALL alignment**: Every SELECT in a UNION ALL must have the same number of columns. Count them.
+3. **No trailing commas**: Never leave a comma immediately before `FROM`, `WHERE`, `GROUP BY`, `UNION`, `)`, or end-of-statement.
+4. **Complete identifiers**: Never truncate column or table names. Use the full identifier.
+5. **Explicit aliases**: Every computed expression or literal must have `AS alias_name`.
+6. **Balanced parentheses**: Every `(` must have a matching `)`. Count them in subqueries.
 
 If you detect your generated SQL exceeds 30 lines, pause and verify structure mentally before executing.
 

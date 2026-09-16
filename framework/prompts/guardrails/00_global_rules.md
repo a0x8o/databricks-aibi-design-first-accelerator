@@ -383,3 +383,22 @@ DELETE FROM catalog.schema.my_table
 ```
 
 The `execute_sql` tool blocks TRUNCATE statements at the pre-flight gate. If you need to clear a table's data, use `DELETE FROM` (no WHERE clause = delete all rows). For full table recreation, use `DROP TABLE IF EXISTS` + `CREATE TABLE`.
+
+---
+
+## G-17: One SQL Statement Per Execution Call
+
+Databricks SQL allows only **ONE statement per call**. This applies to both `execute_sql` (App tool) and `executeCode` with `language: "sql"` (Genie Code).
+
+Never combine multiple statements with semicolons in a single call:
+
+```text
+-- WRONG (two statements in one call — causes PARSE_SYNTAX_ERROR):
+execute_sql("DROP MATERIALIZED VIEW IF EXISTS cat.sch.v; CREATE MATERIALIZED VIEW cat.sch.v AS ...")
+
+-- CORRECT (separate calls):
+execute_sql("DROP MATERIALIZED VIEW IF EXISTS cat.sch.v")
+execute_sql("CREATE MATERIALIZED VIEW cat.sch.v AS ...")
+```
+
+**Impact:** The second statement triggers `PARSE_SYNTAX_ERROR: extra input 'CREATE'` after the first statement's semicolon. The App's `execute_sql` handler auto-splits multi-statement SQL as a safety net, but the Genie Code path does NOT — always issue one statement per call.
