@@ -1,0 +1,797 @@
+{
+  "datasets": [
+    {
+      "name": "ds_main",
+      "displayName": "Main",
+      "queryLines": [
+        "SELECT `Adjudication Status`, `Benefit Category`, `Benefit Level`, `Claim Type`, `Clean Claim Indicator`, `Line Status`, `Participating Provider`, `Place Of Service`, `Procedure Code`, `Rendering Provider Specialty`, `Rendering Provider Type`, `Service Date`, `Service Month`, MEASURE(`Average Paid per Claim`) AS `Average Paid per Claim`, MEASURE(`Average Paid per Member`) AS `Average Paid per Member`, MEASURE(`Claims per Member`) AS `Claims per Member`, MEASURE(`Clean Claim Rate`) AS `Clean Claim Rate`, MEASURE(`Clean Lines`) AS `Clean Lines`, MEASURE(`Denial Rate`) AS `Denial Rate`, MEASURE(`Denied Lines`) AS `Denied Lines`, MEASURE(`Inpatient Paid Amount`) AS `Inpatient Paid Amount`, MEASURE(`Lines per Claim`) AS `Lines per Claim`, MEASURE(`Outpatient Paid Amount`) AS `Outpatient Paid Amount`, MEASURE(`Participating Provider Paid Amount`) AS `Participating Provider Paid Amount`, MEASURE(`Participating Provider Rate`) AS `Participating Provider Rate`, MEASURE(`Payment-to-Allowed Ratio`) AS `Payment-to-Allowed Ratio`, MEASURE(`Payment-to-Billed Ratio`) AS `Payment-to-Billed Ratio`, MEASURE(`Total Allowed Amount`) AS `Total Allowed Amount`, MEASURE(`Total Billed Amount`) AS `Total Billed Amount`, MEASURE(`Total Claim Lines`) AS `Total Claim Lines`, MEASURE(`Total Claims`) AS `Total Claims`, MEASURE(`Total Paid Amount`) AS `Total Paid Amount`, MEASURE(`Unique Members`) AS `Unique Members` FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v9` GROUP BY `Adjudication Status`, `Benefit Category`, `Benefit Level`, `Claim Type`, `Clean Claim Indicator`, `Line Status`, `Participating Provider`, `Place Of Service`, `Procedure Code`, `Rendering Provider Specialty`, `Rendering Provider Type`, `Service Date`, `Service Month`"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "filters_page",
+      "displayName": "Filters",
+      "layout": [
+        {
+          "widget": {
+            "name": "filter-service-date",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_main",
+                  "fields": [
+                    {
+                      "name": "Service Date",
+                      "expression": "`Service Date`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-date-range-picker",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "Service Date",
+                    "displayName": "Service Date",
+                    "queryName": "main_query"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Service Date"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "filter-claim-type",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_main",
+                  "fields": [
+                    {
+                      "name": "Claim Type",
+                      "expression": "`Claim Type`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "Claim Type",
+                    "displayName": "Claim Type",
+                    "queryName": "main_query"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Claim Type"
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 0,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "filter-rendering-provider-specialty",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_main",
+                  "fields": [
+                    {
+                      "name": "Rendering Provider Specialty",
+                      "expression": "`Rendering Provider Specialty`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "Rendering Provider Specialty",
+                    "displayName": "Rendering Provider Specialty",
+                    "queryName": "main_query"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Rendering Provider Specialty"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 0,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "filter-adjudication-status",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_main",
+                  "fields": [
+                    {
+                      "name": "Adjudication Status",
+                      "expression": "`Adjudication Status`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "Adjudication Status",
+                    "displayName": "Adjudication Status",
+                    "queryName": "main_query"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Adjudication Status"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 2,
+            "height": 2
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_GLOBAL_FILTERS"
+    },
+    {
+      "name": "utilization_patterns",
+      "displayName": "Utilization Patterns",
+      "layout": [
+        {
+          "widget": {
+            "name": "widget-0-Total-Claims",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_main",
+                  "fields": [
+                    {
+                      "name": "sum(Total Claims)",
+                      "expression": "SUM(`Total Claims`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(Total Claims)",
+                  "displayName": "Total Claims"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Total Claims"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "widget-1-Total-Claim-Lines",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_main",
+                  "fields": [
+                    {
+                      "name": "sum(Total Claim Lines)",
+                      "expression": "SUM(`Total Claim Lines`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(Total Claim Lines)",
+                  "displayName": "Total Claim Lines"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Total Claim Lines"
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 0,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "widget-2-Inpatient-Paid-Amoun",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_main",
+                  "fields": [
+                    {
+                      "name": "sum(Inpatient Paid Amount)",
+                      "expression": "SUM(`Inpatient Paid Amount`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(Inpatient Paid Amount)",
+                  "displayName": "Inpatient Paid Amount"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Inpatient Paid Amount"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 0,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "widget-3-Outpatient-Paid-Amou",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_main",
+                  "fields": [
+                    {
+                      "name": "Place Of Service",
+                      "expression": "`Place Of Service`"
+                    },
+                    {
+                      "name": "sum(Outpatient Paid Amount)",
+                      "expression": "SUM(`Outpatient Paid Amount`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "Place Of Service",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Place Of Service"
+                },
+                "y": {
+                  "fieldName": "sum(Outpatient Paid Amount)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Outpatient Paid Amount"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Outpatient Paid Amount by Place of Service"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 5,
+            "width": 3,
+            "height": 5
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS"
+    },
+    {
+      "name": "provider_insights",
+      "displayName": "Provider Insights",
+      "layout": [
+        {
+          "widget": {
+            "name": "widget-0-Participating-Provid",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_main",
+                  "fields": [
+                    {
+                      "name": "avg(Participating Provider Rate)",
+                      "expression": "AVG(`Participating Provider Rate`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(Participating Provider Rate)",
+                  "displayName": "Participating Provider Rate"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Participating Provider Rate"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "widget-1-Total-Paid-Amount",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_main",
+                  "fields": [
+                    {
+                      "name": "Rendering Provider Specialty",
+                      "expression": "`Rendering Provider Specialty`"
+                    },
+                    {
+                      "name": "sum(Total Paid Amount)",
+                      "expression": "SUM(`Total Paid Amount`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "Rendering Provider Specialty",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Rendering Provider Specialty"
+                },
+                "y": {
+                  "fieldName": "sum(Total Paid Amount)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Total Paid Amount"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Paid Amount by Rendering Provider Specialty"
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 0,
+            "width": 3,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "widget-2-Total-Claims",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_main",
+                  "fields": [
+                    {
+                      "name": "Rendering Provider Type",
+                      "expression": "`Rendering Provider Type`"
+                    },
+                    {
+                      "name": "sum(Total Claims)",
+                      "expression": "SUM(`Total Claims`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "Rendering Provider Type",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Rendering Provider Type"
+                },
+                "y": {
+                  "fieldName": "sum(Total Claims)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Total Claims"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Claims by Rendering Provider Type"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 5,
+            "width": 3,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "widget-3-Participating-Provid",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_main",
+                  "fields": [
+                    {
+                      "name": "Service Month",
+                      "expression": "`Service Month`"
+                    },
+                    {
+                      "name": "avg(Participating Provider Rate)",
+                      "expression": "AVG(`Participating Provider Rate`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "Service Month",
+                  "scale": {
+                    "type": "temporal"
+                  },
+                  "displayName": "Service Month"
+                },
+                "y": {
+                  "fieldName": "avg(Participating Provider Rate)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Participating Provider Rate"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Monthly Participating Provider Rate"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 5,
+            "width": 3,
+            "height": 5
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS"
+    },
+    {
+      "name": "operational_metrics",
+      "displayName": "Operational Metrics",
+      "layout": [
+        {
+          "widget": {
+            "name": "widget-0-Denial-Rate",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_main",
+                  "fields": [
+                    {
+                      "name": "Service Month",
+                      "expression": "`Service Month`"
+                    },
+                    {
+                      "name": "avg(Denial Rate)",
+                      "expression": "AVG(`Denial Rate`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "Service Month",
+                  "scale": {
+                    "type": "temporal"
+                  },
+                  "displayName": "Service Month"
+                },
+                "y": {
+                  "fieldName": "avg(Denial Rate)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Denial Rate"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Monthly Denial Rate Trend"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 3,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "widget-1-Payment-to-Billed-Ra",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_main",
+                  "fields": [
+                    {
+                      "name": "avg(Payment-to-Billed Ratio)",
+                      "expression": "AVG(`Payment-to-Billed Ratio`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(Payment-to-Billed Ratio)",
+                  "displayName": "Payment-to-Billed Ratio"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Payment-to-Billed Ratio"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 0,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "widget-2-Payment-to-Allowed-R",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_main",
+                  "fields": [
+                    {
+                      "name": "Claim Type",
+                      "expression": "`Claim Type`"
+                    },
+                    {
+                      "name": "avg(Payment-to-Allowed Ratio)",
+                      "expression": "AVG(`Payment-to-Allowed Ratio`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "Claim Type",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Claim Type"
+                },
+                "y": {
+                  "fieldName": "avg(Payment-to-Allowed Ratio)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Payment-to-Allowed Ratio"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Payment-to-Allowed Ratio by Claim Type"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 5,
+            "width": 3,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "widget-3-Clean-Claim-Rate",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_main",
+                  "fields": [
+                    {
+                      "name": "Adjudication Status",
+                      "expression": "`Adjudication Status`"
+                    },
+                    {
+                      "name": "avg(Clean Claim Rate)",
+                      "expression": "AVG(`Clean Claim Rate`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "Adjudication Status",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Adjudication Status"
+                },
+                "y": {
+                  "fieldName": "avg(Clean Claim Rate)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Clean Claim Rate"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Clean Claim Rate by Adjudication Status"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 5,
+            "width": 3,
+            "height": 5
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS"
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "widgetHeaderAlignment": "ALIGNMENT_UNSPECIFIED"
+    },
+    "applyModeEnabled": false
+  }
+}

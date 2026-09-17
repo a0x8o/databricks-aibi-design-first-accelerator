@@ -1,0 +1,790 @@
+{
+  "datasets": [
+    {
+      "name": "ds_member_claims_metric_view_v9",
+      "displayName": "Member Claims Metric View V9",
+      "queryLines": [
+        "SELECT `Adjudication Status`, `Benefit Category`, `Benefit Level`, `Claim Type`, `Clean Claim Indicator`, `Line Status`, `Participating Provider`, `Place Of Service`, `Procedure Code`, `Rendering Provider Specialty`, `Rendering Provider Type`, `Service Date`, `Service Month`, MEASURE(`Average Paid per Claim`) AS `Average Paid per Claim`, MEASURE(`Average Paid per Member`) AS `Average Paid per Member`, MEASURE(`Claims per Member`) AS `Claims per Member`, MEASURE(`Clean Claim Rate`) AS `Clean Claim Rate`, MEASURE(`Clean Lines`) AS `Clean Lines`, MEASURE(`Denial Rate`) AS `Denial Rate`, MEASURE(`Denied Lines`) AS `Denied Lines`, MEASURE(`Inpatient Paid Amount`) AS `Inpatient Paid Amount`, MEASURE(`Lines per Claim`) AS `Lines per Claim`, MEASURE(`Outpatient Paid Amount`) AS `Outpatient Paid Amount`, MEASURE(`Participating Provider Paid Amount`) AS `Participating Provider Paid Amount`, MEASURE(`Participating Provider Rate`) AS `Participating Provider Rate`, MEASURE(`Payment-to-Allowed Ratio`) AS `Payment-to-Allowed Ratio`, MEASURE(`Payment-to-Billed Ratio`) AS `Payment-to-Billed Ratio`, MEASURE(`Total Allowed Amount`) AS `Total Allowed Amount`, MEASURE(`Total Billed Amount`) AS `Total Billed Amount`, MEASURE(`Total Claim Lines`) AS `Total Claim Lines`, MEASURE(`Total Claims`) AS `Total Claims`, MEASURE(`Total Paid Amount`) AS `Total Paid Amount`, MEASURE(`Unique Members`) AS `Unique Members` FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v9` GROUP BY `Adjudication Status`, `Benefit Category`, `Benefit Level`, `Claim Type`, `Clean Claim Indicator`, `Line Status`, `Participating Provider`, `Place Of Service`, `Procedure Code`, `Rendering Provider Specialty`, `Rendering Provider Type`, `Service Date`, `Service Month`"
+      ]
+    },
+    {
+      "name": "ds_member_claims_enrollment_metric_view_v9",
+      "displayName": "Member Claims Enrollment Metric View V9",
+      "queryLines": [
+        "SELECT `Enrollment Status`, `Group Name`, `Line Of Business`, `Member Sex`, `Member State`, `Member Zip Code`, `Plan ID`, `Service Date`, `Service Month`, MEASURE(`Active Members`) AS `Active Members`, MEASURE(`Enrollment Records`) AS `Enrollment Records`, MEASURE(`New Member Enrollment`) AS `New Member Enrollment` FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_enrollment_metric_view_v9` GROUP BY `Enrollment Status`, `Group Name`, `Line Of Business`, `Member Sex`, `Member State`, `Member Zip Code`, `Plan ID`, `Service Date`, `Service Month`"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "filters_page",
+      "displayName": "Filters",
+      "layout": [
+        {
+          "widget": {
+            "name": "filter-service-date",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_member_claims_metric_view_v9",
+                  "fields": [
+                    {
+                      "name": "Service Date",
+                      "expression": "`Service Date`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-date-range-picker",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "Service Date",
+                    "displayName": "Service Date",
+                    "queryName": "main_query"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Service Date"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "filter-claim-type",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_member_claims_metric_view_v9",
+                  "fields": [
+                    {
+                      "name": "Claim Type",
+                      "expression": "`Claim Type`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "Claim Type",
+                    "displayName": "Claim Type",
+                    "queryName": "main_query"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Claim Type"
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 0,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "filter-benefit-category",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_member_claims_metric_view_v9",
+                  "fields": [
+                    {
+                      "name": "Benefit Category",
+                      "expression": "`Benefit Category`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "Benefit Category",
+                    "displayName": "Benefit Category",
+                    "queryName": "main_query"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Benefit Category"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 0,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "filter-line-status",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_member_claims_metric_view_v9",
+                  "fields": [
+                    {
+                      "name": "Line Status",
+                      "expression": "`Line Status`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "Line Status",
+                    "displayName": "Line Status",
+                    "queryName": "main_query"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Line Status"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 2,
+            "height": 2
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_GLOBAL_FILTERS"
+    },
+    {
+      "name": "financial_overview",
+      "displayName": "Financial Overview",
+      "layout": [
+        {
+          "widget": {
+            "name": "widget-0-Total-Claims",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_member_claims_metric_view_v9",
+                  "fields": [
+                    {
+                      "name": "sum(Total Claims)",
+                      "expression": "SUM(`Total Claims`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(Total Claims)",
+                  "displayName": "Total Claims"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Total Claims"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "widget-1-Total-Paid-Amount",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_member_claims_metric_view_v9",
+                  "fields": [
+                    {
+                      "name": "sum(Total Paid Amount)",
+                      "expression": "SUM(`Total Paid Amount`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(Total Paid Amount)",
+                  "displayName": "Total Paid Amount"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Total Paid Amount"
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 0,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "widget-2-Average-Paid-per-Cla",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_member_claims_metric_view_v9",
+                  "fields": [
+                    {
+                      "name": "avg(Average Paid per Claim)",
+                      "expression": "AVG(`Average Paid per Claim`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(Average Paid per Claim)",
+                  "displayName": "Average Paid per Claim"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Average Paid per Claim"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 0,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "widget-3-Total-Paid-Amount",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_member_claims_metric_view_v9",
+                  "fields": [
+                    {
+                      "name": "Benefit Category",
+                      "expression": "`Benefit Category`"
+                    },
+                    {
+                      "name": "sum(Total Paid Amount)",
+                      "expression": "SUM(`Total Paid Amount`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "Benefit Category",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Benefit Category"
+                },
+                "y": {
+                  "fieldName": "sum(Total Paid Amount)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Total Paid Amount"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Paid Amount by Benefit Category"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 5,
+            "width": 3,
+            "height": 5
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS"
+    },
+    {
+      "name": "claims_analysis",
+      "displayName": "Claims Analysis",
+      "layout": [
+        {
+          "widget": {
+            "name": "widget-0-Denial-Rate",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_member_claims_metric_view_v9",
+                  "fields": [
+                    {
+                      "name": "avg(Denial Rate)",
+                      "expression": "AVG(`Denial Rate`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(Denial Rate)",
+                  "displayName": "Denial Rate"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Denial Rate"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "widget-1-Clean-Claim-Rate",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_member_claims_metric_view_v9",
+                  "fields": [
+                    {
+                      "name": "avg(Clean Claim Rate)",
+                      "expression": "AVG(`Clean Claim Rate`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(Clean Claim Rate)",
+                  "displayName": "Clean Claim Rate"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Clean Claim Rate"
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 0,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "widget-2-Total-Paid-Amount",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_member_claims_metric_view_v9",
+                  "fields": [
+                    {
+                      "name": "Service Month",
+                      "expression": "`Service Month`"
+                    },
+                    {
+                      "name": "sum(Total Paid Amount)",
+                      "expression": "SUM(`Total Paid Amount`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "Service Month",
+                  "scale": {
+                    "type": "temporal"
+                  },
+                  "displayName": "Service Month"
+                },
+                "y": {
+                  "fieldName": "sum(Total Paid Amount)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Total Paid Amount"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Monthly Paid Amount Trend"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 5,
+            "width": 3,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "widget-3-Denial-Rate",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_member_claims_metric_view_v9",
+                  "fields": [
+                    {
+                      "name": "Claim Type",
+                      "expression": "`Claim Type`"
+                    },
+                    {
+                      "name": "avg(Denial Rate)",
+                      "expression": "AVG(`Denial Rate`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "Claim Type",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Claim Type"
+                },
+                "y": {
+                  "fieldName": "avg(Denial Rate)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Denial Rate"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Denial Rate by Claim Type"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 5,
+            "width": 3,
+            "height": 5
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS"
+    },
+    {
+      "name": "member_demographics",
+      "displayName": "Member Demographics",
+      "layout": [
+        {
+          "widget": {
+            "name": "widget-0-Active-Members",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_member_claims_enrollment_metric_view_v9",
+                  "fields": [
+                    {
+                      "name": "sum(Active Members)",
+                      "expression": "SUM(`Active Members`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(Active Members)",
+                  "displayName": "Active Members"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Active Members"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "widget-1-New-Member-Enrollmen",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_member_claims_enrollment_metric_view_v9",
+                  "fields": [
+                    {
+                      "name": "Service Month",
+                      "expression": "`Service Month`"
+                    },
+                    {
+                      "name": "sum(New Member Enrollment)",
+                      "expression": "SUM(`New Member Enrollment`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "Service Month",
+                  "scale": {
+                    "type": "temporal"
+                  },
+                  "displayName": "Service Month"
+                },
+                "y": {
+                  "fieldName": "sum(New Member Enrollment)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "New Member Enrollment"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "New Member Enrollment Trend"
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 0,
+            "width": 3,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "widget-2-Active-Members",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_member_claims_enrollment_metric_view_v9",
+                  "fields": [
+                    {
+                      "name": "Line Of Business",
+                      "expression": "`Line Of Business`"
+                    },
+                    {
+                      "name": "sum(Active Members)",
+                      "expression": "SUM(`Active Members`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "Line Of Business",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Line Of Business"
+                },
+                "y": {
+                  "fieldName": "sum(Active Members)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Active Members"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Members by Line of Business"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 5,
+            "width": 3,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "widget-3-Active-Members",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_member_claims_enrollment_metric_view_v9",
+                  "fields": [
+                    {
+                      "name": "Member State",
+                      "expression": "`Member State`"
+                    },
+                    {
+                      "name": "sum(Active Members)",
+                      "expression": "SUM(`Active Members`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "Member State",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Member State"
+                },
+                "y": {
+                  "fieldName": "sum(Active Members)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Active Members"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Members by Geography"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 5,
+            "width": 3,
+            "height": 5
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS"
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "widgetHeaderAlignment": "ALIGNMENT_UNSPECIFIED"
+    },
+    "applyModeEnabled": false
+  }
+}

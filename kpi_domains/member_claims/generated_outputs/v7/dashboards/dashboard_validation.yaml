@@ -1,0 +1,80 @@
+source: api_readback
+status: PASS
+dashboards:
+  - dashboard_id: 01f1b14ace041a4b9cb0b619813277a1
+    display_name: member_claims_kpis_dashboard_v7
+    status: PASS
+    published: true
+    pages:
+      expected_canvas_pages: 3
+      actual_canvas_pages: 3
+      total_pages: 4
+      status: PASS
+    datasets:
+      expected: 1
+      actual: 1
+      empty_queries: []
+      failed_queries: []
+      status: PASS
+    widgets:
+      expected: 18
+      actual: 18
+      invalid_widgets: []
+      status: PASS
+    filters:
+      expected_minimum: 3
+      actual: 4
+      binding_failures: []
+      status: PASS
+    kpis:
+      rendered_validated: 12
+      skipped_not_validated_in_metric_layer: 3
+      status: PASS
+    api:
+      create_status: PASS
+      get_status: PASS
+      publish_status: PASS
+    overall_status: PASS
+  - dashboard_id: 01f1b14acf381ccaa5016309073a475d
+    display_name: member_claims_utilization_dashboard_v7
+    status: PASS
+    published: true
+    pages:
+      expected_canvas_pages: 3
+      actual_canvas_pages: 3
+      total_pages: 4
+      status: PASS
+    datasets:
+      expected: 2
+      actual: 2
+      empty_queries: []
+      failed_queries: []
+      status: PASS
+    widgets:
+      expected: 16
+      actual: 16
+      invalid_widgets: []
+      status: PASS
+    filters:
+      expected_minimum: 3
+      actual: 4
+      binding_failures: []
+      status: PASS
+    kpis:
+      rendered_validated: 8
+      skipped_not_validated_in_metric_layer: 0
+      status: PASS
+    api:
+      create_status: PASS
+      get_status: PASS
+      publish_status: PASS
+    overall_status: PASS
+summary:
+  dashboards_validated: 2
+  dashboards_published: 2
+  total_canvas_pages: 6
+  total_filter_pages: 2
+  total_widgets: 34
+  total_filters: 8
+  dataset_sql_status: PASS
+  overall_status: PASS

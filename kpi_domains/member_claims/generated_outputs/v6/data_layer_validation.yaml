@@ -1,0 +1,66 @@
+overall_status: PASS
+schema:
+  tables_expected: 8
+  tables_created: 8
+  missing: []
+  unexpected: []
+primary_keys:
+  tested: 8
+  failures: []
+  details:
+    dim_member_v6: {rows: 500, pk_distinct: 500, pk_dups: 0}
+    dim_provider_v6: {rows: 300, pk_distinct: 300, pk_dups: 0}
+    dim_address_v6: {rows: 400, pk_distinct: 400, pk_dups: 0}
+    dim_member_identifier_v6: {rows: 800, pk_distinct: 800, pk_dups: 0}
+    dim_member_history_v6: {rows: 1000, pk_distinct: 1000, pk_dups: 0}
+    fact_member_enrollment_v6: {rows: 1500, pk_distinct: 1500, pk_dups: 0}
+    fact_claim_header_v6: {rows: 3000, pk_distinct: 3000, pk_dups: 0}
+    fact_claim_detail_v6: {rows: 9000, pk_distinct: 9000, pk_dups: 0}
+foreign_keys:
+  tested: 5
+  orphan_counts:
+    dim_member_identifier_v6.member_sk: 0
+    dim_member_history_v6.member_sk: 0
+    fact_member_enrollment_v6.member_sk: 0
+    fact_claim_header_v6.clm_member_sk: 0
+    fact_claim_detail_v6.clm_dtl_claim_id: 0
+  diversity:
+    dim_member_identifier_v6.member_sk: 500
+    dim_member_history_v6.member_sk: 500
+    fact_member_enrollment_v6.member_sk: 500
+    fact_claim_header_v6.clm_member_sk: 500
+    fact_claim_detail_v6.clm_dtl_claim_id: 3000
+  failures: []
+join_stability:
+  tested: 5
+  fanout_failures: []
+  details:
+    dim_member_identifier_to_member: {before_rows: 800, after_rows: 800}
+    dim_member_history_to_member: {before_rows: 1000, after_rows: 1000}
+    fact_member_enrollment_to_member: {before_rows: 1500, after_rows: 1500}
+    fact_claim_header_to_member: {before_rows: 3000, after_rows: 3000}
+    fact_claim_detail_to_header: {before_rows: 9000, after_rows: 9000}
+semantic_constraints:
+  tested: 3
+  failures: []
+domain_values:
+  columns_checked: 66
+  generic_value_failures: []
+  runtime_sample_checks:
+    dim_member_v6.mbr_line_of_business: {distinct_vals: 5, generic_rows: 0}
+    fact_claim_header_v6.clm_claim_type: {distinct_vals: 5, generic_rows: 0}
+    fact_claim_detail_v6.clm_dtl_claim_type: {distinct_vals: 5, generic_rows: 0}
+    fact_claim_detail_v6.clm_dtl_line_status: {distinct_vals: 5, generic_rows: 0}
+    fact_member_enrollment_v6.mbr_enr_status: {distinct_vals: 5, generic_rows: 0}
+data_quality:
+  null_violations: []
+  generic_fallback_columns: []
+row_counts:
+  dim_member_v6: 500
+  dim_provider_v6: 300
+  dim_address_v6: 400
+  dim_member_identifier_v6: 800
+  dim_member_history_v6: 1000
+  fact_member_enrollment_v6: 1500
+  fact_claim_header_v6: 3000
+  fact_claim_detail_v6: 9000

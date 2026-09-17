@@ -1,0 +1,73 @@
+validation_source: statement_execution_api
+status: PASS
+datasets:
+  - name: ds_main
+    dashboard: member_claims_kpis_dashboard_v7
+    metric_view: "`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v7`"
+    sql_status: PASS
+    semantic_status: PASS
+    expected_shape: claim_line_grain_shared_dataset_with_filter_dimensions_and_measures
+    actual_rows: 5000
+    actual_columns:
+      - Service Date
+      - service_month
+      - claim_type
+      - line_status
+      - clean_claim_indicator
+      - benefit_category
+      - benefit_level
+      - place_of_service
+      - rendering_provider_type
+      - rendering_provider_spec
+      - participating_provider
+      - adjudication_status
+      - procedure_code
+      - revenue_code
+      - Average Paid per Claim
+      - Average Paid per Member
+      - Claims per Member
+      - Clean Claim Rate
+      - Clean Lines
+      - Denial Rate
+      - Denied Lines
+      - Inpatient Paid Amount
+      - Lines per Claim
+      - Outpatient Paid Amount
+      - Participating Paid Amount
+      - Participating Provider Rate
+      - Payment-to-Allowed Ratio
+      - Payment-to-Billed Ratio
+      - Total Allowed Amount
+      - Total Billed Amount
+      - Total Claim Lines
+      - Total Claims
+      - Total Paid Amount
+      - Unique Claim Members
+    filters: [Service Date, claim_type, line_status, benefit_category]
+    measures: [Total Paid Amount, Total Claims, Denial Rate, Clean Claim Rate, Total Billed Amount, Total Allowed Amount, Average Paid per Claim, Payment-to-Billed Ratio, Payment-to-Allowed Ratio, Denied Lines, Clean Lines, Participating Provider Rate]
+    dimensions: [Service Date, service_month, claim_type, line_status, benefit_category, rendering_provider_spec]
+    failure_reason: null
+  - name: ds_member_claims_enrollment_metric_view_v7
+    dashboard: member_claims_utilization_dashboard_v7
+    metric_view: "`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_enrollment_metric_view_v7`"
+    sql_status: PASS
+    semantic_status: PASS
+    expected_shape: enrollment_shared_dataset_with_filter_dimensions_and_measures
+    actual_rows: 2000
+    actual_columns: [Service Date, service_month, line_of_business, enrollment_status, member_state, member_zip_code, member_sex, member_race, group_name, subgroup_name, product_id, Active Members, New Member Enrollment]
+    filters: [Service Date, line_of_business, member_state, member_sex]
+    measures: [Active Members, New Member Enrollment]
+    dimensions: [Service Date, service_month, line_of_business, member_state, member_sex]
+    failure_reason: null
+  - name: ds_member_claims_monthly_metric_view_v7
+    dashboard: member_claims_utilization_dashboard_v7
+    metric_view: "`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_monthly_metric_view_v7`"
+    sql_status: PASS
+    semantic_status: PASS
+    expected_shape: monthly_summary_dataset_with_service_month_and_measures
+    actual_rows: 60
+    actual_columns: [service_month, Active Enrolled Members, Claims per 1000 Members, Member Months, Members With Claims, Monthly Claims, Monthly Paid Amount, PMPM, Utilization Rate]
+    filters: [service_month]
+    measures: [Active Enrolled Members, Claims per 1000 Members, Member Months, Members With Claims, Monthly Claims, Monthly Paid Amount, PMPM, Utilization Rate]
+    dimensions: [service_month]
+    failure_reason: null

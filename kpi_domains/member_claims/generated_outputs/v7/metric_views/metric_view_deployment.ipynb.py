@@ -1,0 +1,460 @@
+# Databricks notebook source
+# DBTITLE 1,Metric View Deployment Runtime — member_claims
+# MAGIC %md
+# MAGIC # Metric View Deployment — member_claims
+# MAGIC
+# MAGIC This notebook is the **Deterministic Deployment Runtime** for Metric Views.
+# MAGIC It reads declarative metric view YAML specs and compiles, deploys, and validates them.
+# MAGIC
+# MAGIC ## Three-Plane Architecture
+# MAGIC | Plane | Responsibility |
+# MAGIC |---|---|
+# MAGIC | **Generation** (LLM) | Produces `metric_view_spec.yaml` (declarative: measures, dimensions, joins) |
+# MAGIC | **Control** (this notebook) | Four-gate validation, compiles YAML to DDL |
+# MAGIC | **Execution** (this notebook) | Statement Execution API calls |
+# MAGIC | **Verification** (this notebook) | SHOW VIEWS + MEASURE() smoke test + readback manifest |
+# MAGIC
+# MAGIC ## Notebook Structure
+# MAGIC | Cell | Purpose | Action |
+# MAGIC |---|---|---|
+# MAGIC | **Cell 1** | Configuration | Catalog, schema, warehouse, paths |
+# MAGIC | **Cell 2** | Load + validate specs | Read metric_view_spec.yaml, run Gate 1 (structural) |
+# MAGIC | **Cell 3** | Metadata validation | Gate 2: DESCRIBE source tables, verify columns exist |
+# MAGIC | **Cell 4** | Semantic validation | Gate 3: join safety, duplicate measures, grain checks |
+# MAGIC | **Cell 5** | Compile + Execute | Compile YAML to DDL, deploy via Statement Execution API |
+# MAGIC | **Cell 6** | Verify | SHOW VIEWS + MEASURE() smoke test + readback |
+# MAGIC | **Cell 7** | Write manifest | Immutable deployment evidence with hash chain |
+# MAGIC
+# MAGIC ## How to Use
+# MAGIC 1. LLM writes `metric_view_spec.yaml` to `{OUTPUT_FOLDER}/metric_views/`
+# MAGIC 2. LLM fills Cell 1 config values from `step_handoff.yaml`
+# MAGIC 3. Cells 2-7 are copied VERBATIM from this template
+# MAGIC 4. Run all cells — the template handles everything else
+# MAGIC
+# MAGIC ## PYTHON COMPATIBILITY (Python 3.11 — serverless compute):
+# MAGIC DO NOT use backslashes inside f-string expressions.
+# MAGIC Use a variable instead: sep = chr(9472) * 40; f"{sep}"
+
+# COMMAND ----------
+
+# DBTITLE 1,Configuration
+# =============================================================================
+# CONFIGURATION — LLM fills these values from accelerator.yaml + step_handoff.yaml
+# =============================================================================
+
+import yaml
+import json
+import hashlib
+import time
+from pathlib import Path
+
+CATALOG = "aw_serverless_stable_catalog"
+SCHEMA = "aibi_member_claims"
+VERSION_SUFFIX = "_v7"
+WAREHOUSE_ID = "2d8e531640ffa469"
+OUTPUT_FOLDER = "/Workspace/Users/arun.wagle@databricks.com/databricks-aibi-design-first-accelerator/kpi_domains/member_claims/generated_outputs/v7"
+DEPLOY_ROOT = "/Workspace/Users/arun.wagle@databricks.com/databricks-aibi-design-first-accelerator"
+
+# Metric view spec file path (declarative spec produced by LLM)
+SPEC_PATH = f"{OUTPUT_FOLDER}/metric_views/metric_view_spec.yaml"
+
+print(f"Catalog:    {CATALOG}")
+print(f"Schema:     {SCHEMA}")
+print(f"Version:    {VERSION_SUFFIX}")
+print(f"Warehouse:  {WAREHOUSE_ID}")
+print(f"Output:     {OUTPUT_FOLDER}")
+print(f"Spec path:  {SPEC_PATH}")
+
+# COMMAND ----------
+
+# DBTITLE 1,Gate 1 — Structural Validation + Load Spec
+# =============================================================================
+# GATE 1: STRUCTURAL VALIDATION
+# Read metric_view_spec.yaml, validate schema, ensure all required fields exist.
+# =============================================================================
+
+with open(SPEC_PATH) as f:
+    spec_raw = f.read()
+    spec = yaml.safe_load(spec_raw)
+
+# Compute source_hash (hash of the declarative spec — for manifest)
+SOURCE_HASH = hashlib.sha256(spec_raw.encode()).hexdigest()
+
+assert "metric_views" in spec, "metric_view_spec.yaml missing 'metric_views' key"
+MV_SPECS = spec["metric_views"]
+assert len(MV_SPECS) > 0, "metric_view_spec.yaml has no metric views"
+
+for i, mv in enumerate(MV_SPECS):
+    assert "name" in mv, f"Metric view #{i} missing 'name'"
+    assert "yaml" in mv, f"Metric view '{mv.get('name', i)}' missing 'yaml' content"
+    yml = mv["yaml"]
+    assert "version" in yml, f"Metric view '{mv['name']}': yaml missing 'version' (must be 1.1)"
+    assert str(yml["version"]) == "1.1", f"Metric view '{mv['name']}': version must be 1.1"
+    assert "source" in yml, f"Metric view '{mv['name']}': yaml missing 'source'"
+    assert "measures" in yml and len(yml["measures"]) > 0, f"Metric view '{mv['name']}': no measures"
+    for m in yml["measures"]:
+        assert "name" in m, f"Metric view '{mv['name']}': measure missing 'name'"
+        assert "expr" in m, f"Metric view '{mv['name']}': measure missing 'expr'"
+    if "fields" in yml:
+        for d in yml["fields"]:
+            assert "name" in d, f"Metric view '{mv['name']}': dimension missing 'name'"
+            assert "expr" in d, f"Metric view '{mv['name']}': dimension missing 'expr'"
+    if "joins" in yml:
+        for j in yml["joins"]:
+            assert "name" in j, f"Metric view '{mv['name']}': join missing 'name'"
+            assert "source" in j, f"Metric view '{mv['name']}': join missing 'source'"
+            assert "on" in j, f"Metric view '{mv['name']}': join missing 'on'"
+
+print(f"Gate 1 PASSED: {len(MV_SPECS)} metric views, all structurally valid")
+for mv in MV_SPECS:
+    yml = mv["yaml"]
+    n_m = len(yml.get("measures", []))
+    n_d = len(yml.get("fields", []))
+    n_j = len(yml.get("joins", []))
+    print(f"  {mv['name']}: {n_m} measures, {n_d} dimensions, {n_j} joins")
+
+GENERATED_HASH = ""  # filled in Cell 5
+READBACK_HASH = ""   # filled in Cell 6
+
+# COMMAND ----------
+
+# DBTITLE 1,Gate 2 — Metadata Validation
+# =============================================================================
+# GATE 2: METADATA VALIDATION
+# Verify source tables exist and are accessible via Statement Execution API.
+# =============================================================================
+
+from databricks.sdk import WorkspaceClient
+from databricks.sdk.service.sql import StatementState
+
+w = WorkspaceClient()
+
+def execute_sql(stmt, timeout="50s"):
+    """Execute SQL via Statement Execution API (required for metric views)."""
+    response = w.statement_execution.execute_statement(
+        warehouse_id=WAREHOUSE_ID,
+        statement=stmt,
+        wait_timeout=timeout,
+    )
+    if response.status.state == StatementState.SUCCEEDED:
+        return response
+    elif response.status.state == StatementState.FAILED:
+        err = response.status.error.message if response.status.error else "Unknown error"
+        raise RuntimeError(f"SQL failed: {err}")
+    elif response.status.state == StatementState.CANCELED:
+        raise RuntimeError("SQL was canceled")
+    else:
+        stmt_id = response.statement_id
+        for _ in range(10):
+            time.sleep(5)
+            poll = w.statement_execution.get_statement(statement_id=stmt_id)
+            if poll.status.state == StatementState.SUCCEEDED:
+                return poll
+            elif poll.status.state in (StatementState.FAILED, StatementState.CANCELED):
+                err = poll.status.error.message if poll.status.error else "Unknown"
+                raise RuntimeError(f"SQL failed: {err}")
+        raise RuntimeError("SQL timed out after polling")
+
+for mv in MV_SPECS:
+    yml = mv["yaml"]
+    source_fqn = yml["source"]
+    try:
+        result = execute_sql(f"DESCRIBE TABLE {source_fqn}")
+        columns = set()
+        if result.result and result.result.data_array:
+            for row in result.result.data_array:
+                col_name = row[0]
+                if col_name and not col_name.startswith("#"):
+                    columns.add(col_name.lower())
+        mv["_source_columns"] = columns
+        print(f"  Source {source_fqn}: {len(columns)} columns verified")
+    except RuntimeError as e:
+        raise AssertionError(f"Gate 2 FAILED: source table {source_fqn} not accessible: {e}")
+
+print(f"Gate 2 PASSED: all source tables accessible")
+
+# ── Gate 2b: Validate column references in fields and measures ──
+# Every column referenced in field/measure expressions must exist in the source table.
+# This prevents UNRESOLVED_COLUMN errors at CREATE VIEW time.
+import re
+SQL_KEYWORDS = {"COUNT", "SUM", "AVG", "MIN", "MAX", "DISTINCT", "NULLIF", "CASE", "WHEN",
+                "THEN", "ELSE", "END", "AND", "OR", "NOT", "NULL", "CAST", "AS", "LIKE",
+                "IN", "BETWEEN", "IS", "IF", "COALESCE", "UPPER", "LOWER", "TRIM",
+                "DATE_TRUNC", "DATEDIFF", "MONTH", "YEAR", "DAY", "CONCAT", "SUBSTRING",
+                "ROUND", "ABS", "FLOOR", "CEIL", "MEASURE", "TRUE", "FALSE",
+                "LEFT", "RIGHT", "REPLACE", "LENGTH", "SPLIT", "DATE", "TIMESTAMP"}
+missing_all = []
+for mv in MV_SPECS:
+    yml = mv["yaml"]
+    mv_name = mv["name"]
+    source_cols = mv.get("_source_columns", set())
+    if not source_cols:
+        continue
+    measure_names_lower = {m["name"].lower() for m in yml.get("measures", [])}
+    field_names_lower = {f["name"].lower() for f in yml.get("fields", [])}
+    join_names = {j["name"].lower() for j in yml.get("joins", [])}
+    has_joins = bool(yml.get("joins"))
+    all_exprs = []
+    for f in yml.get("fields", []):
+        all_exprs.append(("field", f["name"], f.get("expr", "")))
+    for m in yml.get("measures", []):
+        all_exprs.append(("measure", m["name"], m.get("expr", "")))
+    for kind, name, expr in all_exprs:
+        # Remove MEASURE(`...`) references and string literals
+        clean = re.sub(r"MEASURE\(`[^`]*`\)", "", expr)
+        clean = re.sub(r"MEASURE\([^)]*\)", "", clean)
+        clean = re.sub(r"'[^']*'", "", clean)
+        # Extract identifiers: prefix.col or bare_col
+        tokens = re.findall(r"\b([A-Za-z_][A-Za-z0-9_]*)(?:\.([A-Za-z_][A-Za-z0-9_]*))?\b", clean)
+        for prefix, col in tokens:
+            if col:
+                # prefix.col (e.g., source.clm_dtl_paid_amt)
+                if prefix.lower() == "source" and col.lower() not in source_cols:
+                    missing_all.append((mv_name, kind, name, f"source.{col}"))
+            else:
+                ident = prefix
+                if ident.upper() in SQL_KEYWORDS:
+                    continue
+                if ident.lower() in measure_names_lower or ident.lower() in field_names_lower:
+                    continue
+                if ident.lower() in join_names:
+                    continue
+                # Bare identifier in no-join view must be a source column
+                if not has_joins and ident.lower() not in source_cols:
+                    missing_all.append((mv_name, kind, name, ident))
+if missing_all:
+    msg = "Gate 2b FAILED: column references not found in source table:\n"
+    for mv_name, kind, name, col in missing_all:
+        msg += f"  {mv_name} {kind} '{name}': column '{col}' not in source\n"
+    raise AssertionError(msg)
+print(f"Gate 2b PASSED: all column references verified against source tables")
+
+# COMMAND ----------
+
+# DBTITLE 1,Gate 3 — Semantic Validation
+# =============================================================================
+# GATE 3: SEMANTIC VALIDATION
+# Check grain validity, join path safety, no ambiguous dimensions,
+# no duplicate measure definitions.
+# This gate catches "valid SQL but wrong architecture" errors.
+# =============================================================================
+
+for mv in MV_SPECS:
+    yml = mv["yaml"]
+    mv_name = mv["name"]
+
+    # Check 3a: Join safety — each join should have rely constraint for N:1
+    for j in yml.get("joins", []):
+        if "rely" not in j:
+            print(f"  WARNING: join '{j['name']}' in {mv_name} has no 'rely' — fanout risk")
+        else:
+            rely = j["rely"]
+            if isinstance(rely, dict) and rely.get("at_most_one_match"):
+                print(f"  Join '{j['name']}' in {mv_name}: N:1 (safe)")
+            else:
+                print(f"  WARNING: join '{j['name']}' in {mv_name}: rely may not be N:1")
+
+    # Check 3b: No chained joins
+    for j in yml.get("joins", []):
+        on_expr = j.get("on", "")
+        if "source." not in on_expr and f"{j['name']}." not in on_expr:
+            print(f"  WARNING: join '{j['name']}' in {mv_name}: 'on' may be chained")
+
+    # Check 3c: No duplicate measure names
+    measure_names = [m["name"] for m in yml.get("measures", [])]
+    dups = [n for n in measure_names if measure_names.count(n) > 1]
+    if dups:
+        raise AssertionError(f"Gate 3 FAILED: duplicate measures in {mv_name}: {set(dups)}")
+
+    # Check 3d: No duplicate dimension names
+    dim_names = [d["name"] for d in yml.get("fields", [])]
+    dups = [n for n in dim_names if dim_names.count(n) > 1]
+    if dups:
+        raise AssertionError(f"Gate 3 FAILED: duplicate dimensions in {mv_name}: {set(dups)}")
+
+print(f"Gate 3 PASSED: all semantic checks passed")
+
+# COMMAND ----------
+
+# DBTITLE 1,Gate 4 — Deployment Pre-Checks + Compile
+# =============================================================================
+# GATE 4: DEPLOYMENT VALIDATION
+# Check warehouse access, naming conflicts, then compile spec to DDL.
+# =============================================================================
+
+# Gate 4a: Verify warehouse is accessible
+try:
+    wh = w.warehouses.get(WAREHOUSE_ID)
+    print(f"Warehouse: {wh.name} (state: {wh.state})")
+except Exception as e:
+    raise AssertionError(f"Gate 4 FAILED: cannot access warehouse {WAREHOUSE_ID}: {e}")
+
+# Gate 4b: Check naming conflicts
+for mv in MV_SPECS:
+    view_name = mv["name"]
+    try:
+        check = execute_sql(f"SHOW VIEWS IN {CATALOG}.{SCHEMA} LIKE '{view_name}'")
+        if check.result and check.result.data_array:
+            print(f"  NOTE: {view_name} exists — will be replaced (CREATE OR REPLACE)")
+    except RuntimeError:
+        pass
+
+print(f"Gate 4 PASSED: deployment pre-checks complete")
+
+# COMPILE: Translate declarative YAML to DDL
+def compile_mv_ddl(catalog, schema, view_name, yaml_content):
+    yaml_str = yaml.dump(yaml_content, default_flow_style=False, sort_keys=False, allow_unicode=True)
+    fqn = f"{catalog}.{schema}.{view_name}"
+    return f"CREATE OR REPLACE VIEW {fqn} WITH METRICS LANGUAGE YAML AS\n$$\n{yaml_str}$$"
+
+DDL_STATEMENTS = []
+for mv in MV_SPECS:
+    ddl = compile_mv_ddl(CATALOG, SCHEMA, mv["name"], mv["yaml"])
+    DDL_STATEMENTS.append({"name": mv["name"], "ddl": ddl})
+    print(f"Compiled: {mv['name']} ({len(ddl)} chars)")
+
+combined_ddl = "\n\n---\n\n".join(d["ddl"] for d in DDL_STATEMENTS)
+GENERATED_HASH = hashlib.sha256(combined_ddl.encode()).hexdigest()
+print(f"\nGenerated hash: {GENERATED_HASH[:16]}...")
+
+# COMMAND ----------
+
+# DBTITLE 1,Execute — Deploy Metric Views via Statement Execution API
+# =============================================================================
+# EXECUTION: Deploy each metric view via Statement Execution API.
+# WITH METRICS LANGUAGE YAML is ONLY supported via SQL Warehouse, NOT spark.sql().
+# =============================================================================
+
+DEPLOYED_VIEWS = []
+DEPLOY_ERRORS = []
+
+for item in DDL_STATEMENTS:
+    view_name = item["name"]
+    ddl = item["ddl"]
+    print(f"\nDeploying: {view_name}")
+    try:
+        result = execute_sql(ddl, timeout="50s")
+        print(f"  Created: {CATALOG}.{SCHEMA}.{view_name}")
+        DEPLOYED_VIEWS.append(view_name)
+    except RuntimeError as e:
+        err_msg = str(e)
+        print(f"  FAILED: {err_msg}")
+        DEPLOY_ERRORS.append({"view": view_name, "error": err_msg})
+
+if DEPLOY_ERRORS:
+    error_summary = "\n".join(f"  {e['view']}: {e['error'][:200]}" for e in DEPLOY_ERRORS)
+    raise AssertionError(f"Deployment failed for {len(DEPLOY_ERRORS)} view(s):\n{error_summary}")
+
+print(f"\nDeployed {len(DEPLOYED_VIEWS)} metric views successfully")
+
+# COMMAND ----------
+
+# DBTITLE 1,Verification — Validate Deployed Metric Views
+# =============================================================================
+# VERIFICATION: API readback + MEASURE() smoke test
+# 1. SHOW VIEWS — confirm all views exist
+# 2. MEASURE() smoke test — first measure resolves
+# 3. DESCRIBE — readback columns for manifest hash
+# =============================================================================
+
+VERIFICATION_RESULTS = []
+READBACK_DATA = []
+
+for mv in MV_SPECS:
+    view_name = mv["name"]
+    fqn = f"{CATALOG}.{SCHEMA}.{view_name}"
+
+    # Check 1: View exists
+    show_result = execute_sql(f"SHOW VIEWS IN {CATALOG}.{SCHEMA} LIKE '{view_name}'")
+    view_exists = bool(show_result.result and show_result.result.data_array)
+    if not view_exists:
+        raise AssertionError(f"Verification FAILED: view {view_name} not found")
+
+    # Check 2: MEASURE() smoke test
+    first_measure = mv["yaml"]["measures"][0]["name"]
+    try:
+        smoke = execute_sql(f"SELECT MEASURE(`{first_measure}`) FROM {fqn} LIMIT 1")
+        smoke_pass = True
+        smoke_val = smoke.result.data_array[0][0] if smoke.result and smoke.result.data_array else None
+        print(f"  {view_name}: MEASURE(`{first_measure}`) = {smoke_val} (PASS)")
+    except RuntimeError as e:
+        smoke_pass = False
+        print(f"  {view_name}: MEASURE() smoke test FAILED: {e}")
+
+    # Check 3: DESCRIBE for readback
+    try:
+        desc = execute_sql(f"DESCRIBE {fqn}")
+        cols = []
+        if desc.result and desc.result.data_array:
+            for row in desc.result.data_array:
+                if row[0] and not row[0].startswith("#"):
+                    cols.append(row[0])
+        READBACK_DATA.append({"view": view_name, "columns": json.dumps(sorted(cols))})
+    except RuntimeError:
+        READBACK_DATA.append({"view": view_name, "columns": ""})
+
+    VERIFICATION_RESULTS.append({
+        "view": view_name, "exists": view_exists,
+        "smoke_test": smoke_pass, "measure_tested": first_measure,
+    })
+
+readback_combined = json.dumps(READBACK_DATA, sort_keys=True)
+READBACK_HASH = hashlib.sha256(readback_combined.encode()).hexdigest()
+STATE_COMPARISON = "match" if len(DEPLOYED_VIEWS) == len(MV_SPECS) else "mismatch"
+
+print(f"\nVerification: {len(VERIFICATION_RESULTS)} views verified")
+print(f"Readback hash: {READBACK_HASH[:16]}...")
+print(f"State comparison: {STATE_COMPARISON}")
+
+# COMMAND ----------
+
+# DBTITLE 1,Write Manifest
+# =============================================================================
+# MANIFEST: Immutable deployment evidence with hash chain
+# source_hash -> generated_hash -> readback_hash -> state_comparison
+# =============================================================================
+
+manifest = {
+    "artifact_type": "metric_views",
+    "domain": "member_claims",
+    "version_suffix": VERSION_SUFFIX,
+    "validation_source": "api_readback",
+    "source_hash": SOURCE_HASH,
+    "generated_hash": GENERATED_HASH,
+    "readback_hash": READBACK_HASH,
+    "state_comparison": STATE_COMPARISON,
+    "warehouse_id": WAREHOUSE_ID,
+    "catalog": CATALOG,
+    "schema": SCHEMA,
+    "metric_views": [
+        {
+            "name": mv["name"],
+            "fqn": f"{CATALOG}.{SCHEMA}.{mv['name']}",
+            "source": mv["yaml"]["source"],
+            "measure_count": len(mv["yaml"].get("measures", [])),
+            "dimension_count": len(mv["yaml"].get("fields", [])),
+            "join_count": len(mv["yaml"].get("joins", [])),
+            "smoke_test": next(
+                (v["smoke_test"] for v in VERIFICATION_RESULTS if v["view"] == mv["name"]), False
+            ),
+        }
+        for mv in MV_SPECS
+    ],
+    "verification": VERIFICATION_RESULTS,
+    "total_views": len(MV_SPECS),
+    "total_views_deployed": len(DEPLOYED_VIEWS),
+    "deploy_errors": DEPLOY_ERRORS,
+}
+
+manifest_path = f"{OUTPUT_FOLDER}/metric_views/metric_view_manifest.json"
+with open(manifest_path, "w") as f:
+    json.dump(manifest, f, indent=2)
+
+print(f"Manifest written: {manifest_path}")
+print(f"  Source hash:     {SOURCE_HASH[:16]}...")
+print(f"  Generated hash:  {GENERATED_HASH[:16]}...")
+print(f"  Readback hash:   {READBACK_HASH[:16]}...")
+print(f"  State:           {STATE_COMPARISON}")
+print(f"  Views deployed:  {len(DEPLOYED_VIEWS)}/{len(MV_SPECS)}")
+print(f"\nMetric view deployment complete.")
+

@@ -1,0 +1,254 @@
+domain: member_claims
+catalog: aw_serverless_stable_catalog
+schema: aibi_member_claims
+version_suffix: _v6
+generation_order:
+  - dim_member
+  - dim_provider
+  - dim_address
+  - dim_member_identifier
+  - dim_member_history
+  - fact_member_enrollment
+  - fact_claim_header
+  - fact_claim_detail
+tables:
+  - name: dim_member
+    semantic_role: DIMENSION
+    business_entity: member
+    grain: one row represents a current member dimension record
+    primary_key: [member_sk]
+    column_classifications:
+      member_sk: PRIMARY_KEY
+      mbr_source_member_id: BUSINESS_IDENTIFIER
+      mbr_member_id: BUSINESS_IDENTIFIER
+      mbr_dob: DATE
+      mbr_race: CATEGORICAL_ATTRIBUTE
+      mbr_sex: CATEGORICAL_ATTRIBUTE
+      mbr_ethnicity: CATEGORICAL_ATTRIBUTE
+      mbr_first_name: DESCRIPTIVE_ATTRIBUTE
+      mbr_last_name: DESCRIPTIVE_ATTRIBUTE
+      mbr_full_name: DESCRIPTIVE_ATTRIBUTE
+      mbr_marital_status: CATEGORICAL_ATTRIBUTE
+      mbr_deceased_date: DATE
+      mbr_email: DESCRIPTIVE_ATTRIBUTE
+      mbr_phone_nbr: DESCRIPTIVE_ATTRIBUTE
+      mbr_line_of_business: CATEGORICAL_ATTRIBUTE
+      mbr_relationship_type: CATEGORICAL_ATTRIBUTE
+      mbr_salary_tier: CATEGORICAL_ATTRIBUTE
+      mbr_deceased_flag: BOOLEAN
+      mbr_state: CATEGORICAL_ATTRIBUTE
+      mbr_zip_code: CATEGORICAL_ATTRIBUTE
+      source_system_code: CATEGORICAL_ATTRIBUTE
+      source_system_name: CATEGORICAL_ATTRIBUTE
+      record_hash: BUSINESS_IDENTIFIER
+      created_at: TIMESTAMP
+      updated_at: TIMESTAMP
+      is_active: BOOLEAN
+      end_date: TIMESTAMP
+  - name: dim_provider
+    semantic_role: DIMENSION
+    business_entity: provider
+    grain: one row represents a provider record or provider version
+    primary_key: [provider_sk]
+    column_classifications:
+      provider_sk: PRIMARY_KEY
+      assigned_provider_sk: BUSINESS_IDENTIFIER
+      source_provider_id: BUSINESS_IDENTIFIER
+      provider_npi: BUSINESS_IDENTIFIER
+      provider_tax_id: BUSINESS_IDENTIFIER
+      provider_name: DESCRIPTIVE_ATTRIBUTE
+      provider_address_sk: BUSINESS_IDENTIFIER
+      pcp_flag: BOOLEAN
+      affiliation_id: BUSINESS_IDENTIFIER
+      valid_from_date: TIMESTAMP
+      valid_to_date: TIMESTAMP
+      is_active: BOOLEAN
+      source_system: CATEGORICAL_ATTRIBUTE
+      created_at: TIMESTAMP
+      updated_at: TIMESTAMP
+      last_update_dt: TIMESTAMP
+      record_hash: BUSINESS_IDENTIFIER
+  - name: dim_address
+    semantic_role: DIMENSION
+    business_entity: address
+    grain: one row represents an address for an owning entity and address type
+    primary_key: [address_key]
+    column_classifications:
+      address_key: PRIMARY_KEY
+      entity_type_key: CATEGORICAL_ATTRIBUTE
+      entity_dimension_key: FOREIGN_KEY
+      address_type_code: CATEGORICAL_ATTRIBUTE
+      street_address_1: DESCRIPTIVE_ATTRIBUTE
+      street_address_2: DESCRIPTIVE_ATTRIBUTE
+      city: CATEGORICAL_ATTRIBUTE
+      state: CATEGORICAL_ATTRIBUTE
+      zip_code: CATEGORICAL_ATTRIBUTE
+      country_code: CATEGORICAL_ATTRIBUTE
+      county: CATEGORICAL_ATTRIBUTE
+      is_active: BOOLEAN
+      valid_from_date: TIMESTAMP
+      valid_to_date: TIMESTAMP
+      source_system_code: CATEGORICAL_ATTRIBUTE
+      source_system_name: CATEGORICAL_ATTRIBUTE
+      record_hash: BUSINESS_IDENTIFIER
+      created_at: TIMESTAMP
+      updated_at: TIMESTAMP
+  - name: dim_member_identifier
+    semantic_role: DIMENSION
+    business_entity: member identifier
+    grain: one row represents one identifier value for a member
+    primary_key: [mbr_identifier_sk]
+    column_classifications:
+      mbr_identifier_sk: PRIMARY_KEY
+      member_sk: FOREIGN_KEY
+      id_type: CATEGORICAL_ATTRIBUTE
+      id_value: BUSINESS_IDENTIFIER
+      source_system_code: CATEGORICAL_ATTRIBUTE
+      source_system_name: CATEGORICAL_ATTRIBUTE
+      valid_to_date: TIMESTAMP
+      valid_from_date: TIMESTAMP
+      is_active: BOOLEAN
+      created_at: TIMESTAMP
+      updated_at: TIMESTAMP
+      record_hash: BUSINESS_IDENTIFIER
+  - name: dim_member_history
+    semantic_role: SNAPSHOT
+    business_entity: member history
+    grain: one row represents a historical version of a member record
+    primary_key: [mbr_history_sk]
+    column_classifications:
+      mbr_history_sk: PRIMARY_KEY
+      member_sk: FOREIGN_KEY
+      mbr_source_member_id: BUSINESS_IDENTIFIER
+      mbr_member_id: BUSINESS_IDENTIFIER
+      mbr_dob: DATE
+      mbr_race: CATEGORICAL_ATTRIBUTE
+      mbr_sex: CATEGORICAL_ATTRIBUTE
+      mbr_ethnicity: CATEGORICAL_ATTRIBUTE
+      mbr_marital_status: CATEGORICAL_ATTRIBUTE
+      mbr_line_of_business: CATEGORICAL_ATTRIBUTE
+      mbr_state: CATEGORICAL_ATTRIBUTE
+      is_active: BOOLEAN
+      valid_to_date: TIMESTAMP
+      valid_from_date: TIMESTAMP
+  - name: fact_member_enrollment
+    semantic_role: FACT
+    business_entity: member enrollment
+    grain: one row represents a member enrollment record
+    primary_key: [enrollment_sk]
+    column_classifications:
+      enrollment_sk: PRIMARY_KEY
+      member_sk: FOREIGN_KEY
+      src_member_business_id: BUSINESS_IDENTIFIER
+      mbr_enr_status: STATUS
+      mbr_enr_line_of_business: CATEGORICAL_ATTRIBUTE
+      mbr_enr_plan_id: CATEGORICAL_ATTRIBUTE
+      mbr_enr_group_name: CATEGORICAL_ATTRIBUTE
+      mbr_enr_effective_date: DATE
+      mbr_enr_termination_date: DATE
+      mbr_enr_termination_reason: CATEGORICAL_ATTRIBUTE
+      is_active: BOOLEAN
+  - name: fact_claim_header
+    semantic_role: FACT
+    business_entity: claim header
+    grain: one row represents a claim header
+    primary_key: [clm_header_sk]
+    business_keys: [clm_claim_id]
+    column_classifications:
+      clm_header_sk: PRIMARY_KEY
+      clm_claim_id: BUSINESS_IDENTIFIER
+      clm_member_sk: FOREIGN_KEY
+      clm_claim_type: CATEGORICAL_ATTRIBUTE
+      clm_bill_type: CATEGORICAL_ATTRIBUTE
+      clm_admit_date: DATE
+      clm_claim_thru_date: DATE
+      clm_discharge_date: DATE
+      clm_admission_type: CATEGORICAL_ATTRIBUTE
+      clm_admission_source: CATEGORICAL_ATTRIBUTE
+      clm_line_of_business: CATEGORICAL_ATTRIBUTE
+      clm_birth_weight: MEASURE
+      clm_covered_days: QUANTITY
+      clm_service_type_code: CATEGORICAL_ATTRIBUTE
+      clm_claim_timely_filing: STATUS
+      clm_accept_assignment_indicator: BOOLEAN
+  - name: fact_claim_detail
+    semantic_role: FACT
+    business_entity: claim detail
+    grain: one row represents a claim service line detail
+    primary_key: [clm_dtl_line_nbr]
+    column_classifications:
+      clm_dtl_claim_id: FOREIGN_KEY
+      clm_dtl_line_nbr: PRIMARY_KEY
+      clm_dtl_claim_type: CATEGORICAL_ATTRIBUTE
+      clm_dtl_benefit_category: CATEGORICAL_ATTRIBUTE
+      clm_dtl_benefit_level: CATEGORICAL_ATTRIBUTE
+      clm_dtl_allowed_amt: MONETARY
+      clm_dtl_billed_amt: MONETARY
+      clm_dtl_deduct_amt: MONETARY
+      clm_dtl_net_amt: MONETARY
+      clm_dtl_paid_amt: MONETARY
+      clm_dtl_actual_paid_amt: MONETARY
+      clm_dtl_not_covered_amt: MONETARY
+      clm_dtl_co_insurance_amt: MONETARY
+      clm_dtl_copay_amt: MONETARY
+      clm_dtl_line_status: STATUS
+      clm_dtl_clean_claim_ind: BOOLEAN
+      clm_dtl_place_of_service: CATEGORICAL_ATTRIBUTE
+      clm_dtl_rendering_provider_type: CATEGORICAL_ATTRIBUTE
+      clm_dtl_rendering_provider_spec: CATEGORICAL_ATTRIBUTE
+      clm_dtl_adjudication_status: STATUS
+      clm_dtl_procedure_code: CATEGORICAL_ATTRIBUTE
+      clm_dtl_procedure_qty: QUANTITY
+relationships:
+  - parent: dim_member
+    parent_key: member_sk
+    child: fact_claim_header
+    child_key: clm_member_sk
+    cardinality: 1:N
+    confidence: erd_declared
+    evidence: visible ERD line
+    join_safety: {left_grain: member, right_grain: claim header, fanout_risk: false}
+  - parent: dim_member
+    parent_key: member_sk
+    child: dim_member_identifier
+    child_key: member_sk
+    cardinality: 1:N
+    confidence: erd_declared
+    evidence: visible ERD line
+    join_safety: {left_grain: member, right_grain: identifier, fanout_risk: false}
+  - parent: dim_member
+    parent_key: member_sk
+    child: dim_member_history
+    child_key: member_sk
+    cardinality: 1:N
+    confidence: erd_declared
+    evidence: visible ERD line
+    join_safety: {left_grain: member, right_grain: historical version, fanout_risk: false}
+  - parent: dim_member
+    parent_key: member_sk
+    child: fact_member_enrollment
+    child_key: member_sk
+    cardinality: 1:N
+    confidence: erd_declared
+    evidence: visible ERD line
+    join_safety: {left_grain: member, right_grain: enrollment event, fanout_risk: false}
+  - parent: fact_claim_header
+    parent_key: clm_claim_id
+    child: fact_claim_detail
+    child_key: clm_dtl_claim_id
+    cardinality: 1:N
+    confidence: inferred_medium
+    evidence: shared claim id pattern plus header/detail table semantics
+    join_safety: {left_grain: claim header, right_grain: service line detail, fanout_risk: false}
+inference_results:
+  completed: true
+  inferred_relationships_added:
+    - fact_claim_header.clm_claim_id -> fact_claim_detail.clm_dtl_claim_id
+  unresolved_items:
+    - dim_address.entity_dimension_key to dim_member.member_sk retained unresolved because ERD label is ambiguous polymorphic entity reference
+    - dim_provider.provider_address_sk to dim_address.address_key excluded because evidence is column-name only
+    - fact_claim_header.clm_service_facility_address_sk to dim_address.address_key excluded because evidence is column-name only
+semantic_constraints:
+  - {expression: "valid_from_date <= valid_to_date", type: TEMPORAL, confidence: HIGH}
+  - {expression: "clm_dtl_specific_dos_date <= clm_dtl_specific_dos_thru_date", type: TEMPORAL, confidence: HIGH}
+  - {expression: "child foreign keys sample from parent primary or business keys", type: STRUCTURAL, confidence: HIGH}

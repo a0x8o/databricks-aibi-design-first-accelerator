@@ -1,0 +1,37 @@
+source: api_readback
+status: PASS
+dashboards:
+  - dashboard_id: 01f1b066aaf81eef8e38116ba8848735
+    display_name: member_claims_kpis_dashboard_v6
+    published: true
+    pages: 4
+    canvas_pages: 3
+    filter_pages: 1
+    total_canvas_widgets: 13
+    total_filters: 4
+    validation_file: member_claims_kpis_dashboard_v6_validation.yaml
+    manifest_file: member_claims_kpis_dashboard_dashboard_manifest.json
+    result: PASS
+  - dashboard_id: 01f1b066ac4719e3928d1029bcaabc47
+    display_name: member_claims_utilization_dashboard_v6
+    published: true
+    pages: 4
+    canvas_pages: 3
+    filter_pages: 1
+    total_canvas_widgets: 12
+    total_filters: 4
+    validation_file: member_claims_utilization_dashboard_v6_validation.yaml
+    manifest_file: member_claims_utilization_dashboard_dashboard_manifest.json
+    result: PASS
+summary:
+  dashboards_validated: 2
+  dashboards_published: 2
+  total_pages: 8
+  total_canvas_pages: 6
+  total_canvas_widgets: 25
+  total_filters: 8
+  kpi_coverage_status: PASS
+  notes:
+    - API readback validation files produced by dashboard deployment template are authoritative.
+    - Dataset validation used Statement Execution API-compatible execute_sql and MEASURE() syntax.
+    - Global filter widgets are present on PAGE_TYPE_GLOBAL_FILTERS pages and use shared ds_main datasets.

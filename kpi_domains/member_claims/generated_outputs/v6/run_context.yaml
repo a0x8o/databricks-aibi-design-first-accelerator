@@ -1,0 +1,37 @@
+catalog: aw_serverless_stable_catalog
+schema: aibi_member_claims
+version_suffix: _v6
+output_folder: /Workspace/Users/arun.wagle@databricks.com/databricks-aibi-design-first-accelerator/kpi_domains/member_claims/generated_outputs/v6
+warehouse_id: 2d8e531640ffa469
+status: completed
+phases_completed:
+  - load_inputs
+  - profile_metrics
+  - llm_design
+  - design_instructions
+  - generate_sql
+  - create_genie_space
+  - validate_genie
+  - gather_artifacts
+  - generate_documentation
+  - validate_documentation
+  - generate_manifest
+artifacts:
+  genie_semantic_inventory: /Workspace/Users/arun.wagle@databricks.com/databricks-aibi-design-first-accelerator/kpi_domains/member_claims/generated_outputs/v6/genie_space/genie_semantic_inventory.yaml
+  llm_genie_design: /Workspace/Users/arun.wagle@databricks.com/databricks-aibi-design-first-accelerator/kpi_domains/member_claims/generated_outputs/v6/genie_space/llm_genie_design.yaml
+  genie_notebook: /Workspace/Users/arun.wagle@databricks.com/databricks-aibi-design-first-accelerator/kpi_domains/member_claims/generated_outputs/v6/genie_space/genie_space_configuration_member_claims
+  validation: /Workspace/Users/arun.wagle@databricks.com/databricks-aibi-design-first-accelerator/kpi_domains/member_claims/generated_outputs/v6/genie_space/member_claims_analytics_genie_v6_validation.yaml
+  manifest: /Workspace/Users/arun.wagle@databricks.com/databricks-aibi-design-first-accelerator/kpi_domains/member_claims/generated_outputs/v6/genie_space/member_claims_analytics_genie_v6_manifest.json
+  benchmark_validation: /Workspace/Users/arun.wagle@databricks.com/databricks-aibi-design-first-accelerator/kpi_domains/member_claims/generated_outputs/v6/genie_space/genie_benchmark_validation.yaml
+  documentation_readme: /Workspace/Users/arun.wagle@databricks.com/databricks-aibi-design-first-accelerator/kpi_domains/member_claims/generated_outputs/v6/documentation/readme.md
+  run_manifest: /Workspace/Users/arun.wagle@databricks.com/databricks-aibi-design-first-accelerator/kpi_domains/member_claims/generated_outputs/v6/run_manifest.json
+genie_space:
+  space_id: 01f1b068bd7b1f8ca29f776466c0ea9b
+  title: member_claims_analytics_genie_v6
+  validation_source: api_readback
+  status: PASS
+documentation:
+  status: PARTIAL_SUCCESS
+  reason: ground_truth_validation.yaml missing; README and run_manifest generated from individual manifests and validation artifacts.
+  readme_path: /Workspace/Users/arun.wagle@databricks.com/databricks-aibi-design-first-accelerator/kpi_domains/member_claims/generated_outputs/v6/documentation/readme.md
+  run_manifest_path: /Workspace/Users/arun.wagle@databricks.com/databricks-aibi-design-first-accelerator/kpi_domains/member_claims/generated_outputs/v6/run_manifest.json

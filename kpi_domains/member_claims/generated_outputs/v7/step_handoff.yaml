@@ -1,0 +1,49 @@
+domain: member_claims
+catalog: aw_serverless_stable_catalog
+schema: aibi_member_claims
+version_suffix: _v7
+deploy_root: /Workspace/Users/arun.wagle@databricks.com/databricks-aibi-design-first-accelerator
+output_folder: /Workspace/Users/arun.wagle@databricks.com/databricks-aibi-design-first-accelerator/kpi_domains/member_claims/generated_outputs/v7
+warehouse_id: 2d8e531640ffa469
+parent_path: /Users/arun.wagle@databricks.com/databricks-aibi-design-first-accelerator/kpi_domains/member_claims/generated_outputs/v7/dashboards
+workspace_host: https://fevm-aw-serverless-stable.cloud.databricks.com
+metric_view_strategy: auto
+metric_view_naming_prefix: member_claims
+metric_view_fqns:
+  - name: member_claims_metric_view_v7
+    sql_fqn: "`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v7`"
+    primary: true
+    grain: claim_detail_line
+    source: fact_claim_detail_v7
+  - name: member_claims_enrollment_metric_view_v7
+    sql_fqn: "`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_enrollment_metric_view_v7`"
+    primary: false
+    grain: enrollment
+    source: fact_member_enrollment_enriched_v7
+  - name: member_claims_monthly_metric_view_v7
+    sql_fqn: "`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_monthly_metric_view_v7`"
+    primary: false
+    grain: monthly_member_claims
+    source: member_claims_monthly_summary_v7
+assets:
+  metric_views:
+    strategy: auto
+    naming_prefix: member_claims
+  dashboards:
+    - id: kpis
+      name: member_claims_kpis_dashboard
+    - id: utilization
+      name: member_claims_utilization_dashboard
+  genie:
+    space_name: member_claims_analytics_genie
+    notebook_name: genie_space_configuration_member_claims
+  sample_queries_file: sample_queries_member_claims.sql
+dashboard_display_names:
+  - id: kpis
+    name: member_claims_kpis_dashboard
+    display_name: member_claims_kpis_dashboard_v7
+  - id: utilization
+    name: member_claims_utilization_dashboard
+    display_name: member_claims_utilization_dashboard_v7
+genie_title: member_claims_analytics_genie_v7
+recovery_note: "⚠️ RECOVERY: step_handoff.yaml was missing. Reconstructed from accelerator.yaml."

@@ -1,0 +1,20 @@
+dashboard_name_check:
+  - configured_name: member_claims_kpis_dashboard_v9
+    name_being_used: member_claims_kpis_dashboard_v9
+    match: true
+  - configured_name: member_claims_utilization_dashboard_v9
+    name_being_used: member_claims_utilization_dashboard_v9
+    match: true
+fqn_format_check:
+  - fqn_in_dataset_sql: '`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v9`'
+    format: 3_separate_backtick_pairs
+    valid: true
+  - fqn_in_dataset_sql: '`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_enrollment_metric_view_v9`'
+    format: 3_separate_backtick_pairs
+    valid: true
+template_usage_check:
+  helper_function_used: deploy_dashboard()
+  valid: true
+dataset_sql_execution_check:
+  all_datasets_executed: true
+  failed_datasets: []

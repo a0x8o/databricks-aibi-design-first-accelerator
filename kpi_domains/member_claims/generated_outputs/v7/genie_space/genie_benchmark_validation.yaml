@@ -1,0 +1,29 @@
+benchmark_validation:
+  source: sql_ground_truth_execution_and_api_readback
+  status: PASS
+  pass_rate: 1.0
+  threshold: 0.8
+  benchmarks_total: 16
+  benchmarks_passed: 16
+  benchmarks_failed: 0
+  validation_notes:
+    - All benchmark answer SQLs use validated Metric View MEASURE() syntax.
+    - All corresponding example SQLs executed successfully before deployment.
+    - API readback confirmed benchmark inventory persisted in serialized_space.
+  results:
+    - {question: Count all distinct claims in the claims metric view., status: PASS, failure_reason: null}
+    - {question: How much was paid on claims in total?, status: PASS, failure_reason: null}
+    - {question: Give me the monthly paid spend trend., status: PASS, failure_reason: null}
+    - {question: Break down claim dollars and claim counts by type of claim., status: PASS, failure_reason: null}
+    - {question: Which claim type has the largest denial percentage?, status: PASS, failure_reason: null}
+    - {question: For Institutional claim type, what percent of lines are clean?, status: PASS, failure_reason: null}
+    - {question: Rank benefit categories by total paid dollars., status: PASS, failure_reason: null}
+    - {question: Compare paid-to-billed and paid-to-allowed by network benefit level., status: PASS, failure_reason: null}
+    - {question: Show par provider share by rendering specialty., status: PASS, failure_reason: null}
+    - {question: What line statuses account for the most claim lines?, status: PASS, failure_reason: null}
+    - {question: What is the enrolled active member count?, status: PASS, failure_reason: null}
+    - {question: Split active membership by LOB., status: PASS, failure_reason: null}
+    - {question: Trend new member additions by enrollment month., status: PASS, failure_reason: null}
+    - {question: For Commercial LOB, which states have the most active members?, status: PASS, failure_reason: null}
+    - {question: Show per-member-per-month cost over time., status: PASS, failure_reason: null}
+    - {question: Trend claim frequency per thousand members with utilization rate., status: PASS, failure_reason: null}

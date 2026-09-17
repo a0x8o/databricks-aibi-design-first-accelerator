@@ -53,6 +53,9 @@ After creation, read the space back via API and verify:
 15. DO NOT skip writing the Genie notebook to the output folder
 16. DO NOT create spaces with instructions shorter than 500 characters
 17. DO NOT skip the pre-deploy configuration validation (Cell 8)
+18. DO NOT use `"tables"` key in `serialized_space.data_sources` — MUST use `"metric_views"` (causes "zip archive contains no items" error)
+19. DO NOT add `"column_configs"` field to metric view entries in `serialized_space`
+20. DO NOT rewrite `build_serialized_space` — copy it VERBATIM from the template
 
 ---
 
@@ -72,3 +75,9 @@ After creation, read the space back via API and verify:
 **Pattern:** Agent writes Genie notebook from scratch instead of reading and populating the template.
 **Root cause:** Template path not loaded or agent took a shortcut.
 **Fix:** Prompt enforces template usage. `create_genie_space` tool is disabled (returns error directing to template).
+
+### AP-GN-4: Wrong data_sources Key in serialized_space
+**Pattern:** `build_serialized_space` uses `"data_sources": {"tables": ...}` instead of `"data_sources": {"metric_views": ...}`.
+**Error:** `BadRequest: The zip archive contains no items`
+**Root cause:** LLM rewrote the helper function instead of copying verbatim from template. The Genie API v2 expects `metric_views` key. Using `tables` causes the API to try to package file-based table attachments into a zip, but UC metric views are not files, so the zip is empty.
+**Fix:** Cells 8-10 MUST be copied VERBATIM from the template. The template now includes a format validation guard that asserts `data_sources` contains `metric_views` (not `tables`) before the API call. Never add `column_configs` to metric view entries.

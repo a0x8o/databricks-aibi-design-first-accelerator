@@ -1,0 +1,89 @@
+source: api_readback
+status: PASS
+run_id: 2e35dc9d-cac4-453b-959b-4c25230f692d
+written_at: '2026-09-17'
+dashboards:
+  - dashboard_id: 01f1b214c8d3171f9cf0ded3405ffe5f
+    display_name: member_claims_kpis_dashboard_v9
+    published: true
+    validation_artifact: /Workspace/Users/arun.wagle@databricks.com/databricks-aibi-design-first-accelerator/kpi_domains/member_claims/generated_outputs/v9/dashboards/member_claims_kpis_dashboard_v9_validation.yaml
+    source_metric_views:
+      - '`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v9`'
+      - '`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_enrollment_metric_view_v9`'
+    pages:
+      expected: 4
+      actual: 4
+      canvas_pages: 3
+      filter_pages: 1
+      status: PASS
+    datasets:
+      expected_min: 1
+      actual: 2
+      empty_queries: 0
+      failed_queries: 0
+      status: PASS
+    widgets:
+      expected_min_per_canvas_page: 2
+      actual_canvas_widgets: 12
+      invalid_widgets: 0
+      status: PASS
+    filters:
+      expected_min: 3
+      actual: 4
+      binding_failures: 0
+      status: PASS
+    kpis:
+      rendered_and_validated: [C-1, C-3, C-4, D-1, D-2, M-1, M-2, M-3]
+      skipped_not_implemented: [MC-1, W-1, W-2]
+    api:
+      create_status: PASS_PREVIOUS_RUN
+      get_status: PASS_API_READBACK
+      publish_status: PASS
+    overall_status: PASS
+  - dashboard_id: 01f1b214ca0618768e33fff352565e94
+    display_name: member_claims_utilization_dashboard_v9
+    published: true
+    validation_artifact: /Workspace/Users/arun.wagle@databricks.com/databricks-aibi-design-first-accelerator/kpi_domains/member_claims/generated_outputs/v9/dashboards/member_claims_utilization_dashboard_v9_validation.yaml
+    source_metric_views:
+      - '`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v9`'
+    pages:
+      expected: 4
+      actual: 4
+      canvas_pages: 3
+      filter_pages: 1
+      status: PASS
+    datasets:
+      expected_min: 1
+      actual: 1
+      empty_queries: 0
+      failed_queries: 0
+      status: PASS
+    widgets:
+      expected_min_per_canvas_page: 2
+      actual_canvas_widgets: 12
+      invalid_widgets: 0
+      status: PASS
+    filters:
+      expected_min: 3
+      actual: 4
+      binding_failures: 0
+      status: PASS
+    kpis:
+      rendered_and_validated: [C-1, C-2, D-1, D-2, D-3, D-4, D-8, D-9, D-10]
+      skipped_not_implemented: []
+    api:
+      create_status: PASS_PREVIOUS_RUN
+      get_status: PASS_API_READBACK
+      publish_status: PASS
+    overall_status: PASS
+summary:
+  dashboards_validated: 2
+  dashboards_published: 2
+  configured_dashboards: 2
+  total_pages: 8
+  total_canvas_pages: 6
+  total_filter_pages: 2
+  total_canvas_widgets: 24
+  total_filters: 8
+  datasets_validated: 3
+  overall_status: PASS

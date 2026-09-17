@@ -1,0 +1,127 @@
+metric_view_plan:
+  total_kpis: 23
+  implementable_in_metric_views: 20
+  not_implemented: 3
+  metric_views:
+    - name: member_claims_metric_view_v7
+      sql_fqn: aw_serverless_stable_catalog.aibi_member_claims.member_claims_metric_view_v7
+      source: fact_claim_detail_v7
+      primary: true
+      intermediate_view: null
+      grain: one claim detail line per clm_dtl_claim_id and clm_dtl_line_nbr
+      kpis: [C-1, C-2, C-3, C-4, ADD-1, ADD-2, ADD-3, ADD-4, ADD-5, ADD-6, ADD-7, ADD-8, ADD-9, ADD-10]
+    - name: member_claims_enrollment_metric_view_v7
+      sql_fqn: aw_serverless_stable_catalog.aibi_member_claims.member_claims_enrollment_metric_view_v7
+      source: fact_member_enrollment_enriched_v7
+      primary: false
+      intermediate_view:
+        name: fact_member_enrollment_enriched_v7
+        join_sql: |
+          SELECT e.*, m.mbr_state, m.mbr_zip_code, m.mbr_sex, m.mbr_race, m.mbr_ethnicity, m.mbr_line_of_business_name
+          FROM aw_serverless_stable_catalog.aibi_member_claims.fact_member_enrollment_v7 e
+          JOIN aw_serverless_stable_catalog.aibi_member_claims.dim_member_v7 m ON e.member_sk = m.member_sk
+        join_type: N:1 (fact_member_enrollment_v7 to dim_member_v7)
+        fanout_validated: true
+        source_rows: 2000
+        joined_rows: 2000
+      grain: one member enrollment record per enrollment_sk enriched with current member attributes
+      kpis: [M-1, M-2, M-3]
+    - name: member_claims_monthly_metric_view_v7
+      sql_fqn: aw_serverless_stable_catalog.aibi_member_claims.member_claims_monthly_metric_view_v7
+      source: member_claims_monthly_summary_v7
+      primary: false
+      intermediate_view:
+        name: member_claims_monthly_summary_v7
+        join_sql: |
+          SELECT COALESCE(c.service_month, e.service_month) AS service_month,
+                 c.total_paid_amount,
+                 c.total_claims,
+                 c.members_with_claims,
+                 e.member_months,
+                 e.active_enrolled_members
+          FROM (
+            SELECT DATE_TRUNC('MONTH', clm_dtl_specific_dos_date) AS service_month,
+                   SUM(clm_dtl_paid_amt) AS total_paid_amount,
+                   COUNT(DISTINCT clm_dtl_claim_id) AS total_claims,
+                   COUNT(DISTINCT clm_dtl_member_nbr_sk) AS members_with_claims
+            FROM aw_serverless_stable_catalog.aibi_member_claims.fact_claim_detail_v7
+            GROUP BY DATE_TRUNC('MONTH', clm_dtl_specific_dos_date)
+          ) c
+          FULL OUTER JOIN (
+            SELECT DATE_TRUNC('MONTH', mbr_enr_effective_date) AS service_month,
+                   COUNT(DISTINCT CONCAT(CAST(member_sk AS STRING), '-', CAST(DATE_TRUNC('MONTH', mbr_enr_effective_date) AS STRING))) AS member_months,
+                   COUNT(DISTINCT CASE WHEN is_active = true THEN member_sk END) AS active_enrolled_members
+            FROM aw_serverless_stable_catalog.aibi_member_claims.fact_member_enrollment_v7
+            GROUP BY DATE_TRUNC('MONTH', mbr_enr_effective_date)
+          ) e ON c.service_month = e.service_month
+        join_type: monthly aggregate alignment by service_month after independent fact pre-aggregation
+        fanout_validated: true
+        source_rows: 60
+        joined_rows: 60
+      grain: one row per service_month with independently pre-aggregated claim and enrollment components
+      kpis: [MC-1, MC-2, MC-3]
+  not_implemented:
+    - kpi: MC-4
+      name: High-Cost Member Count
+      reason: Requires member-level pre-aggregation and HAVING threshold filtering before distinct member count; not represented as a single safe metric view measure on the raw claim line grain.
+      status: NOT_IMPLEMENTED
+      documentation_only: true
+      sql: |
+        SELECT COUNT(*) AS high_cost_member_count
+        FROM (
+          SELECT h.clm_member_sk, SUM(d.clm_dtl_paid_amt) AS member_paid
+          FROM aw_serverless_stable_catalog.aibi_member_claims.fact_claim_detail_v7 d
+          JOIN aw_serverless_stable_catalog.aibi_member_claims.fact_claim_header_v7 h ON d.clm_dtl_claim_id = h.clm_claim_id
+          GROUP BY h.clm_member_sk
+          HAVING SUM(d.clm_dtl_paid_amt) > 10000
+        ) x
+      validated: true
+      validation_row_count: 1
+      manual_implementation_notes: |
+        To implement: add as a named SQL dataset in the dashboard. Cannot be a metric view measure due to required member-level HAVING pre-aggregation.
+    - kpi: W-1
+      name: Rolling 3-Month PMPM
+      reason: Requires rolling window calculation over separately aggregated paid and member-month components; excluded from metric view measures for this run.
+      status: NOT_IMPLEMENTED
+      documentation_only: true
+      sql: |
+        WITH claim_months AS (
+          SELECT DATE_TRUNC('MONTH', clm_dtl_specific_dos_date) AS service_month, SUM(clm_dtl_paid_amt) AS paid_amount
+          FROM aw_serverless_stable_catalog.aibi_member_claims.fact_claim_detail_v7
+          GROUP BY DATE_TRUNC('MONTH', clm_dtl_specific_dos_date)
+        ), enrollment_months AS (
+          SELECT DATE_TRUNC('MONTH', mbr_enr_effective_date) AS service_month, COUNT(DISTINCT CONCAT(CAST(member_sk AS STRING), '-', CAST(DATE_TRUNC('MONTH', mbr_enr_effective_date) AS STRING))) AS member_months
+          FROM aw_serverless_stable_catalog.aibi_member_claims.fact_member_enrollment_v7
+          GROUP BY DATE_TRUNC('MONTH', mbr_enr_effective_date)
+        )
+        SELECT c.service_month,
+               SUM(c.paid_amount) OVER (ORDER BY c.service_month ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) / NULLIF(SUM(e.member_months) OVER (ORDER BY c.service_month ROWS BETWEEN 2 PRECEDING AND CURRENT ROW), 0) AS rolling_3m_pmpm
+        FROM claim_months c
+        JOIN enrollment_months e ON c.service_month = e.service_month
+      validated: true
+      validation_row_count: 60
+      manual_implementation_notes: |
+        To implement: add as a named SQL dataset in the dashboard. Cannot be represented here due to windowed cross-grain numerator/denominator logic.
+    - kpi: W-2
+      name: MoM Active Member Growth
+      reason: Requires LAG window function over monthly active member counts.
+      status: NOT_IMPLEMENTED
+      documentation_only: true
+      sql: |
+        WITH enrollment_months AS (
+          SELECT DATE_TRUNC('MONTH', mbr_enr_effective_date) AS service_month, COUNT(DISTINCT member_sk) AS active_members
+          FROM aw_serverless_stable_catalog.aibi_member_claims.fact_member_enrollment_v7
+          GROUP BY DATE_TRUNC('MONTH', mbr_enr_effective_date)
+        )
+        SELECT service_month, (active_members - LAG(active_members) OVER (ORDER BY service_month)) / NULLIF(LAG(active_members) OVER (ORDER BY service_month), 0) AS mom_growth
+        FROM enrollment_months
+      validated: true
+      validation_row_count: 59
+      manual_implementation_notes: |
+        To implement: add as a named SQL dataset in the dashboard. Cannot be represented here due to required LAG window function.
+grain_analysis:
+  fact_tables_in_schema: [fact_member_enrollment_v7, fact_claim_header_v7, fact_claim_detail_v7]
+  fact_tables_with_ready_kpis: [fact_member_enrollment_v7, fact_claim_detail_v7]
+  fact_tables_with_metric_views: [fact_member_enrollment_v7, fact_claim_detail_v7]
+  cross_grain_metric_views: [member_claims_monthly_metric_view_v7]
+  missed_grain_groups: []

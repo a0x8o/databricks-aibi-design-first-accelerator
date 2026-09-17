@@ -1,0 +1,49 @@
+space:
+  space_id: 01f1b14d814c148799a1993aa90c416c
+  title: member_claims_analytics_genie_v7
+  warehouse_id: 2d8e531640ffa469
+  status: PASS
+  validation_source: api_readback
+metric_views:
+  expected:
+    - aw_serverless_stable_catalog.aibi_member_claims.member_claims_metric_view_v7
+    - aw_serverless_stable_catalog.aibi_member_claims.member_claims_enrollment_metric_view_v7
+    - aw_serverless_stable_catalog.aibi_member_claims.member_claims_monthly_metric_view_v7
+  actual_count: 3
+  status: PASS
+instructions:
+  character_count: 3581
+  blocks: 1
+  status: PASS
+sample_questions:
+  count: 16
+  status: PASS
+example_sql:
+  count: 16
+  executed: 16
+  failed: 0
+  status: PASS
+benchmarks:
+  count: 16
+  passed: 16
+  failed: 0
+  pass_rate: 1.0
+  status: PASS
+semantic_coverage:
+  measures: 30
+  dimensions: 26
+  kpis: 20
+  unsupported_kpis_excluded: [MC-4, W-1, W-2]
+  status: PASS
+api:
+  create_status: PASS
+  update_status: NOT_APPLICABLE
+  get_status: PASS
+persisted_configuration:
+  source: api_readback
+  status: PASS
+  sample_questions_count: 16
+  example_sqls_count: 16
+  benchmarks_count: 16
+  instruction_chars: 3581
+overall_status: PASS

@@ -1,0 +1,15 @@
+domain: member_claims
+version_suffix: _v9
+phases_completed:
+  - load_config
+  - parse_erd
+  - build_semantic_model
+  - generate_ddl
+  - generate_synthetic_data
+  - validate_data
+artifacts:
+  erd_parsed: /Workspace/Users/arun.wagle@databricks.com/databricks-aibi-design-first-accelerator/kpi_domains/member_claims/generated_outputs/v9/erd_parsed.yaml
+  semantic_model: /Workspace/Users/arun.wagle@databricks.com/databricks-aibi-design-first-accelerator/kpi_domains/member_claims/generated_outputs/v9/semantic_model.yaml
+  table_spec: /Workspace/Users/arun.wagle@databricks.com/databricks-aibi-design-first-accelerator/kpi_domains/member_claims/generated_outputs/v9/table_spec.yaml
+  synthetic_data_spec: /Workspace/Users/arun.wagle@databricks.com/databricks-aibi-design-first-accelerator/kpi_domains/member_claims/generated_outputs/v9/synthetic_data_spec.yaml
+  data_layer_validation: /Workspace/Users/arun.wagle@databricks.com/databricks-aibi-design-first-accelerator/kpi_domains/member_claims/generated_outputs/v9/data_layer_validation.yaml

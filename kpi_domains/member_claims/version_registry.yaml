@@ -48,3 +48,44 @@ versions:
     0-9), hyphens (-), or underscores (_) [widget-1-Total Paid Amount], resource names
     should only contain alphanumeric characters (a-z, A-Z, 0-9), hyphens (-), or underscores
     ('
+- version: 5
+  status: failed
+  created_by: app
+  run_id: 026fcf48-919f-45c9-8351-909c2864026e
+  started_at: '2026-09-14T17:01:38.804522+00:00'
+  assets_created: {}
+  completed_at: '2026-09-14T17:05:53.895509+00:00'
+  error_summary: "Critical failure in 'execute_python': ERROR: Traceback (most recent\
+    \ call last):\n  File \"<string>\", line 362, in <module>\nTypeError: 'NoneType'\
+    \ object is not iterable"
+- version: 6
+  status: completed
+  created_by: app
+  run_id: d6595b46-889f-4574-b7d5-fec65087307f
+  started_at: '2026-09-14T17:18:51.273111+00:00'
+  assets_created: {}
+  completed_at: '2026-09-14T18:33:21.678240+00:00'
+- version: 7
+  status: completed
+  created_by: app
+  run_id: ee7f79ff-4490-43aa-a4be-725c164e2604
+  started_at: '2026-09-15T20:32:19.099777+00:00'
+  assets_created: {}
+  completed_at: '2026-09-15T21:45:09.724778+00:00'
+- version: 8
+  status: failed
+  created_by: app
+  run_id: 0e464b21-c4ca-4d47-95fe-06eb03c62fc9
+  started_at: '2026-09-16T14:10:57.460048+00:00'
+  assets_created: {}
+  completed_at: '2026-09-16T14:11:00.360414+00:00'
+  error_summary: '''StateStore'' object has no attribute ''save_phases'''
+- version: 9
+  status: failed
+  created_by: app
+  run_id: 5ee1bbda-07a8-4ede-9495-3e6408fcd84b
+  started_at: '2026-09-16T15:58:52.889006+00:00'
+  assets_created: {}
+  completed_at: '2026-09-17T13:45:18.819834+00:00'
+  error_summary: 'Critical failure in ''execute_notebook'': NOTEBOOK ERROR (run_id=1041352919856207):
+    BadRequest: The zip archive contains no items.'

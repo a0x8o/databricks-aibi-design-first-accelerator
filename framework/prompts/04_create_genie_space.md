@@ -109,20 +109,39 @@ PHASE C — VALIDATE SQL (Steps 3-8)
   12. Generate benchmark ground truth
 
 PHASE D — BUILD & DEPLOY NOTEBOOK (Steps 9-13)
-  13. Read genie_space_notebook.py.template
-  14. Populate cells 2-7 with config, instructions, questions, SQL, benchmarks
-  15. Copy cells 8-10 VERBATIM from template (helpers + create/update + validate)
-      NOTE: The template now auto-imports gate_checks.py for enforcement.
+  13. Call `deploy_from_template` to create the Genie notebook from the template:
+      - `template_path`: `{DEPLOY_ROOT}/framework/templates/genie_space_notebook.py.template`
+      - `output_path`: `{OUTPUT_FOLDER}/genie_space/{notebook_name}`
+      - `placeholders`: dict with ALL of the following keys (values from your config):
+          - `DOMAIN_NAME`: domain name (e.g., "member_claims")
+          - `SPACE_TITLE`: genie_title from step_handoff.yaml (versioned)
+          - `SPACE_DESCRIPTION`: domain-specific description mentioning key metrics
+          - `WAREHOUSE_ID`: warehouse_id from step_handoff.yaml
+          - `PARENT_PATH`: `{OUTPUT_FOLDER}/genie_space` (for gate_checks.py import)
+          - `TABLE_IDENTIFIERS`: Python list literal of metric view FQNs, e.g. `["catalog.schema.view_v9", ...]`
+          - `GENERAL_INSTRUCTIONS`: full multi-line instructions text (the LLM-designed content)
+          - `METRIC_VIEW_DESCRIPTIONS`: Python dict literal, e.g. `{"catalog.schema.view": "description", ...}`
+          - `SAMPLE_QUESTIONS`: Python list literal of question strings
+          - `EXAMPLE_SQLS`: Python list literal of (question, sql) tuples
+          - `BENCHMARK_QUESTIONS`: Python list literal of (question, sql) tuples
+      This tool reads the template verbatim and performs ONLY placeholder substitution.
+      Cells 8-10 (helpers, create/update, validate) are guaranteed VERBATIM from the template.
+      DO NOT use `import_notebook` or `write_workspace_file` for this — they are blocked for genie_space_ paths (G-16).
+      DO NOT read the template yourself and do string manipulation — the tool handles everything.
+      NOTE: The template auto-imports gate_checks.py for enforcement.
       Gate checks run automatically:
         - PRE-DEPLOY: run_genie_predeploy_gates() verifies description,
           instructions, tables, questions, and example SQLs are all populated.
           Raises GateCheckError if ANY content is missing — API call is blocked.
         - POST-DEPLOY: validate_genie_from_api() reads the space back from
           the API and verifies the deployed content matches.
-  16. Save notebook to {OUTPUT_FOLDER}/genie_space/{notebook_name}
-  17. Execute cells: Cell 7 (validate_genie_config) → Cell 8 (helpers) → Cell 9 (create/update API)
-  18. Cell 9 calls POST /api/2.0/genie/spaces with FULL serialized_space
-      Gate enforcement fires automatically within Cell 9.
+  14. Copy `gate_checks.py` from `{DEPLOY_ROOT}/framework/templates/` to `{OUTPUT_FOLDER}/genie_space/`
+      (needed by the notebook for pre-deploy and post-deploy gate enforcement)
+  15. Execute the notebook: Cell 8 (validate_genie_config) → Cell 9 (helpers) → Cell 10 (create/update API)
+  16. Cell 10 calls POST /api/2.0/genie/spaces with FULL serialized_space
+      Gate enforcement fires automatically within Cell 10.
+      The template includes a format validation guard that asserts `data_sources`
+      contains `"metric_views"` (NOT `"tables"`) before the API call.
 
 PHASE E — VALIDATE & PERSIST (Steps 14-22)
   19. If gate_checks post-deploy validation passed (Layer 2), use that result.
@@ -145,6 +164,8 @@ If you are about to do ANY of the following, **STOP — you are shortcutting:**
 | Skipping the LLM design call | Produces thin/generic instructions | LLM generates domain-specific, analytically rich configuration |
 | Skipping `validate_genie_config()` execution | Deploys broken SQL | Must execute ALL example SQL before API call |
 | Writing 4-line instruction text | Fails minimum quality (need ≥500 chars) | LLM produces 800-1500 char markdown-formatted instructions |
+| Reading template and copying cells manually | LLM rewrites helper functions, introducing bugs (AP-GN-4) | Use `deploy_from_template` tool — it guarantees verbatim template content |
+| Using `write_workspace_file` to create the notebook | Bypasses template enforcement, allows LLM to introduce code errors | Use `deploy_from_template` — `write_workspace_file` is blocked for genie_space_ paths |
 
 **The ONLY valid deployment path is: template notebook populated → validate_genie_config() passes → gate_checks pre-deploy passes → build_serialized_space() → POST/PATCH API with full payload → gate_checks post-deploy readback passes.**
 
@@ -223,7 +244,7 @@ A title-only or minimally configured Genie Space is invalid.
 The following actions are STRICTLY FORBIDDEN:
 
 1. **DO NOT create a blank or title-only Genie Space** — the space MUST have instructions, sample questions, AND example SQL
-2. **DO NOT bypass the notebook template** — if `templates.genie_notebook` is configured, use it (read template, populate, execute)
+2. **DO NOT bypass the notebook template** — use `deploy_from_template` to create the Genie notebook from `genie_space_notebook.py.template`. DO NOT read the template and copy cells manually — the LLM rewrites helper functions introducing bugs (AP-GN-4: `"tables"` vs `"metric_views"` key). DO NOT use `write_workspace_file` or `import_notebook` for genie_space_ paths — they are blocked by G-16 enforcement.
 3. **DO NOT hardcode domain-specific instructions** in the template — instructions are generated from the validated KPI/metric inventory
 4. **DO NOT skip benchmark validation** — sample questions must be tested against the Genie space to verify it answers correctly
 5. **DO NOT create sample questions that cannot be answered** by the metric view — every sample question must map to available measures/dimensions from IMPLEMENTED metric views. **Exclude NOT_IMPLEMENTED KPIs** (those with HAVING/LAG/window requirements) from sample questions, example SQL, benchmarks, and instructions. These KPIs have no metric view and cannot be queried via `MEASURE()`.
@@ -277,6 +298,7 @@ If the executing agent:
 - Omits instructions, sample questions, or example SQL from the payload → **INVALID**
 - Includes example SQL that was NOT executed and validated first → **INVALID**
 - Skips the template-based notebook and writes one from scratch → **INVALID**
+- Fails to use `deploy_from_template` for Genie notebook creation → **INVALID**
 - Creates 0 benchmark questions → **INVALID**
 
 Any of these invalidate the Genie Space and require re-execution from Step 1 of this prompt.
@@ -1726,76 +1748,95 @@ genie_space_configuration.md
 > - `phase_name`: "Create Genie Space"
 > - `status`: "started"
 > - `current_task`: "Creating Genie space via API"
-> - `happenings`: ["Building configuration notebook", "Constructing space payload", "Calling Genie API"]
+> - `happenings": ["Deploying notebook from template", "Constructing space payload", "Calling Genie API"]
 
-Create:
+Create the notebook at:
 
 ```text
-{workspace.output_folder}/genie_space/{assets.genie.notebook_name}
+{OUTPUT_FOLDER}/genie_space/{assets.genie.notebook_name}
 ```
 
-using:
+by calling the `deploy_from_template` tool:
 
-* Workspace `import` with `format: JUPYTER`; or
-* approved notebook agent tools.
+```
+deploy_from_template(
+  template_path = "{DEPLOY_ROOT}/framework/templates/genie_space_notebook.py.template",
+  output_path  = "{OUTPUT_FOLDER}/genie_space/{assets.genie.notebook_name}",
+  placeholders = {
+    "DOMAIN_NAME": "...",
+    "SPACE_TITLE": "...",
+    "SPACE_DESCRIPTION": "...",
+    "WAREHOUSE_ID": "...",
+    "PARENT_PATH": "{OUTPUT_FOLDER}/genie_space",
+    "TABLE_IDENTIFIERS": [...],
+    "GENERAL_INSTRUCTIONS": "...",
+    "METRIC_VIEW_DESCRIPTIONS": {...},
+    "SAMPLE_QUESTIONS": [...],
+    "EXAMPLE_SQLS": [...],
+    "BENCHMARK_QUESTIONS": [...],
+  }
+)
+```
+
+The tool reads the template verbatim, performs placeholder substitution, and
+creates the notebook. Cells 8-10 (helpers, API call, validation) are guaranteed
+unchanged from the template — the LLM never touches them.
+
+Also copy `gate_checks.py` from `{DEPLOY_ROOT}/framework/templates/` to
+`{OUTPUT_FOLDER}/genie_space/` for the notebook's pre-deploy and post-deploy
+gate enforcement.
 
 Never use `dbutils.fs` for `/Workspace/`.
 
-Delete/replace an existing notebook at the exact versioned path only when required by the accelerator's idempotency rules.
-
 ---
 
-# Step 9.1: Template-First Notebook Construction
+# Step 9.1: Template Guarantees (Automatic)
 
-Read:
+The `deploy_from_template` tool reads the template at:
 
 ```text
-{EXAMPLE_DIR}/{templates.genie_notebook}
+{DEPLOY_ROOT}/framework/templates/genie_space_notebook.py.template
 ```
 
-The configured template is mandatory.
-
-Populate configured cells from the template.
-
-Do NOT create an equivalent notebook from scratch.
+and performs deterministic placeholder substitution. The LLM does NOT read
+the template or manipulate its content. This guarantees cells 8-10 are
+verbatim from the template (G-16 enforcement).
 
 ---
 
-# Step 9.2: Replace Configurable Cells
+# Step 9.2: Placeholder Values (LLM-Generated Config)
 
-Populate cells 1–7 according to the template contract.
+The LLM generates the following values (from Phases A-C) and passes them as
+the `placeholders` dict to `deploy_from_template`:
 
-Typical responsibilities:
+| Placeholder | Source | Format |
+|-------------|--------|--------|
+| DOMAIN_NAME | accelerator.yaml | string |
+| SPACE_TITLE | step_handoff.yaml genie_title | string (versioned) |
+| SPACE_DESCRIPTION | LLM-generated | string |
+| WAREHOUSE_ID | step_handoff.yaml | string |
+| PARENT_PATH | `{OUTPUT_FOLDER}/genie_space` | string |
+| TABLE_IDENTIFIERS | step_handoff.yaml metric_view_fqns | Python list literal |
+| GENERAL_INSTRUCTIONS | LLM Phase B output | multi-line string |
+| METRIC_VIEW_DESCRIPTIONS | LLM Phase A output | Python dict literal |
+| SAMPLE_QUESTIONS | LLM Phase B output | Python list literal |
+| EXAMPLE_SQLS | LLM Phase B output (validated) | Python list of tuples |
+| BENCHMARK_QUESTIONS | LLM Phase B output | Python list of tuples |
 
-| Cell | Responsibility              |
-| ---- | --------------------------- |
-| 1    | Domain/context metadata     |
-| 2    | Space runtime configuration |
-| 3    | General instructions        |
-| 4    | Metric View descriptions    |
-| 5    | Sample questions            |
-| 6    | Example question SQL        |
-| 7    | Benchmarks                  |
-
-Remove all:
-
-```text
-<<< REPLACE >>>
-```
-
-placeholders.
-
-No configuration cell may retain unresolved placeholder text.
+All placeholders must be resolved — no `{{...}}` may remain after substitution.
 
 ---
 
-# Step 9.3: Infrastructure Cells
+# Step 9.3: Infrastructure Cells (Guaranteed Verbatim)
 
-Copy infrastructure/helper cells from the configured template exactly where required.
+Cells 8-10 (helper functions, create/update API call, validation) are copied
+verbatim from the template by `deploy_from_template`. The LLM must NOT modify
+these cells. The template includes:
+- `build_serialized_space()` with correct `"metric_views"` key (NOT `"tables"`)
+- Format validation guard that asserts `data_sources` contains `"metric_views"`
+- Pre-deploy and post-deploy gate enforcement via `gate_checks.py`
 
-Do not hand-write equivalent API payload logic when the template already provides validated helper functions.
-
-However, the final API operation MUST conform to the official Databricks Genie management API contract.
+The final API operation conforms to the official Databricks Genie management API contract.
 
 ---
 
@@ -1839,11 +1880,16 @@ The serialization must include all required configuration, including the appropr
 ```text
 version (currently 2)
 config.sample_questions
-data_sources.tables (metric views are listed here)
+data_sources.metric_views (metric views are listed here — NOT data_sources.tables)
 instructions.text_instructions
 instructions.example_question_sqls
 benchmarks.questions
 ```
+
+**CRITICAL:** The serialized_space POST/PATCH body MUST use `data_sources.metric_views`.
+The GET readback response renames this to `data_sources.tables`, but the
+POST/PATCH must use `metric_views`. Using `tables` in the serialized_space
+causes `BadRequest: The zip archive contains no items`.
 
 as defined by the current project contract and the docs schema.
 
@@ -1851,7 +1897,7 @@ as defined by the current project contract and the docs schema.
 
 | Field | Behavior | Fix |
 |-------|----------|-----|
-| `data_sources` | Key is `tables` (NOT `metric_views`) — metric views are listed under `tables[]` | Always use `data_sources.tables[]` |
+| `data_sources` | POST/PATCH uses `metric_views` key; GET readback renames to `tables` | Use `data_sources.metric_views[]` in serialized_space |
 | `text_instructions[].content[]` | Supports markdown formatting (## headers, - bullets, newlines, `backticks`) | Use markdown structure for readability |
 | `column_configs[]` | Must be sorted alphabetically by `column_name` or API rejects with InvalidParameterValue | Sort before submission |
 | All IDs | Must be 32-character lowercase hex UUIDs | Use `uuid.uuid4().hex` |

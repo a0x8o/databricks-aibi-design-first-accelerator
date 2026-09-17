@@ -1,0 +1,24 @@
+benchmark_validation:
+  status: PASS
+  validation_method: benchmark_sql_ground_truth_execution
+  benchmark_count: 16
+  passed: 16
+  failed: 0
+  pass_rate: 1.0
+  results:
+    - {id: b01, question: How much has been paid on claims in total?, status: PASS}
+    - {id: b02, question: Give me the monthly claim count trend., status: PASS}
+    - {id: b03, question: Break paid dollars out by claim category., status: PASS}
+    - {id: b04, question: What percentage of Institutional claim lines were denied?, status: PASS}
+    - {id: b05, question: Rank benefits by total paid spend., status: PASS}
+    - {id: b06, question: Which adjudication outcomes have the highest denial percentage?, status: PASS}
+    - {id: b07, question: For each line status, show service line volume and clean rate., status: PASS}
+    - {id: b08, question: Calculate paid-to-billed for in-network service lines., status: PASS}
+    - {id: b09, question: Top specialties by average claim paid amount?, status: PASS}
+    - {id: b10, question: Trend institutional versus professional paid dollars by month., status: PASS}
+    - {id: b11, question: Count currently active enrolled members., status: PASS}
+    - {id: b12, question: How are enrolled members distributed across LOBs?, status: PASS}
+    - {id: b13, question: Show member population by state, highest first., status: PASS}
+    - {id: b14, question: New enrollment count for the Medicare Advantage LOB?, status: PASS}
+    - {id: b15, question: Display member-month exposure over time., status: PASS}
+    - {id: b16, question: Compare active enrolled membership by product plan and status., status: PASS}

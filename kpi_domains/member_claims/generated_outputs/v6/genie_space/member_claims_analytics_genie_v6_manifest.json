@@ -1,0 +1,25 @@
+{
+  "space_id": "01f1b068bd7b1f8ca29f776466c0ea9b",
+  "title": "member_claims_analytics_genie_v6",
+  "description": "Validated Member Claims Genie Space for healthcare claim service line and member enrollment analytics. Covers claim volume, paid amounts, denial and clean-claim rates, payment ratios, inpatient/outpatient paid amounts, active members, new enrollment, member months, and member distribution by LOB and geography.",
+  "warehouse_id": "2d8e531640ffa469",
+  "validation_source": "api_readback",
+  "configured": true,
+  "validated": true,
+  "tables": [
+    "aw_serverless_stable_catalog.aibi_member_claims.member_claims_metric_view_v6",
+    "aw_serverless_stable_catalog.aibi_member_claims.member_claims_enrollment_metric_view_v6"
+  ],
+  "metric_views": [
+    "aw_serverless_stable_catalog.aibi_member_claims.member_claims_metric_view_v6",
+    "aw_serverless_stable_catalog.aibi_member_claims.member_claims_enrollment_metric_view_v6"
+  ],
+  "sample_question_count": 16,
+  "example_sql_count": 16,
+  "benchmark_count": 16,
+  "instruction_chars": 3606,
+  "notebook_path": "/Workspace/Users/arun.wagle@databricks.com/databricks-aibi-design-first-accelerator/kpi_domains/member_claims/generated_outputs/v6/genie_space/genie_space_configuration_member_claims",
+  "source_hash": "d773aee85ef3c69368848738d3875f18369d8185df4aa04335106c1118004238",
+  "readback_hash": "2f5b0d8fec1cfeff870d6ccdffc9c18ecd302e7ac3823bb2020728fc7725465a",
+  "state_comparison": "match"
+}

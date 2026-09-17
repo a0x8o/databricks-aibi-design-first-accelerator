@@ -1,0 +1,87 @@
+metric_view_plan:
+  total_kpis: 23
+  implementable_in_metric_views: 17
+  not_implemented: 6
+  metric_views:
+    - name: member_claims_metric_view_v9
+      sql_fqn: aw_serverless_stable_catalog.aibi_member_claims.member_claims_metric_view_v9
+      source: fact_claim_detail_v9
+      primary: true
+      intermediate_view: null
+      grain: one row represents a claim detail/service line
+      kpis: [C-1, C-2, C-3, C-4, D-1, D-2, D-3, D-4, D-5, D-6, D-7, D-8, D-9, D-10]
+    - name: member_claims_enrollment_metric_view_v9
+      sql_fqn: aw_serverless_stable_catalog.aibi_member_claims.member_claims_enrollment_metric_view_v9
+      source: fact_member_enrollment_enriched_v9
+      primary: false
+      intermediate_view:
+        name: fact_member_enrollment_enriched_v9
+        join_sql: |
+          SELECT e.*, m.mbr_state, m.mbr_zip_code, m.mbr_sex, m.mbr_line_of_business AS member_line_of_business
+          FROM aw_serverless_stable_catalog.aibi_member_claims.fact_member_enrollment_v9 e
+          JOIN aw_serverless_stable_catalog.aibi_member_claims.dim_member_v9 m ON e.member_sk = m.member_sk
+        join_type: N:1 (fact_member_enrollment to dim_member)
+        fanout_validated: true
+      grain: one row represents a member enrollment span or event enriched with current member geography attributes
+      kpis: [M-1, M-2, M-3]
+  not_implemented:
+    - kpi: MC-1
+      name: PMPM
+      reason: Requires ratio across claim paid numerator and enrollment member-month denominator from different fact grains; documented as SQL dataset rather than single metric view measure.
+      status: NOT_IMPLEMENTED
+      documentation_only: true
+      sql: |
+        WITH paid_by_month AS (SELECT date_trunc('MONTH', clm_dtl_specific_dos_date) AS service_month, SUM(clm_dtl_paid_amt) AS total_paid FROM aw_serverless_stable_catalog.aibi_member_claims.fact_claim_detail_v9 GROUP BY date_trunc('MONTH', clm_dtl_specific_dos_date)), member_months AS (SELECT date_trunc('MONTH', mbr_enr_effective_date) AS service_month, COUNT(DISTINCT CONCAT(CAST(member_sk AS STRING), '-', CAST(date_trunc('MONTH', mbr_enr_effective_date) AS STRING))) AS member_months FROM aw_serverless_stable_catalog.aibi_member_claims.fact_member_enrollment_v9 GROUP BY date_trunc('MONTH', mbr_enr_effective_date)) SELECT p.service_month, p.total_paid / NULLIF(m.member_months, 0) AS pmpm FROM paid_by_month p JOIN member_months m ON p.service_month = m.service_month
+      validated: true
+      validation_row_count: 15
+      manual_implementation_notes: Add as a named SQL dashboard dataset; metric view syntax cannot safely compose measures across separate metric views/fact grains.
+    - kpi: MC-2
+      name: Claims per 1,000 Members
+      reason: Requires ratio across claim count numerator and enrollment member-month denominator from different fact grains.
+      status: NOT_IMPLEMENTED
+      documentation_only: true
+      sql: |
+        WITH claims_by_month AS (SELECT date_trunc('MONTH', clm_dtl_specific_dos_date) AS service_month, COUNT(DISTINCT clm_dtl_claim_id) AS total_claims FROM aw_serverless_stable_catalog.aibi_member_claims.fact_claim_detail_v9 GROUP BY date_trunc('MONTH', clm_dtl_specific_dos_date)), member_months AS (SELECT date_trunc('MONTH', mbr_enr_effective_date) AS service_month, COUNT(DISTINCT CONCAT(CAST(member_sk AS STRING), '-', CAST(date_trunc('MONTH', mbr_enr_effective_date) AS STRING))) AS member_months FROM aw_serverless_stable_catalog.aibi_member_claims.fact_member_enrollment_v9 GROUP BY date_trunc('MONTH', mbr_enr_effective_date)) SELECT c.service_month, (c.total_claims / NULLIF(m.member_months, 0)) * 1000 AS claims_per_1000_members FROM claims_by_month c JOIN member_months m ON c.service_month = m.service_month
+      validated: true
+      validation_row_count: 15
+      manual_implementation_notes: Add as a named SQL dashboard dataset; metric view syntax cannot safely compose measures across separate metric views/fact grains.
+    - kpi: MC-3
+      name: Utilization Rate
+      reason: Requires numerator from claim header members and denominator from enrollment active members at separate fact grains.
+      status: NOT_IMPLEMENTED
+      documentation_only: true
+      sql: |
+        WITH members_with_claims AS (SELECT date_trunc('MONTH', clm_add_date) AS service_month, COUNT(DISTINCT clm_member_sk) AS members_with_claims FROM aw_serverless_stable_catalog.aibi_member_claims.fact_claim_header_v9 GROUP BY date_trunc('MONTH', clm_add_date)), active_members AS (SELECT date_trunc('MONTH', mbr_enr_effective_date) AS service_month, COUNT(DISTINCT member_sk) AS active_enrolled_members FROM aw_serverless_stable_catalog.aibi_member_claims.fact_member_enrollment_v9 WHERE is_active = true GROUP BY date_trunc('MONTH', mbr_enr_effective_date)) SELECT c.service_month, c.members_with_claims / NULLIF(a.active_enrolled_members, 0) AS utilization_rate FROM members_with_claims c JOIN active_members a ON c.service_month = a.service_month
+      validated: true
+      validation_row_count: 15
+      manual_implementation_notes: Add as a named SQL dashboard dataset; metric view syntax cannot safely compose measures across separate metric views/fact grains.
+    - kpi: MC-4
+      name: High-Cost Member Count
+      reason: Requires member-level pre-aggregation and HAVING threshold before counting members.
+      status: NOT_IMPLEMENTED
+      documentation_only: true
+      sql: |
+        SELECT service_month, COUNT(*) AS high_cost_member_count FROM (SELECT date_trunc('MONTH', clm_dtl_specific_dos_date) AS service_month, clm_dtl_member_nbr_sk, SUM(clm_dtl_paid_amt) AS member_paid FROM aw_serverless_stable_catalog.aibi_member_claims.fact_claim_detail_v9 GROUP BY date_trunc('MONTH', clm_dtl_specific_dos_date), clm_dtl_member_nbr_sk HAVING SUM(clm_dtl_paid_amt) > 10000) x GROUP BY service_month
+      validated: true
+      validation_row_count: 0
+      manual_implementation_notes: Add as a named SQL dashboard dataset with configurable threshold; cannot be a simple metric view measure due to HAVING/pre-aggregation.
+    - kpi: W-1
+      name: Rolling 3-Month PMPM
+      reason: Requires rolling window across separately aggregated paid and member-month denominator.
+      status: NOT_IMPLEMENTED
+      documentation_only: true
+      sql: |
+        WITH monthly AS (WITH paid_by_month AS (SELECT date_trunc('MONTH', clm_dtl_specific_dos_date) AS service_month, SUM(clm_dtl_paid_amt) AS total_paid FROM aw_serverless_stable_catalog.aibi_member_claims.fact_claim_detail_v9 GROUP BY date_trunc('MONTH', clm_dtl_specific_dos_date)), member_months AS (SELECT date_trunc('MONTH', mbr_enr_effective_date) AS service_month, COUNT(DISTINCT CONCAT(CAST(member_sk AS STRING), '-', CAST(date_trunc('MONTH', mbr_enr_effective_date) AS STRING))) AS member_months FROM aw_serverless_stable_catalog.aibi_member_claims.fact_member_enrollment_v9 GROUP BY date_trunc('MONTH', mbr_enr_effective_date)) SELECT p.service_month, p.total_paid, m.member_months FROM paid_by_month p JOIN member_months m ON p.service_month = m.service_month) SELECT service_month, SUM(total_paid) OVER (ORDER BY service_month ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) / NULLIF(SUM(member_months) OVER (ORDER BY service_month ROWS BETWEEN 2 PRECEDING AND CURRENT ROW), 0) AS rolling_3_month_pmpm FROM monthly
+      validated: true
+      validation_row_count: 15
+      manual_implementation_notes: Add as SQL dataset; requires window frame and cross-grain monthly aggregates.
+    - kpi: W-2
+      name: MoM Active Member Growth
+      reason: Requires LAG window function over monthly active members.
+      status: NOT_IMPLEMENTED
+      documentation_only: true
+      sql: |
+        WITH monthly_members AS (SELECT date_trunc('MONTH', mbr_enr_effective_date) AS service_month, COUNT(DISTINCT member_sk) AS active_members FROM aw_serverless_stable_catalog.aibi_member_claims.fact_member_enrollment_v9 GROUP BY date_trunc('MONTH', mbr_enr_effective_date)) SELECT service_month, (active_members - LAG(active_members) OVER (ORDER BY service_month)) / NULLIF(LAG(active_members) OVER (ORDER BY service_month), 0) AS mom_active_member_growth FROM monthly_members
+      validated: true
+      validation_row_count: 17
+      manual_implementation_notes: Add as SQL dataset; requires LAG offset not represented as a simple metric view measure.

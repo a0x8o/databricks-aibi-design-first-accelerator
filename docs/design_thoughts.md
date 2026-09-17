@@ -1117,5 +1117,24 @@ So this is how it will look finally
          immutable deployment evidence
 
 
+## Fix 26: Genie Space serialized_space Uses Wrong data_sources Key
 
+**Error:** `BadRequest: The zip archive contains no items`
 
+**Root cause:** The LLM rewrote the `build_serialized_space` helper function
+instead of copying it verbatim from the template. It used `"data_sources": {"tables": ...}`
+instead of `"data_sources": {"metric_views": ...}`. The Genie API v2 expects the
+`"metric_views"` key. Using `"tables"` causes the API to try to package file-based
+table attachments into a zip archive, but UC metric views are not files — the zip
+is empty.
+
+**Fix:**
+1. Fixed generated v9 notebook Cell 9: `"tables"` -> `"metric_views"`, removed `column_configs`
+2. Added format validation guard in Cell 10 (Create/Update Space) that asserts
+   `data_sources` contains `"metric_views"` (not `"tables"`) before the API call
+3. Added same guard to the template `genie_space_notebook.py.template`
+4. Documented as AP-GN-4 in `04_genie_guardrails.md` plus prohibited actions #18-20
+
+**Lesson:** The LLM continues to rewrite helper functions instead of copying
+them verbatim. Adding runtime assertions in the API call cell (which the LLM
+is less likely to rewrite) catches these deviations before they reach the API.

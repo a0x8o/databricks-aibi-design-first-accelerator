@@ -362,6 +362,22 @@ serialised = build_serialized_space(
     benchmark_questions=BENCHMARK_QUESTIONS,
 )
 
+# ── CRITICAL: Validate serialized_space format before API call ──
+# The Genie API version 2 requires data_sources.metric_views (NOT data_sources.tables).
+# Using "tables" causes "BadRequest: The zip archive contains no items" because
+# the API tries to package file-based table attachments but finds none.
+_ss_check = json.loads(serialised)
+assert "metric_views" in _ss_check.get("data_sources", {}), (
+    "SERIALIZED_SPACE FORMAT ERROR: data_sources must use 'metric_views' key, "
+    "not 'tables'. The build_serialized_space function was modified incorrectly. "
+    f"Found keys: {list(_ss_check.get('data_sources', {}).keys())}"
+)
+assert "tables" not in _ss_check.get("data_sources", {}), (
+    "SERIALIZED_SPACE FORMAT ERROR: data_sources must NOT contain 'tables' key. "
+    "Use 'metric_views' instead. Remove 'column_configs' from items."
+)
+print(f"  Serialized space validated: {len(_ss_check['data_sources']['metric_views'])} metric views, format=v2")
+
 # --- Idempotency: find existing space by title to avoid duplicates ---
 if not SPACE_ID:
     print(f"Checking for existing space with title: {SPACE_TITLE}")

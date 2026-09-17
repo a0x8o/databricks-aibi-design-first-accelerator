@@ -1,0 +1,50 @@
+{
+  "artifact_type": "metric_views",
+  "domain": "member_claims",
+  "version_suffix": "_v9",
+  "validation_source": "api_readback",
+  "source_hash": "eb0b677c92d83d706040055ecfd0863d62226624b9108350e09533f519f168f6",
+  "generated_hash": "040c1d6a6ae643fe0a1de587b1c20f84b0940451d1798c6151646f50b3c304e0",
+  "readback_hash": "1442c2a4fb2807939924459ddfdf79a1bd2ee30f9589935ac0620f10b4d7d2c8",
+  "state_comparison": "match",
+  "warehouse_id": "2d8e531640ffa469",
+  "catalog": "aw_serverless_stable_catalog",
+  "schema": "aibi_member_claims",
+  "metric_views": [
+    {
+      "name": "member_claims_metric_view_v9",
+      "fqn": "aw_serverless_stable_catalog.aibi_member_claims.member_claims_metric_view_v9",
+      "source": "aw_serverless_stable_catalog.aibi_member_claims.fact_claim_detail_v9",
+      "measure_count": 20,
+      "dimension_count": 13,
+      "join_count": 0,
+      "smoke_test": true
+    },
+    {
+      "name": "member_claims_enrollment_metric_view_v9",
+      "fqn": "aw_serverless_stable_catalog.aibi_member_claims.member_claims_enrollment_metric_view_v9",
+      "source": "aw_serverless_stable_catalog.aibi_member_claims.fact_member_enrollment_enriched_v9",
+      "measure_count": 3,
+      "dimension_count": 9,
+      "join_count": 0,
+      "smoke_test": true
+    }
+  ],
+  "verification": [
+    {
+      "view": "member_claims_metric_view_v9",
+      "exists": true,
+      "smoke_test": true,
+      "measure_tested": "Total Claims"
+    },
+    {
+      "view": "member_claims_enrollment_metric_view_v9",
+      "exists": true,
+      "smoke_test": true,
+      "measure_tested": "New Member Enrollment"
+    }
+  ],
+  "total_views": 2,
+  "total_views_deployed": 2,
+  "deploy_errors": []
+}

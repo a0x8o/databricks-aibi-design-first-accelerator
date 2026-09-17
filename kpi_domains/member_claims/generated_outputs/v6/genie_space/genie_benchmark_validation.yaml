@@ -1,0 +1,27 @@
+benchmark_validation:
+  status: PASS
+  validation_source: sql_ground_truth_and_api_config_readback
+  space_id: 01f1b068bd7b1f8ca29f776466c0ea9b
+  title: member_claims_analytics_genie_v6
+  total: 16
+  passed: 16
+  failed: 0
+  pass_rate: 1.0
+  threshold: 0.8
+  results:
+    - {question: How much has been paid on claims in total?, expected_semantics: Total Paid Amount, actual_result: SQL executed successfully, status: PASS, failure_reason: null}
+    - {question: Give me the monthly claim count trend., expected_semantics: Total Claims by service_month, actual_result: SQL executed successfully, status: PASS, failure_reason: null}
+    - {question: Break paid dollars out by claim category., expected_semantics: Total Paid Amount by claim_type, actual_result: SQL executed successfully, status: PASS, failure_reason: null}
+    - {question: What percentage of Institutional claim lines were denied?, expected_semantics: Denial Rate filtered to Institutional, actual_result: SQL executed successfully, status: PASS, failure_reason: null}
+    - {question: Rank benefits by total paid spend., expected_semantics: Total Paid Amount by benefit_category, actual_result: SQL executed successfully, status: PASS, failure_reason: null}
+    - {question: Which adjudication outcomes have the highest denial percentage?, expected_semantics: Denial Rate by adjudication_status, actual_result: SQL executed successfully, status: PASS, failure_reason: null}
+    - {question: For each line status, show service line volume and clean rate., expected_semantics: Total Claim Lines and Clean Claim Rate by line_status, actual_result: SQL executed successfully, status: PASS, failure_reason: null}
+    - {question: Calculate paid-to-billed for in-network service lines., expected_semantics: Payment-to-Billed Ratio filtered to In Network, actual_result: SQL executed successfully, status: PASS, failure_reason: null}
+    - {question: Top specialties by average claim paid amount?, expected_semantics: Average Paid per Claim by rendering_provider_specialty, actual_result: SQL executed successfully, status: PASS, failure_reason: null}
+    - {question: Trend institutional versus professional paid dollars by month., expected_semantics: Inpatient Paid Amount and Outpatient Paid Amount by service_month, actual_result: SQL executed successfully, status: PASS, failure_reason: null}
+    - {question: Count currently active enrolled members., expected_semantics: Active Enrolled Members, actual_result: SQL executed successfully, status: PASS, failure_reason: null}
+    - {question: How are enrolled members distributed across LOBs?, expected_semantics: Active Members by line_of_business, actual_result: SQL executed successfully, status: PASS, failure_reason: null}
+    - {question: Show member population by state, highest first., expected_semantics: Members by Geography by member_state, actual_result: SQL executed successfully, status: PASS, failure_reason: null}
+    - {question: New enrollment count for the Medicare Advantage LOB?, expected_semantics: New Member Enrollment filtered to Medicare Advantage, actual_result: SQL executed successfully, status: PASS, failure_reason: null}
+    - {question: Display member-month exposure over time., expected_semantics: Member Months by service_month, actual_result: SQL executed successfully, status: PASS, failure_reason: null}
+    - {question: Compare active enrolled membership by product plan and status., expected_semantics: Active Enrolled Members by plan_id and enrollment_status, actual_result: SQL executed successfully, status: PASS, failure_reason: null}

@@ -1,0 +1,129 @@
+metric_view_plan:
+  total_kpis: 25
+  implementable_in_metric_views: 18
+  not_implemented: 3
+  skipped: 4
+  metric_views:
+    - name: member_claims_metric_view_v6
+      sql_fqn: "`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v6`"
+      source: fact_claim_detail_v6
+      source_fqn: aw_serverless_stable_catalog.aibi_member_claims.fact_claim_detail_v6
+      primary: true
+      intermediate_view: null
+      grain: one row represents a claim service line detail
+      kpis: [C-1, C-2, C-3, C-4, D-1, D-2, D-3, D-4, D-5, D-6, D-7, D-8, D-9]
+    - name: member_claims_enrollment_metric_view_v6
+      sql_fqn: "`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_enrollment_metric_view_v6`"
+      source: fact_member_enrollment_v6
+      source_fqn: aw_serverless_stable_catalog.aibi_member_claims.fact_member_enrollment_v6
+      primary: false
+      intermediate_view: null
+      grain: one row represents a member enrollment record / member-month enrollment snapshot
+      kpis: [M-1, M-2, M-3, E-1, E-2]
+      joins:
+        - name: member
+          source: aw_serverless_stable_catalog.aibi_member_claims.dim_member_v6
+          relationship: fact_member_enrollment_v6.member_sk -> dim_member_v6.member_sk
+          status: PASS
+  not_implemented:
+    - kpi: MC-4
+      name: High-Cost Member Count
+      reason: Requires member-level pre-aggregation with HAVING threshold, which is not expressible as a safe single metric view measure at raw claim-line grain.
+      status: NOT_IMPLEMENTED
+      documentation_only: true
+      sql: |
+        WITH member_spend AS (
+          SELECT clm_dtl_member_nbr_sk AS member_key, SUM(clm_dtl_paid_amt) AS member_paid
+          FROM aw_serverless_stable_catalog.aibi_member_claims.fact_claim_detail_v6
+          GROUP BY clm_dtl_member_nbr_sk
+          HAVING SUM(clm_dtl_paid_amt) > 10000
+        )
+        SELECT COUNT(*) AS high_cost_member_count FROM member_spend
+      validated: true
+      validation_row_count: 1
+      manual_implementation_notes: |
+        To implement: Add as a named SQL dataset in the dashboard. Cannot be a metric view measure because it requires HAVING on a member-level aggregate.
+    - kpi: W-1
+      name: Rolling 3-Month PMPM
+      reason: Requires monthly cross-source pre-aggregation plus trailing window over numerator and denominator.
+      status: NOT_IMPLEMENTED
+      documentation_only: true
+      sql: |
+        WITH paid_monthly AS (
+          SELECT DATE_TRUNC('MONTH', clm_dtl_specific_dos_date) AS service_month,
+                 SUM(clm_dtl_paid_amt) AS total_paid
+          FROM aw_serverless_stable_catalog.aibi_member_claims.fact_claim_detail_v6
+          GROUP BY DATE_TRUNC('MONTH', clm_dtl_specific_dos_date)
+        ), enrollment_monthly AS (
+          SELECT DATE_TRUNC('MONTH', mbr_enr_effective_date) AS service_month,
+                 COUNT(DISTINCT CONCAT(CAST(member_sk AS STRING), '-', CAST(DATE_TRUNC('MONTH', mbr_enr_effective_date) AS STRING))) AS member_months
+          FROM aw_serverless_stable_catalog.aibi_member_claims.fact_member_enrollment_v6
+          GROUP BY DATE_TRUNC('MONTH', mbr_enr_effective_date)
+        ), combined AS (
+          SELECT p.service_month, p.total_paid, e.member_months
+          FROM paid_monthly p
+          LEFT JOIN enrollment_monthly e ON p.service_month = e.service_month
+        ), rolling AS (
+          SELECT service_month,
+                 SUM(total_paid) OVER (ORDER BY service_month ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS trailing_3m_paid,
+                 SUM(member_months) OVER (ORDER BY service_month ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS trailing_3m_member_months
+          FROM combined
+        )
+        SELECT service_month, trailing_3m_paid / NULLIF(trailing_3m_member_months, 0) AS rolling_3_month_pmpm
+        FROM rolling
+        ORDER BY service_month
+      validated: true
+      validation_row_count: 12
+      manual_implementation_notes: |
+        To implement: Add as a named SQL dataset in the dashboard. Cannot be a metric view measure due to cross-source monthly alignment and trailing window requirement.
+    - kpi: W-2
+      name: MoM Active Member Growth
+      reason: Requires LAG window offset on monthly active member counts.
+      status: NOT_IMPLEMENTED
+      documentation_only: true
+      sql: |
+        WITH monthly AS (
+          SELECT DATE_TRUNC('MONTH', mbr_enr_effective_date) AS service_month,
+                 COUNT(DISTINCT CASE WHEN is_active THEN member_sk END) AS active_members
+          FROM aw_serverless_stable_catalog.aibi_member_claims.fact_member_enrollment_v6
+          GROUP BY DATE_TRUNC('MONTH', mbr_enr_effective_date)
+        ), lagged AS (
+          SELECT service_month, active_members, LAG(active_members) OVER (ORDER BY service_month) AS prior_month_members
+          FROM monthly
+        )
+        SELECT service_month,
+               active_members,
+               prior_month_members,
+               (active_members - prior_month_members) / NULLIF(prior_month_members, 0) AS mom_active_member_growth
+        FROM lagged
+        WHERE prior_month_members IS NOT NULL
+        ORDER BY service_month
+      validated: true
+      validation_row_count: 12
+      manual_implementation_notes: |
+        To implement: Add as a named SQL dataset in the dashboard. Cannot be a metric view measure due to LAG window offset requirement.
+  skipped:
+    - kpi: MC-1
+      name: PMPM
+      status: SKIPPED_UNSAFE_GRAIN
+      reason: Requires claim paid numerator and enrollment member-month denominator from two fact tables with no safe common metric view grain.
+    - kpi: MC-2
+      name: Claims per 1,000 Members
+      status: SKIPPED_UNSAFE_GRAIN
+      reason: Requires claim numerator and enrollment member-month denominator from two fact tables with no safe common metric view grain.
+    - kpi: MC-3
+      name: Utilization Rate
+      status: SKIPPED_UNRESOLVED_RELATIONSHIP
+      reason: Claim detail member key clm_dtl_member_nbr_sk is VARCHAR and no semantic relationship exists to enrollment member_sk BIGINT.
+    - kpi: D-10
+      name: Participating Provider Rate
+      status: SKIPPED_MISSING_DATA
+      reason: No participating provider flag and no safe rendering provider key exists in fact_claim_detail_v6.
+grain_analysis_gate:
+  fact_tables_in_schema: [fact_member_enrollment_v6, fact_claim_header_v6, fact_claim_detail_v6]
+  fact_tables_with_ready_kpis:
+    fact_claim_detail_v6: 13
+    fact_member_enrollment_v6: 5
+  fact_tables_with_metric_views: [fact_claim_detail_v6, fact_member_enrollment_v6]
+  fact_tables_without_required_metric_views: []
+  status: PASS
