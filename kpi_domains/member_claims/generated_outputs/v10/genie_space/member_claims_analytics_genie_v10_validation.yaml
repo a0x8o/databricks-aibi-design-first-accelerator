@@ -1,0 +1,62 @@
+space:
+  space_id: null
+  title: member_claims_analytics_genie_v10
+  warehouse_id: 2d8e531640ffa469
+  status: NOT_DEPLOYED
+
+metric_views:
+  expected:
+    - aw_serverless_stable_catalog.aibi_member_claims.member_claims_metric_view_v10
+    - aw_serverless_stable_catalog.aibi_member_claims.member_claims_enrollment_metric_view_v10
+  actual: []
+  status: NOT_VALIDATED_AGAINST_API
+
+instructions:
+  character_count: 3010
+  status: READY_NOT_DEPLOYED
+
+sample_questions:
+  count: 16
+  status: READY_NOT_DEPLOYED
+
+example_sql:
+  count: 16
+  executed: 16
+  failed: 0
+  status: PASS_SQL_WAREHOUSE_VALIDATION
+
+benchmarks:
+  count: 16
+  passed: 16
+  failed: 0
+  pass_rate: 1.0
+  status: PASS_SQL_GROUND_TRUTH_VALIDATION_NOT_GENIE_CONVERSATION
+
+semantic_coverage:
+  measures: 17
+  dimensions: 18
+  kpis: 17
+
+api:
+  create_status: NOT_ATTEMPTED
+  update_status: NOT_ATTEMPTED
+  get_status: NOT_ATTEMPTED
+
+persisted_configuration:
+  status: NOT_AVAILABLE
+
+failure:
+  error_classification: GENIE_SERIALIZATION_ERROR
+  observed_problem: "Template notebook py_compile failed before execution: Cell 8 line 90 f-string expression part cannot include a backslash."
+  root_cause: "genie_space_notebook.py.template contains a Python 3.11-incompatible f-string expression in validate_genie_config()."
+  authoritative_evidence: "execute_notebook returned SYNTAX_ERROR before any Genie API call."
+  affected_kpis: []
+  affected_metric_views:
+    - aw_serverless_stable_catalog.aibi_member_claims.member_claims_metric_view_v10
+    - aw_serverless_stable_catalog.aibi_member_claims.member_claims_enrollment_metric_view_v10
+  corrective_action: "Fix framework/templates/genie_space_notebook.py.template Cell 8 marker-print expression, then redeploy via deploy_from_template and rerun the notebook. Do not bypass the template or create a blank space."
+  affected_downstream_artifacts:
+    - genie_manifest.json not written because api_readback validation did not occur
+    - live Genie Space not created or updated
+
+overall_status: FAIL

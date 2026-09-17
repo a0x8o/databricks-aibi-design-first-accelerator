@@ -202,23 +202,26 @@ class ToolExecutor:
         path = args["path"]
         content = args["content"]
 
-        # Guard: redirect template-based notebook paths to deploy_from_template
+        # Guard: redirect template-based notebook OUTPUT paths to deploy_from_template
         # This prevents the LLM from bypassing the template by writing notebook
         # content directly (which would allow it to rewrite helper functions).
-        filename = path.rstrip('/').split('/')[-1].lower()
-        for stem in self._TEMPLATE_STEMS:
-            if stem in filename:
-                return (
-                    f"ERROR: This path contains '{stem}' which indicates "
-                    f"a template-based deployment notebook. Per G-16, you MUST use "
-                    f"the deploy_from_template tool instead of write_workspace_file. "
-                    f"Call deploy_from_template with:\n"
-                    f"  template_path: the .py.template file path\n"
-                    f"  output_path: {path}\n"
-                    f"  placeholders: dict of placeholder KEY -> value\n"
-                    f"The tool reads the template verbatim and performs only "
-                    f"placeholder substitution — cells 8-10 stay unchanged."
-                )
+        # Skip the guard for .template files (those are source files, not outputs)
+        # and for paths in the templates/ directory (framework template sources).
+        if not path.endswith('.template') and '/templates/' not in path:
+            filename = path.rstrip('/').split('/')[-1].lower()
+            for stem in self._TEMPLATE_STEMS:
+                if stem in filename:
+                    return (
+                        f"ERROR: This path contains '{stem}' which indicates "
+                        f"a template-based deployment notebook. Per G-16, you MUST use "
+                        f"the deploy_from_template tool instead of write_workspace_file. "
+                        f"Call deploy_from_template with:\n"
+                        f"  template_path: the .py.template file path\n"
+                        f"  output_path: {path}\n"
+                        f"  placeholders: dict of placeholder KEY -> value\n"
+                        f"The tool reads the template verbatim and performs only "
+                        f"placeholder substitution — cells 8-10 stay unchanged."
+                    )
 
         # Artifact-gated phase skip: if this path is a frozen completion
         # artifact, refuse the write and tell the agent it's already done.
@@ -531,10 +534,12 @@ class ToolExecutor:
         language = args.get("language", "PYTHON").upper()
 
         # Guard: redirect template notebooks to deploy_from_template
-        filename = path.rstrip('/').split('/')[-1].lower()
-        for stem in self._TEMPLATE_STEMS:
-            if stem in filename:
-                return (
+        # Skip for .template files and paths in templates/ directory (source files)
+        if not path.endswith('.template') and '/templates/' not in path:
+            filename = path.rstrip('/').split('/')[-1].lower()
+            for stem in self._TEMPLATE_STEMS:
+                if stem in filename:
+                    return (
                     f"ERROR: This notebook path contains '{stem}' which indicates "
                     f"a template-based deployment notebook. Per G-16, you MUST use "
                     f"the deploy_from_template tool instead of import_notebook. "

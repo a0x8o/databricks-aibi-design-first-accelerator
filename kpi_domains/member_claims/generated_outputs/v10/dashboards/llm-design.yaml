@@ -1,0 +1,262 @@
+dashboards:
+  - name: member_claims_kpis_dashboard_v10
+    purpose: Executive KPI overview for financial performance, claim quality, and member demographics using validated member-claims metric views.
+    filters:
+      - dimension: Service Date
+        filter_type: date-range-picker
+        scope: global
+        rationale: Service date bounds financial and claim quality analysis over time.
+      - dimension: Claim Type
+        filter_type: multi-select
+        scope: global
+        rationale: Claim type is a primary healthcare segmentation for cost and utilization.
+      - dimension: Benefit Category
+        filter_type: multi-select
+        scope: global
+        rationale: Benefit category highlights major cost drivers.
+      - dimension: Participating Provider
+        filter_type: multi-select
+        scope: global
+        rationale: Participating provider status is important for payment and network analysis.
+    pages:
+      - page_name: Financial Overview
+        purpose: Headline financial and claim volume KPIs with cost-driver context.
+        widgets:
+          - title: Total Paid Amount
+            kpi: C-3
+            measure: Total Paid Amount
+            viz_type: counter
+            dimensions: []
+            aggregation: SUM
+            rationale: Headline paid amount is best shown as an executive counter.
+          - title: Total Claims
+            kpi: C-1
+            measure: Total Claims
+            viz_type: counter
+            dimensions: []
+            aggregation: SUM
+            rationale: Claim volume contextualizes spend.
+          - title: Average Paid per Member
+            kpi: Average Paid per Member
+            measure: Average Paid per Member
+            viz_type: counter
+            dimensions: []
+            aggregation: AVG
+            rationale: Ratio measure summarizes member-level cost intensity.
+          - title: Paid Amount by Benefit Category
+            kpi: top-N cost drivers
+            measure: Total Paid Amount
+            viz_type: bar
+            dimensions: [Benefit Category]
+            aggregation: SUM
+            rationale: Benefit category bar chart highlights cost-driver mix.
+          - title: Monthly Paid Amount Trend
+            kpi: C-3
+            measure: Total Paid Amount
+            viz_type: line
+            dimensions: [service_month]
+            aggregation: SUM
+            rationale: Time trend provides financial trajectory.
+      - page_name: Claims Analysis
+        purpose: Claim adjudication quality and payment ratios across status and claim type.
+        widgets:
+          - title: Denial Rate
+            kpi: Denial Rate
+            measure: Denial Rate
+            viz_type: counter
+            dimensions: []
+            aggregation: AVG
+            rationale: Denial rate is a quality headline ratio and must not be summed.
+          - title: Average Paid per Claim
+            kpi: C-4
+            measure: Average Paid per Claim
+            viz_type: counter
+            dimensions: []
+            aggregation: AVG
+            rationale: Average paid per claim is a ratio-style financial efficiency KPI.
+          - title: Clean Claim Rate by Claim Type
+            kpi: Clean Claim Rate
+            measure: Clean Claim Rate
+            viz_type: bar
+            dimensions: [Claim Type]
+            aggregation: AVG
+            rationale: Bar comparison reveals quality variation by claim type.
+          - title: Monthly Denial Rate Trend
+            kpi: Denial Rate
+            measure: Denial Rate
+            viz_type: line
+            dimensions: [service_month]
+            aggregation: AVG
+            rationale: Trend shows whether denials are improving or worsening.
+          - title: Claims by Line Status
+            kpi: C-1
+            measure: Total Claims
+            viz_type: bar
+            dimensions: [Line Status]
+            aggregation: SUM
+            rationale: Status distribution explains claim throughput and denials.
+      - page_name: Member Demographics
+        purpose: Enrollment population distribution by product, geography, and time.
+        widgets:
+          - title: Active Members
+            kpi: M-2
+            measure: Active Members
+            viz_type: counter
+            dimensions: []
+            aggregation: SUM
+            rationale: Active members summarize enrolled population represented in records.
+          - title: Members by Geography
+            kpi: M-3
+            measure: Members by Geography
+            viz_type: counter
+            dimensions: []
+            aggregation: SUM
+            rationale: Geography measure provides population scope.
+          - title: Active Members by Line of Business
+            kpi: M-2
+            measure: Active Members
+            viz_type: bar
+            dimensions: [Line of Business]
+            aggregation: SUM
+            rationale: LOB segmentation is central to member demographic analysis.
+          - title: Members by State
+            kpi: M-3
+            measure: Members by Geography
+            viz_type: bar
+            dimensions: [Member State]
+            aggregation: SUM
+            rationale: State comparison supports geographic population review.
+          - title: Monthly Active Members Trend
+            kpi: M-2
+            measure: Active Members
+            viz_type: line
+            dimensions: [service_month]
+            aggregation: SUM
+            rationale: Time-series view shows enrollment trajectory.
+  - name: member_claims_utilization_dashboard_v10
+    purpose: Utilization, provider network, and operational payment performance dashboard using validated claim metric views.
+    filters:
+      - dimension: Service Date
+        filter_type: date-range-picker
+        scope: global
+        rationale: Service date bounds utilization and operational trends.
+      - dimension: Claim Type
+        filter_type: multi-select
+        scope: global
+        rationale: Claim type separates inpatient/professional utilization patterns.
+      - dimension: Rendering Provider Specialty
+        filter_type: multi-select
+        scope: global
+        rationale: Specialty supports provider-utilization drilldown.
+      - dimension: Participating Provider
+        filter_type: multi-select
+        scope: global
+        rationale: Network participation is central to provider analysis.
+    pages:
+      - page_name: Utilization Patterns
+        purpose: Claims and line volume with inpatient/outpatient paid comparisons.
+        widgets:
+          - title: Total Claim Lines
+            kpi: C-2
+            measure: Total Claim Lines
+            viz_type: counter
+            dimensions: []
+            aggregation: SUM
+            rationale: Service-line volume is the core utilization count.
+          - title: Total Claims Utilization
+            kpi: C-1
+            measure: Total Claims
+            viz_type: counter
+            dimensions: []
+            aggregation: SUM
+            rationale: Distinct claim volume complements line volume.
+          - title: Inpatient Paid Amount
+            kpi: Inpatient Paid Amount
+            measure: Inpatient Paid Amount
+            viz_type: counter
+            dimensions: []
+            aggregation: SUM
+            rationale: Inpatient spend is a headline utilization cost component.
+          - title: Outpatient Paid Amount by Claim Type
+            kpi: Outpatient Paid Amount
+            measure: Outpatient Paid Amount
+            viz_type: bar
+            dimensions: [Claim Type]
+            aggregation: SUM
+            rationale: Claim-type bar chart compares outpatient paid distribution.
+          - title: Monthly Claim Lines Trend
+            kpi: C-2
+            measure: Total Claim Lines
+            viz_type: line
+            dimensions: [service_month]
+            aggregation: SUM
+            rationale: Line trend shows changing utilization intensity.
+      - page_name: Provider Insights
+        purpose: Provider specialty rankings and participating provider performance.
+        widgets:
+          - title: Participating Provider Rate
+            kpi: Participating Provider Rate
+            measure: Participating Provider Rate
+            viz_type: counter
+            dimensions: []
+            aggregation: AVG
+            rationale: Provider participation is a network headline ratio.
+          - title: Paid Amount by Provider Specialty
+            kpi: Specialty rankings
+            measure: Total Paid Amount
+            viz_type: bar
+            dimensions: [Rendering Provider Specialty]
+            aggregation: SUM
+            rationale: Specialty rankings identify high-cost provider categories.
+          - title: Participating Provider Paid by Status
+            kpi: Participating Provider Rate
+            measure: Participating Provider Paid Amount
+            viz_type: bar
+            dimensions: [Participating Provider]
+            aggregation: SUM
+            rationale: Status split explains network paid amount mix.
+          - title: Monthly Participating Provider Rate
+            kpi: Participating Provider Rate
+            measure: Participating Provider Rate
+            viz_type: line
+            dimensions: [service_month]
+            aggregation: AVG
+            rationale: Network participation trend reveals operational shifts.
+      - page_name: Operational Metrics
+        purpose: Payment ratios, denial trends, and clean-claim operational performance.
+        widgets:
+          - title: Payment-to-Billed Ratio
+            kpi: Payment-to-Billed
+            measure: Payment-to-Billed Ratio
+            viz_type: counter
+            dimensions: []
+            aggregation: AVG
+            rationale: Payment-to-billed is a key operational ratio.
+          - title: Payment-to-Allowed Ratio
+            kpi: Payment-to-Allowed
+            measure: Payment-to-Allowed Ratio
+            viz_type: counter
+            dimensions: []
+            aggregation: AVG
+            rationale: Payment-to-allowed summarizes allowed-payment realization.
+          - title: Monthly Payment-to-Billed Trend
+            kpi: Payment-to-Billed
+            measure: Payment-to-Billed Ratio
+            viz_type: line
+            dimensions: [service_month]
+            aggregation: AVG
+            rationale: Trend shows payment ratio stability over time.
+          - title: Denial Rate by Benefit Category
+            kpi: Denial trends
+            measure: Denial Rate
+            viz_type: bar
+            dimensions: [Benefit Category]
+            aggregation: AVG
+            rationale: Category comparison identifies denial concentration.
+          - title: Clean Claim Rate by Line Status
+            kpi: Clean Claim Rate
+            measure: Clean Claim Rate
+            viz_type: bar
+            dimensions: [Line Status]
+            aggregation: AVG
+            rationale: Clean claim variation by status supports operations review.

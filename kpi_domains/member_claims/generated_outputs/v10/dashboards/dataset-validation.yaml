@@ -1,0 +1,118 @@
+datasets:
+  - name: ds_member_claims_metric_view_v10
+    dashboard: member_claims_kpis_dashboard_v10
+    page: Financial Overview / Claims Analysis
+    widget: shared_claim_widgets
+    sql_status: PASS
+    metric_view: "`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v10`"
+    expected_shape: one row per claim filter dimension combination with all claim measures exposed through MEASURE()
+    actual_rows: 2000
+    actual_columns:
+      - Benefit Category
+      - Claim Type
+      - Clean Claim Indicator
+      - Line Status
+      - Participating Provider
+      - Place of Service
+      - Rendering Provider Specialty
+      - Service Date
+      - service_month
+      - Average Paid per Claim
+      - Average Paid per Member
+      - Clean Claim Rate
+      - Clean Lines
+      - Claims per Member
+      - Denial Rate
+      - Denied Lines
+      - Inpatient Paid Amount
+      - Lines per Claim
+      - Outpatient Paid Amount
+      - Participating Provider Paid Amount
+      - Participating Provider Rate
+      - Payment-to-Allowed Ratio
+      - Payment-to-Billed Ratio
+      - Total Allowed Amount
+      - Total Billed Amount
+      - Total Claim Lines
+      - Total Claims
+      - Total Paid Amount
+      - Unique Claim Members
+    measures: [Total Claims, Total Claim Lines, Total Paid Amount, Average Paid per Claim, Denial Rate, Clean Claim Rate, Payment-to-Billed Ratio, Payment-to-Allowed Ratio, Average Paid per Member, Inpatient Paid Amount, Outpatient Paid Amount, Participating Provider Rate]
+    dimensions: [Service Date, service_month, Claim Type, Benefit Category, Line Status, Participating Provider, Rendering Provider Specialty]
+    filters: [Service Date, Claim Type, Benefit Category, Participating Provider]
+    semantic_status: PASS
+    failure_reason: null
+  - name: ds_member_claims_enrollment_metric_view_v10
+    dashboard: member_claims_kpis_dashboard_v10
+    page: Member Demographics
+    widget: shared_enrollment_widgets
+    sql_status: PASS
+    metric_view: "`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_enrollment_metric_view_v10`"
+    expected_shape: one row per enrollment filter dimension combination with enrollment measures exposed through MEASURE()
+    actual_rows: 600
+    actual_columns:
+      - Effective Date
+      - Enrollment Status
+      - Line of Business
+      - Member State
+      - Member ZIP Code
+      - Plan ID
+      - Product ID
+      - service_month
+      - Active Members
+      - Enrollment Records
+      - Members by Geography
+      - New Member Enrollment
+    measures: [Active Members, Members by Geography, New Member Enrollment, Enrollment Records]
+    dimensions: [Effective Date, service_month, Line of Business, Enrollment Status, Member State]
+    filters: [Effective Date, service_month, Line of Business, Enrollment Status, Member State]
+    semantic_status: PASS
+    failure_reason: null
+  - name: ds_main
+    dashboard: member_claims_utilization_dashboard_v10
+    page: Utilization Patterns / Provider Insights / Operational Metrics
+    widget: shared_utilization_widgets
+    sql_status: PASS
+    metric_view: "`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v10`"
+    expected_shape: one row per claim filter dimension combination with all utilization/provider/operations measures exposed through MEASURE()
+    actual_rows: 2000
+    actual_columns:
+      - Benefit Category
+      - Claim Type
+      - Clean Claim Indicator
+      - Line Status
+      - Participating Provider
+      - Place of Service
+      - Rendering Provider Specialty
+      - Service Date
+      - service_month
+      - Average Paid per Claim
+      - Average Paid per Member
+      - Clean Claim Rate
+      - Clean Lines
+      - Claims per Member
+      - Denial Rate
+      - Denied Lines
+      - Inpatient Paid Amount
+      - Lines per Claim
+      - Outpatient Paid Amount
+      - Participating Provider Paid Amount
+      - Participating Provider Rate
+      - Payment-to-Allowed Ratio
+      - Payment-to-Billed Ratio
+      - Total Allowed Amount
+      - Total Billed Amount
+      - Total Claim Lines
+      - Total Claims
+      - Total Paid Amount
+      - Unique Claim Members
+    measures: [Total Claims, Total Claim Lines, Total Paid Amount, Inpatient Paid Amount, Outpatient Paid Amount, Participating Provider Paid Amount, Participating Provider Rate, Payment-to-Billed Ratio, Payment-to-Allowed Ratio, Denial Rate, Clean Claim Rate]
+    dimensions: [Service Date, service_month, Claim Type, Benefit Category, Line Status, Participating Provider, Rendering Provider Specialty]
+    filters: [Service Date, Claim Type, Rendering Provider Specialty, Participating Provider]
+    semantic_status: PASS
+    failure_reason: null
+summary:
+  sql_status: PASS
+  semantic_status: PASS
+  datasets_validated: 3
+  validation_method: batched_statement_execution_api

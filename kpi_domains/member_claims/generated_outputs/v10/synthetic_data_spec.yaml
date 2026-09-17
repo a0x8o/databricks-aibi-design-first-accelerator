@@ -1,0 +1,147 @@
+catalog: aw_serverless_stable_catalog
+schema: aibi_member_claims
+version_suffix: _v10
+generation_order:
+- dim_member
+- dim_address
+- dim_provider
+- dim_member_identifier
+- dim_member_history
+- fact_member_enrollment
+- fact_claim_header
+- fact_claim_detail
+tables:
+- name: dim_member
+  rows: 300
+  pk_columns: [member_sk]
+  date_range: ["2020-01-01", "2024-12-31"]
+  domain_columns:
+    mbr_race: {values: ["White", "Black or African American", "Asian", "Native American", "Pacific Islander", "Other", "Unknown"], weights: [0.48, 0.18, 0.12, 0.03, 0.01, 0.10, 0.08]}
+    mbr_sex: {values: ["Female", "Male", "Unknown"], weights: [0.51, 0.48, 0.01]}
+    mbr_ethnicity: {values: ["Non-Hispanic", "Hispanic", "Unknown"], weights: [0.72, 0.20, 0.08]}
+    mbr_marital_status: {values: ["Single", "Married", "Divorced", "Widowed", "Separated"], weights: [0.36, 0.42, 0.11, 0.08, 0.03]}
+    mbr_line_of_business: {values: ["Commercial", "Medicare", "Medicaid", "Exchange", "TRICARE"], weights: [0.42, 0.24, 0.22, 0.08, 0.04]}
+    mbr_line_of_business_name: {values: ["Commercial HMO", "Medicare Advantage", "Medicaid Managed Care", "Individual Exchange", "TRICARE Prime"], weights: [0.42, 0.24, 0.22, 0.08, 0.04]}
+    mbr_state: {values: ["CA", "TX", "FL", "NY", "PA", "OH", "GA", "NC"], weights: [0.18, 0.15, 0.13, 0.12, 0.11, 0.10, 0.11, 0.10]}
+    mbr_relationship_type: {values: ["Subscriber", "Spouse", "Child", "Dependent", "Domestic Partner"], weights: [0.46, 0.22, 0.25, 0.05, 0.02]}
+    mbr_salary_tier: {values: ["Low Income", "Middle Income", "Upper Middle Income", "High Income", "Unknown"], weights: [0.18, 0.42, 0.26, 0.08, 0.06]}
+    mbr_text_opt_in: {values: ["Opted In", "Opted Out", "Not Offered"], weights: [0.52, 0.38, 0.10]}
+    mbr_pcp_auto_assigned: {values: ["Auto Assigned", "Member Selected", "Not Required"], weights: [0.21, 0.68, 0.11]}
+    source_system_code: {values: ["FACETS", "QNXT", "AMISYS", "CARECOMPASS"], weights: [0.40, 0.30, 0.18, 0.12]}
+    source_system_name: {values: ["Facets Claims", "QNXT Core Admin", "Amisys Advance", "Care Compass"], weights: [0.40, 0.30, 0.18, 0.12]}
+- name: dim_address
+  rows: 300
+  pk_columns: [address_key]
+  date_range: ["2020-01-01", "2024-12-31"]
+  fk_columns:
+    entity_dimension_key: {parent_table: dim_member, parent_pk: member_sk}
+  domain_columns:
+    entity_type_key: {values: ["Member", "Provider", "Facility"], weights: [0.55, 0.30, 0.15]}
+    address_type_code: {values: ["Home", "Mailing", "Billing", "Service", "Practice"], weights: [0.42, 0.18, 0.14, 0.16, 0.10]}
+    city: {values: ["Los Angeles", "Houston", "Miami", "New York", "Philadelphia", "Columbus", "Atlanta", "Charlotte"], weights: [0.18, 0.15, 0.13, 0.12, 0.11, 0.10, 0.11, 0.10]}
+    state: {values: ["CA", "TX", "FL", "NY", "PA", "OH", "GA", "NC"], weights: [0.18, 0.15, 0.13, 0.12, 0.11, 0.10, 0.11, 0.10]}
+    country_code: {values: ["US", "PR", "GU"], weights: [0.96, 0.03, 0.01]}
+    county: {values: ["Los Angeles", "Harris", "Miami-Dade", "Kings", "Philadelphia", "Franklin", "Fulton", "Mecklenburg"], weights: [0.18, 0.15, 0.13, 0.12, 0.11, 0.10, 0.11, 0.10]}
+    source_system_code: {values: ["FACETS", "QNXT", "AMISYS", "CARECOMPASS"], weights: [0.40, 0.30, 0.18, 0.12]}
+- name: dim_provider
+  rows: 200
+  pk_columns: [provider_sk]
+  date_range: ["2020-01-01", "2024-12-31"]
+  fk_columns:
+    provider_address_sk: {parent_table: dim_address, parent_pk: address_key}
+  domain_columns:
+    provider_name: {values: ["North Valley Medical Group", "MetroCare Physicians", "Lakeside Hospital", "Community Health Partners", "Summit Orthopedics", "Central Pharmacy Network", "Family First Clinic"], weights: [0.18, 0.17, 0.15, 0.16, 0.12, 0.12, 0.10]}
+    source_system: {values: ["Facets Claims", "QNXT Core Admin", "Credentialing Hub", "Provider Master"], weights: [0.36, 0.30, 0.20, 0.14]}
+- name: dim_member_identifier
+  rows: 400
+  pk_columns: [mbr_identifier_sk]
+  date_range: ["2020-01-01", "2024-12-31"]
+  fk_columns:
+    member_sk: {parent_table: dim_member, parent_pk: member_sk}
+  domain_columns:
+    id_type: {values: ["Member ID", "Subscriber ID", "Medicaid ID", "Medicare Beneficiary ID", "Employer ID"], weights: [0.38, 0.28, 0.18, 0.10, 0.06]}
+    source_system_code: {values: ["FACETS", "QNXT", "AMISYS", "CARECOMPASS"], weights: [0.40, 0.30, 0.18, 0.12]}
+    source_system_name: {values: ["Facets Claims", "QNXT Core Admin", "Amisys Advance", "Care Compass"], weights: [0.40, 0.30, 0.18, 0.12]}
+- name: dim_member_history
+  rows: 450
+  pk_columns: [mbr_history_sk]
+  date_range: ["2020-01-01", "2024-12-31"]
+  fk_columns:
+    member_sk: {parent_table: dim_member, parent_pk: member_sk}
+  domain_columns:
+    mbr_race: {values: ["White", "Black or African American", "Asian", "Native American", "Other", "Unknown"], weights: [0.49, 0.18, 0.12, 0.03, 0.10, 0.08]}
+    mbr_sex: {values: ["Female", "Male", "Unknown"], weights: [0.51, 0.48, 0.01]}
+    mbr_ethnicity: {values: ["Non-Hispanic", "Hispanic", "Unknown"], weights: [0.72, 0.20, 0.08]}
+    mbr_marital_status: {values: ["Single", "Married", "Divorced", "Widowed", "Separated"], weights: [0.36, 0.42, 0.11, 0.08, 0.03]}
+    mbr_line_of_business: {values: ["Commercial", "Medicare", "Medicaid", "Exchange", "TRICARE"], weights: [0.42, 0.24, 0.22, 0.08, 0.04]}
+    mbr_state: {values: ["CA", "TX", "FL", "NY", "PA", "OH", "GA", "NC"], weights: [0.18, 0.15, 0.13, 0.12, 0.11, 0.10, 0.11, 0.10]}
+- name: fact_member_enrollment
+  rows: 600
+  pk_columns: [enrollment_sk]
+  date_range: ["2020-01-01", "2024-12-31"]
+  fk_columns:
+    member_sk: {parent_table: dim_member, parent_pk: member_sk}
+  domain_columns:
+    source_system: {values: ["Facets Claims", "QNXT Core Admin", "Amisys Advance", "Enrollment Gateway"], weights: [0.36, 0.30, 0.20, 0.14]}
+    mbr_enr_status: {values: ["Active", "Terminated", "Pending", "Suspended", "COBRA"], weights: [0.72, 0.14, 0.07, 0.04, 0.03]}
+    mbr_enr_line_of_business: {values: ["Commercial", "Medicare", "Medicaid", "Exchange", "TRICARE"], weights: [0.42, 0.24, 0.22, 0.08, 0.04]}
+    mbr_enr_group_name: {values: ["Public Sector Employees", "Regional Manufacturing", "Healthcare Workers", "Retail Services", "Individual Exchange", "Senior Advantage"], weights: [0.20, 0.18, 0.17, 0.16, 0.13, 0.16]}
+    mbr_enr_subgroup_name: {values: ["HMO Standard", "PPO Plus", "High Deductible", "Medicare Advantage", "Medicaid Managed", "Exchange Silver"], weights: [0.22, 0.20, 0.18, 0.16, 0.14, 0.10]}
+    mbr_enr_termination_reason: {values: ["Voluntary Termination", "Non Payment", "Employer Group Ended", "Moved Out of Area", "Medicare Transition", "Not Terminated"], weights: [0.08, 0.04, 0.03, 0.02, 0.03, 0.80]}
+    id_type: {values: ["Member ID", "Subscriber ID", "Medicaid ID", "Medicare Beneficiary ID"], weights: [0.42, 0.32, 0.16, 0.10]}
+- name: fact_claim_header
+  rows: 500
+  pk_columns: [clm_header_sk, clm_claim_id]
+  date_range: ["2020-01-01", "2024-12-31"]
+  fk_columns:
+    clm_member_sk: {parent_table: dim_member, parent_pk: member_sk}
+    clm_service_facility_address_sk: {parent_table: dim_address, parent_pk: address_key}
+  domain_columns:
+    clm_claim_type: {values: ["Professional", "Institutional", "Pharmacy", "Dental", "Vision"], weights: [0.42, 0.28, 0.16, 0.09, 0.05]}
+    clm_bill_type: {values: ["Outpatient", "Inpatient", "Skilled Nursing", "Home Health", "Clinic"], weights: [0.38, 0.22, 0.09, 0.08, 0.23]}
+    clm_admission_type: {values: ["Elective", "Emergency", "Urgent", "Newborn", "Trauma"], weights: [0.24, 0.34, 0.25, 0.10, 0.07]}
+    clm_admission_source: {values: ["Physician Referral", "Emergency Room", "Transfer", "Clinic Referral", "Court/Law Enforcement"], weights: [0.36, 0.30, 0.14, 0.16, 0.04]}
+    clm_line_of_business: {values: ["Commercial", "Medicare", "Medicaid", "Exchange", "TRICARE"], weights: [0.42, 0.24, 0.22, 0.08, 0.04]}
+    clm_submitting_provider_type: {values: ["Primary Care", "Specialist", "Hospital", "Pharmacy", "Ancillary"], weights: [0.28, 0.24, 0.20, 0.16, 0.12]}
+    clm_is_par_submitting_provider: {values: ["Participating", "Non-Participating", "Out-of-Network"], weights: [0.72, 0.18, 0.10]}
+    clm_pcp_in_type: {values: ["Assigned PCP", "Covering PCP", "Specialist Referral", "Not PCP"], weights: [0.34, 0.12, 0.28, 0.26]}
+    clm_service_type_code: {values: ["Medical", "Surgical", "Pharmacy", "Behavioral Health", "Preventive"], weights: [0.36, 0.22, 0.16, 0.12, 0.14]}
+    clm_cob_type: {values: ["Primary", "Secondary", "Medicare COB", "Commercial COB", "No COB"], weights: [0.54, 0.16, 0.10, 0.08, 0.12]}
+    clm_claim_timely_filing: {values: ["Timely", "Late", "Waived", "Under Review"], weights: [0.82, 0.08, 0.04, 0.06]}
+    clm_accept_assignment_indicator: {values: ["Accepted", "Not Accepted", "Not Applicable"], weights: [0.76, 0.14, 0.10]}
+    source_system_code: {values: ["FACETS", "QNXT", "AMISYS", "CARECOMPASS"], weights: [0.40, 0.30, 0.18, 0.12]}
+- name: fact_claim_detail
+  rows: 2000
+  pk_columns: [clm_dtl_line_nbr]
+  date_range: ["2020-01-01", "2024-12-31"]
+  fk_columns:
+    clm_dtl_claim_id: {parent_table: fact_claim_header, parent_pk: clm_claim_id}
+  domain_columns:
+    clm_dtl_source_system: {values: ["Facets Claims", "QNXT Core Admin", "Amisys Advance", "Claims Gateway"], weights: [0.40, 0.30, 0.18, 0.12]}
+    clm_dtl_benefit_category: {values: ["Medical", "Surgical", "Pharmacy", "Dental", "Vision", "Behavioral Health", "Preventive Care"], weights: [0.30, 0.18, 0.17, 0.10, 0.07, 0.08, 0.10]}
+    clm_dtl_benefit_level: {values: ["In Network", "Out of Network", "Preferred", "Non Preferred", "Emergency"], weights: [0.58, 0.16, 0.14, 0.07, 0.05]}
+    clm_dtl_claim_type: {values: ["Professional", "Institutional", "Pharmacy", "Dental", "Vision"], weights: [0.42, 0.28, 0.16, 0.09, 0.05]}
+    clm_dtl_interest_discount_flag: {values: ["No Interest Discount", "Prompt Pay Discount", "Interest Applied"], weights: [0.82, 0.12, 0.06]}
+    clm_dtl_copay_reason: {values: ["Office Visit", "Specialist Visit", "Emergency Department", "Prescription", "Preventive Waived"], weights: [0.34, 0.24, 0.12, 0.18, 0.12]}
+    clm_dtl_line_status: {values: ["Paid", "Denied", "Pending", "Adjusted", "Reversed"], weights: [0.68, 0.16, 0.08, 0.06, 0.02]}
+    clm_dtl_clean_claim_ind: {values: ["Clean", "Not Clean", "Requires Review"], weights: [0.76, 0.16, 0.08]}
+    clm_dtl_place_of_service: {values: ["11", "21", "22", "23", "31", "41"], weights: [0.36, 0.16, 0.22, 0.10, 0.08, 0.08]}
+    clm_dtl_fee_schedule_code: {values: ["RBR", "ASC", "DRG", "APC", "PHM"], weights: [0.34, 0.16, 0.18, 0.20, 0.12]}
+    clm_dtl_rendering_provider_type: {values: ["Primary Care", "Specialist", "Hospital", "Pharmacy", "Ancillary"], weights: [0.28, 0.24, 0.20, 0.16, 0.12]}
+    clm_dtl_rendering_provider_spec: {values: ["Family Medicine", "Internal Medicine", "Cardiology", "Orthopedics", "Emergency Medicine", "Radiology", "Pharmacy"], weights: [0.20, 0.18, 0.14, 0.13, 0.12, 0.11, 0.12]}
+    clm_dtl_participating_provider: {values: ["Participating", "Non-Participating", "Out-of-Network"], weights: [0.72, 0.18, 0.10]}
+    clm_dtl_adjudication_status: {values: ["Auto Adjudicated", "Manual Review", "Denied", "Pended", "Adjusted"], weights: [0.58, 0.18, 0.14, 0.06, 0.04]}
+    clm_dtl_procedure_code: {values: ["99213", "99214", "99203", "93000", "80053", "J0585", "D0120", "G0439"], weights: [0.24, 0.20, 0.14, 0.10, 0.12, 0.06, 0.06, 0.08]}
+    clm_dtl_procedure_modifier: {values: ["25", "59", "TC", "RT", "LT"], weights: [0.30, 0.22, 0.18, 0.15, 0.15]}
+    clm_dtl_revenue_code: {values: ["0450", "0300", "0360", "0250", "0510", "0762"], weights: [0.18, 0.16, 0.17, 0.18, 0.19, 0.12]}
+    clm_dtl_cob_rule: {values: ["Primary Pays", "Secondary Coordination", "Medicare Crossover", "Birthday Rule", "No COB"], weights: [0.50, 0.16, 0.12, 0.06, 0.16]}
+    clm_dtl_wrap_network: {values: ["Core Network", "Wrap Network", "Rental Network", "No Network"], weights: [0.58, 0.20, 0.12, 0.10]}
+    clm_dtl_returned_ntwrk_repric: {values: ["Repriced", "Not Repriced", "Pending Repricing"], weights: [0.62, 0.30, 0.08]}
+semantic_constraints:
+- {type: STRUCTURAL, expression: "dim_address.entity_dimension_key IN dim_member.member_sk", confidence: HIGH}
+- {type: STRUCTURAL, expression: "fact_claim_header.clm_member_sk IN dim_member.member_sk", confidence: HIGH}
+- {type: STRUCTURAL, expression: "fact_claim_detail.clm_dtl_claim_id IN fact_claim_header.clm_claim_id", confidence: MEDIUM}
+- {type: TEMPORAL, expression: "effective dates precede termination or valid_to dates where applicable", confidence: MEDIUM}
+validation:
+  gate_5_1_domain_values: PASS
+  gate_5_2_yaml_type_safety: PASS

@@ -1,0 +1,658 @@
+dashboards:
+- name: member_claims_kpis_dashboard_v10
+  display_name: member_claims_kpis_dashboard_v10
+  purpose: Executive KPI overview for financial performance, claim quality, and member
+    demographics.
+  metric_views:
+  - member_claims_metric_view_v10
+  - member_claims_enrollment_metric_view_v10
+  filter_dimensions:
+  - field_name: Service Date
+    display_name: Service Date
+    widget_type: filter-date-range-picker
+  - field_name: Claim Type
+    display_name: Claim Type
+    widget_type: filter-multi-select
+  - field_name: Benefit Category
+    display_name: Benefit Category
+    widget_type: filter-multi-select
+  - field_name: Participating Provider
+    display_name: Participating Provider
+    widget_type: filter-multi-select
+  pages:
+  - id: financial_overview
+    title: Financial Overview
+    purpose: Headline financial and claim volume KPIs with cost-driver context.
+    page_type: PAGE_TYPE_CANVAS
+    filters:
+    - Service Date
+    - Claim Type
+    - Benefit Category
+    - Participating Provider
+    widgets:
+    - id: total_paid_counter
+      type: counter
+      title: Total Paid Amount
+      kpi: C-3
+      measure: Total Paid Amount
+      dimensions: []
+      visualization: counter
+      rationale: Headline paid amount.
+      dataset: ds_member_claims_metric_view_v10
+      agg: SUM
+      position:
+        x: 0
+        y: 0
+        width: 2
+        height: 3
+      size:
+        width: 2
+        height: 3
+    - id: total_claims_counter
+      type: counter
+      title: Total Claims
+      kpi: C-1
+      measure: Total Claims
+      dimensions: []
+      visualization: counter
+      rationale: Claim volume contextualizes spend.
+      dataset: ds_member_claims_metric_view_v10
+      agg: SUM
+      position:
+        x: 2
+        y: 0
+        width: 2
+        height: 3
+      size:
+        width: 2
+        height: 3
+    - id: avg_paid_member_counter
+      type: counter
+      title: Average Paid per Member
+      kpi: Average Paid per Member
+      measure: Average Paid per Member
+      dimensions: []
+      visualization: counter
+      rationale: Member cost intensity.
+      dataset: ds_member_claims_metric_view_v10
+      agg: AVG
+      position:
+        x: 4
+        y: 0
+        width: 2
+        height: 3
+      size:
+        width: 2
+        height: 3
+    - id: paid_by_benefit_bar
+      type: bar
+      title: Paid Amount by Benefit Category
+      kpi: top-N cost drivers
+      measure: Total Paid Amount
+      dimension: Benefit Category
+      dimensions:
+      - Benefit Category
+      visualization: bar
+      rationale: Cost-driver comparison.
+      dataset: ds_member_claims_metric_view_v10
+      agg: SUM
+      position:
+        x: 0
+        y: 3
+        width: 3
+        height: 5
+      size:
+        width: 3
+        height: 5
+    - id: monthly_paid_line
+      type: line
+      title: Monthly Paid Amount Trend
+      kpi: C-3
+      measure: Total Paid Amount
+      dimension: service_month
+      dimensions:
+      - service_month
+      visualization: line
+      rationale: Financial trajectory.
+      dataset: ds_member_claims_metric_view_v10
+      agg: SUM
+      position:
+        x: 3
+        y: 3
+        width: 3
+        height: 5
+      size:
+        width: 3
+        height: 5
+  - id: claims_analysis
+    title: Claims Analysis
+    purpose: Claim adjudication quality and payment ratios across status and claim
+      type.
+    page_type: PAGE_TYPE_CANVAS
+    filters:
+    - Service Date
+    - Claim Type
+    - Benefit Category
+    - Participating Provider
+    widgets:
+    - id: denial_rate_counter
+      type: counter
+      title: Denial Rate
+      kpi: Denial Rate
+      measure: Denial Rate
+      dimensions: []
+      visualization: counter
+      rationale: Quality headline ratio.
+      dataset: ds_member_claims_metric_view_v10
+      agg: AVG
+      position:
+        x: 0
+        y: 0
+        width: 2
+        height: 3
+      size:
+        width: 2
+        height: 3
+    - id: avg_paid_claim_counter
+      type: counter
+      title: Average Paid per Claim
+      kpi: C-4
+      measure: Average Paid per Claim
+      dimensions: []
+      visualization: counter
+      rationale: Claim financial efficiency.
+      dataset: ds_member_claims_metric_view_v10
+      agg: AVG
+      position:
+        x: 2
+        y: 0
+        width: 2
+        height: 3
+      size:
+        width: 2
+        height: 3
+    - id: clean_rate_claim_type_bar
+      type: bar
+      title: Clean Claim Rate by Claim Type
+      kpi: Clean Claim Rate
+      measure: Clean Claim Rate
+      dimension: Claim Type
+      dimensions:
+      - Claim Type
+      visualization: bar
+      rationale: Quality by claim type.
+      dataset: ds_member_claims_metric_view_v10
+      agg: AVG
+      position:
+        x: 4
+        y: 0
+        width: 2
+        height: 3
+      size:
+        width: 2
+        height: 3
+    - id: monthly_denial_line
+      type: line
+      title: Monthly Denial Rate Trend
+      kpi: Denial Rate
+      measure: Denial Rate
+      dimension: service_month
+      dimensions:
+      - service_month
+      visualization: line
+      rationale: Denial trend.
+      dataset: ds_member_claims_metric_view_v10
+      agg: AVG
+      position:
+        x: 0
+        y: 3
+        width: 3
+        height: 5
+      size:
+        width: 3
+        height: 5
+    - id: claims_by_status_bar
+      type: bar
+      title: Claims by Line Status
+      kpi: C-1
+      measure: Total Claims
+      dimension: Line Status
+      dimensions:
+      - Line Status
+      visualization: bar
+      rationale: Claim status distribution.
+      dataset: ds_member_claims_metric_view_v10
+      agg: SUM
+      position:
+        x: 3
+        y: 3
+        width: 3
+        height: 5
+      size:
+        width: 3
+        height: 5
+  - id: member_demographics
+    title: Member Demographics
+    purpose: Enrollment population distribution by product, geography, and time.
+    page_type: PAGE_TYPE_CANVAS
+    filters:
+    - Line of Business
+    - Enrollment Status
+    - Member State
+    - Effective Date
+    widgets:
+    - id: active_members_counter
+      type: counter
+      title: Active Members
+      kpi: M-2
+      measure: Active Members
+      dimensions: []
+      visualization: counter
+      rationale: Enrolled population scope.
+      dataset: ds_member_claims_enrollment_metric_view_v10
+      agg: SUM
+      position:
+        x: 0
+        y: 0
+        width: 2
+        height: 3
+      size:
+        width: 2
+        height: 3
+    - id: members_geo_counter
+      type: counter
+      title: Members by Geography
+      kpi: M-3
+      measure: Members by Geography
+      dimensions: []
+      visualization: counter
+      rationale: Geographic population scope.
+      dataset: ds_member_claims_enrollment_metric_view_v10
+      agg: SUM
+      position:
+        x: 2
+        y: 0
+        width: 2
+        height: 3
+      size:
+        width: 2
+        height: 3
+    - id: active_by_lob_bar
+      type: bar
+      title: Active Members by Line of Business
+      kpi: M-2
+      measure: Active Members
+      dimension: Line of Business
+      dimensions:
+      - Line of Business
+      visualization: bar
+      rationale: Product segmentation.
+      dataset: ds_member_claims_enrollment_metric_view_v10
+      agg: SUM
+      position:
+        x: 4
+        y: 0
+        width: 2
+        height: 3
+      size:
+        width: 2
+        height: 3
+    - id: members_by_state_bar
+      type: bar
+      title: Members by State
+      kpi: M-3
+      measure: Members by Geography
+      dimension: Member State
+      dimensions:
+      - Member State
+      visualization: bar
+      rationale: Geography comparison.
+      dataset: ds_member_claims_enrollment_metric_view_v10
+      agg: SUM
+      position:
+        x: 0
+        y: 3
+        width: 3
+        height: 5
+      size:
+        width: 3
+        height: 5
+    - id: monthly_active_line
+      type: line
+      title: Monthly Active Members Trend
+      kpi: M-2
+      measure: Active Members
+      dimension: service_month
+      dimensions:
+      - service_month
+      visualization: line
+      rationale: Enrollment trajectory.
+      dataset: ds_member_claims_enrollment_metric_view_v10
+      agg: SUM
+      position:
+        x: 3
+        y: 3
+        width: 3
+        height: 5
+      size:
+        width: 3
+        height: 5
+  dashboard_id: 01f1b2b5e709167a8e3d290167fc313d
+- name: member_claims_utilization_dashboard_v10
+  display_name: member_claims_utilization_dashboard_v10
+  purpose: Utilization, provider network, and operational payment performance.
+  metric_views:
+  - member_claims_metric_view_v10
+  filter_dimensions:
+  - field_name: Service Date
+    display_name: Service Date
+    widget_type: filter-date-range-picker
+  - field_name: Claim Type
+    display_name: Claim Type
+    widget_type: filter-multi-select
+  - field_name: Rendering Provider Specialty
+    display_name: Rendering Provider Specialty
+    widget_type: filter-multi-select
+  - field_name: Participating Provider
+    display_name: Participating Provider
+    widget_type: filter-multi-select
+  pages:
+  - id: utilization_patterns
+    title: Utilization Patterns
+    purpose: Claims and line volume with inpatient/outpatient paid comparisons.
+    page_type: PAGE_TYPE_CANVAS
+    filters:
+    - Service Date
+    - Claim Type
+    - Rendering Provider Specialty
+    - Participating Provider
+    widgets:
+    - id: total_lines_counter
+      type: counter
+      title: Total Claim Lines
+      kpi: C-2
+      measure: Total Claim Lines
+      dimensions: []
+      visualization: counter
+      rationale: Core utilization count.
+      dataset: ds_main
+      agg: SUM
+      position:
+        x: 0
+        y: 0
+        width: 2
+        height: 3
+      size:
+        width: 2
+        height: 3
+    - id: total_claims_counter
+      type: counter
+      title: Total Claims Utilization
+      kpi: C-1
+      measure: Total Claims
+      dimensions: []
+      visualization: counter
+      rationale: Distinct claim volume.
+      dataset: ds_main
+      agg: SUM
+      position:
+        x: 2
+        y: 0
+        width: 2
+        height: 3
+      size:
+        width: 2
+        height: 3
+    - id: inpatient_paid_counter
+      type: counter
+      title: Inpatient Paid Amount
+      kpi: Inpatient Paid Amount
+      measure: Inpatient Paid Amount
+      dimensions: []
+      visualization: counter
+      rationale: Inpatient spend headline.
+      dataset: ds_main
+      agg: SUM
+      position:
+        x: 4
+        y: 0
+        width: 2
+        height: 3
+      size:
+        width: 2
+        height: 3
+    - id: outpatient_by_claim_type_bar
+      type: bar
+      title: Outpatient Paid Amount by Claim Type
+      kpi: Outpatient Paid Amount
+      measure: Outpatient Paid Amount
+      dimension: Claim Type
+      dimensions:
+      - Claim Type
+      visualization: bar
+      rationale: Outpatient distribution.
+      dataset: ds_main
+      agg: SUM
+      position:
+        x: 0
+        y: 3
+        width: 3
+        height: 5
+      size:
+        width: 3
+        height: 5
+    - id: monthly_lines_line
+      type: line
+      title: Monthly Claim Lines Trend
+      kpi: C-2
+      measure: Total Claim Lines
+      dimension: service_month
+      dimensions:
+      - service_month
+      visualization: line
+      rationale: Utilization trend.
+      dataset: ds_main
+      agg: SUM
+      position:
+        x: 3
+        y: 3
+        width: 3
+        height: 5
+      size:
+        width: 3
+        height: 5
+  - id: provider_insights
+    title: Provider Insights
+    purpose: Provider specialty rankings and participating provider performance.
+    page_type: PAGE_TYPE_CANVAS
+    filters:
+    - Service Date
+    - Claim Type
+    - Rendering Provider Specialty
+    - Participating Provider
+    widgets:
+    - id: par_rate_counter
+      type: counter
+      title: Participating Provider Rate
+      kpi: Participating Provider Rate
+      measure: Participating Provider Rate
+      dimensions: []
+      visualization: counter
+      rationale: Network headline ratio.
+      dataset: ds_main
+      agg: AVG
+      position:
+        x: 0
+        y: 0
+        width: 2
+        height: 3
+      size:
+        width: 2
+        height: 3
+    - id: paid_by_specialty_bar
+      type: bar
+      title: Paid Amount by Provider Specialty
+      kpi: Specialty rankings
+      measure: Total Paid Amount
+      dimension: Rendering Provider Specialty
+      dimensions:
+      - Rendering Provider Specialty
+      visualization: bar
+      rationale: Specialty cost ranking.
+      dataset: ds_main
+      agg: SUM
+      position:
+        x: 2
+        y: 0
+        width: 2
+        height: 3
+      size:
+        width: 2
+        height: 3
+    - id: par_paid_status_bar
+      type: bar
+      title: Participating Provider Paid by Status
+      kpi: Participating Provider Rate
+      measure: Participating Provider Paid Amount
+      dimension: Participating Provider
+      dimensions:
+      - Participating Provider
+      visualization: bar
+      rationale: Network paid amount mix.
+      dataset: ds_main
+      agg: SUM
+      position:
+        x: 4
+        y: 0
+        width: 2
+        height: 3
+      size:
+        width: 2
+        height: 3
+    - id: monthly_par_rate_line
+      type: line
+      title: Monthly Participating Provider Rate
+      kpi: Participating Provider Rate
+      measure: Participating Provider Rate
+      dimension: service_month
+      dimensions:
+      - service_month
+      visualization: line
+      rationale: Network trend.
+      dataset: ds_main
+      agg: AVG
+      position:
+        x: 0
+        y: 3
+        width: 3
+        height: 5
+      size:
+        width: 3
+        height: 5
+  - id: operational_metrics
+    title: Operational Metrics
+    purpose: Payment ratios, denial trends, and clean-claim performance.
+    page_type: PAGE_TYPE_CANVAS
+    filters:
+    - Service Date
+    - Claim Type
+    - Rendering Provider Specialty
+    - Participating Provider
+    widgets:
+    - id: pay_billed_counter
+      type: counter
+      title: Payment-to-Billed Ratio
+      kpi: Payment-to-Billed
+      measure: Payment-to-Billed Ratio
+      dimensions: []
+      visualization: counter
+      rationale: Operational payment ratio.
+      dataset: ds_main
+      agg: AVG
+      position:
+        x: 0
+        y: 0
+        width: 2
+        height: 3
+      size:
+        width: 2
+        height: 3
+    - id: pay_allowed_counter
+      type: counter
+      title: Payment-to-Allowed Ratio
+      kpi: Payment-to-Allowed
+      measure: Payment-to-Allowed Ratio
+      dimensions: []
+      visualization: counter
+      rationale: Allowed-payment realization.
+      dataset: ds_main
+      agg: AVG
+      position:
+        x: 2
+        y: 0
+        width: 2
+        height: 3
+      size:
+        width: 2
+        height: 3
+    - id: monthly_pay_billed_line
+      type: line
+      title: Monthly Payment-to-Billed Trend
+      kpi: Payment-to-Billed
+      measure: Payment-to-Billed Ratio
+      dimension: service_month
+      dimensions:
+      - service_month
+      visualization: line
+      rationale: Payment ratio trend.
+      dataset: ds_main
+      agg: AVG
+      position:
+        x: 4
+        y: 0
+        width: 2
+        height: 3
+      size:
+        width: 2
+        height: 3
+    - id: denial_by_benefit_bar
+      type: bar
+      title: Denial Rate by Benefit Category
+      kpi: Denial trends
+      measure: Denial Rate
+      dimension: Benefit Category
+      dimensions:
+      - Benefit Category
+      visualization: bar
+      rationale: Denial concentration.
+      dataset: ds_main
+      agg: AVG
+      position:
+        x: 0
+        y: 3
+        width: 3
+        height: 5
+      size:
+        width: 3
+        height: 5
+    - id: clean_by_status_bar
+      type: bar
+      title: Clean Claim Rate by Line Status
+      kpi: Clean Claim Rate
+      measure: Clean Claim Rate
+      dimension: Line Status
+      dimensions:
+      - Line Status
+      visualization: bar
+      rationale: Clean claim operational variation.
+      dataset: ds_main
+      agg: AVG
+      position:
+        x: 3
+        y: 3
+        width: 3
+        height: 5
+      size:
+        width: 3
+        height: 5
+  dashboard_id: 01f1b2b5e8361b98b9599756145cd7b6

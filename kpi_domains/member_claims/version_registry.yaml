@@ -89,3 +89,17 @@ versions:
   completed_at: '2026-09-17T13:45:18.819834+00:00'
   error_summary: 'Critical failure in ''execute_notebook'': NOTEBOOK ERROR (run_id=1041352919856207):
     BadRequest: The zip archive contains no items.'
+- version: 10
+  status: failed
+  created_by: app
+  run_id: 9a30ed1f-fcfb-4ac2-ac7b-a65f04bc839c
+  started_at: '2026-09-17T15:45:16.039394+00:00'
+  assets_created: {}
+  completed_at: '2026-09-17T16:51:33.698301+00:00'
+  error_summary: "Genie Space creation halted safely before any API create/update\
+    \ call. Inputs, semantic inventory, LLM Genie design, SQL validation, benchmark\
+    \ SQL ground truth, pre-deploy check, template notebook, and gate_checks.py were\
+    \ produced. Deployment could not proceed because the required framework Genie\
+    \ template contains a Python 3.11-incompatible f-string expression in Cell 8 (`f\"\
+    \\n{'\u2705' if status == 'PASS' else '\u274C'} ...\"`), causing execute_notebook\
+    \ py_compile failure. No manifest was written because ap"
