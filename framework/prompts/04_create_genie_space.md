@@ -239,6 +239,7 @@ The following actions are STRICTLY FORBIDDEN:
 15. **DO NOT rely on `GET /api/2.0/genie/spaces/{id}` for content validation** — the GET response does NOT return `serialized_space` content. Validation must be based on successful POST acceptance (API returns 400 with specific error if payload is structurally invalid).
 16. **DO NOT use assumed or semantic column names in example SQL** — ALWAYS use EXACT column names from `DESCRIBE TABLE` / `genie_semantic_inventory.yaml`. Common failures: `service_month` (doesn't exist — use `DATE_TRUNC('MONTH', service_date)`), `claim_month`, `member_name`. If a column is not in the inventory, it MUST NOT appear in any SQL.
 17. **DO NOT skip `validate_genie_config()` before deployment** — the Genie notebook template includes a validation cell that executes ALL example SQL queries before calling the Genie API. This is the determinism gate — it catches SQL with wrong column names before they become broken Genie examples. If validation fails, FIX the SQL, do not proceed.
+18. **DO NOT use `execute_python` for writing YAML/JSON files to /Workspace paths** — `execute_python` runs in a local subprocess where /Workspace paths are NOT accessible as local filesystem paths. Use `write_workspace_file` tool to save artifacts. For YAML serialization, build the YAML string in `execute_python`, then pass the result to `write_workspace_file`. DO NOT use `open('/Workspace/...')` inside `execute_python`.
 
 ### ANTI-PATTERN: What A Failed Execution Looks Like
 

@@ -320,6 +320,19 @@ class ToolExecutor:
                         "tool to copy files between workspace paths, or use "
                         "read_workspace_file + write_workspace_file to read then write content."
                     )
+                if "yaml" in stderr.lower() and ("dump" in stderr.lower() or "safe_dump" in stderr.lower() or "Representer" in stderr.lower()):
+                    stderr += (
+                        "\n\nHINT: yaml.safe_dump() cannot serialize complex Python objects "
+                        "(SDK responses, custom classes, datetimes). Convert to plain "
+                        "dicts/lists/strings first. If you need to write a YAML file to "
+                        "/Workspace, use write_workspace_file tool with the YAML string "
+                        "instead of execute_python + open()."
+                    )
+                if "open(" in code and "/Workspace" in code:
+                    stderr += (
+                        "\n\nHINT: /Workspace paths are API-backed, not local filesystem. "
+                        "Use write_workspace_file tool instead of open() in execute_python."
+                    )
                 return f"ERROR: {stderr}"
             return proc.stdout.strip() or "SUCCESS: executed (no output)."
         except _sp.TimeoutExpired:
