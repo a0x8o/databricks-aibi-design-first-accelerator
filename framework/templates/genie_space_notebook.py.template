@@ -381,6 +381,7 @@ if SPACE_ID:
     result = w.api_client.do(
         "PATCH",
         f"/api/2.0/genie/spaces/{SPACE_ID}",
+        headers={"Content-Type": "application/json"},
         body={
             "title": SPACE_TITLE,
             "description": SPACE_DESCRIPTION,
@@ -393,6 +394,7 @@ else:
     result = w.api_client.do(
         "POST",
         "/api/2.0/genie/spaces",
+        headers={"Content-Type": "application/json"},
         body={
             "title": SPACE_TITLE,
             "description": SPACE_DESCRIPTION,

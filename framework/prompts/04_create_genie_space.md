@@ -421,7 +421,10 @@ Extracting API tokens via `dbutils.notebook.entry_point.getDbutils()...apiToken(
 - Fragile (token rotation, format changes)
 - Unnecessary (SDK handles auth automatically)
 
-Fix: Use `WorkspaceClient().api_client.do(method, path, body=...)` for all API calls.
+Fix: Use `WorkspaceClient().api_client.do(method, path, body=..., headers={"Content-Type": "application/json"})` for all API calls.
+
+**CRITICAL: Always pass `headers={"Content-Type": "application/json"}` on POST/PATCH calls to `/api/2.0/genie/spaces`.**
+Without this header, newer SDK versions may negotiate a different serialization format, causing the server to return `BadRequest: The zip archive contains no items`.
 
 **8. `table_identifiers` goes in the CREATE body, NOT inside `serialized_space`**
 
@@ -1955,6 +1958,8 @@ serialized_space
 ```
 
 payload.
+
+**CRITICAL: Always pass `headers={"Content-Type": "application/json"}` on ALL POST/PATCH calls to the Genie spaces API.** Without this explicit header, newer SDK versions may auto-negotiate a different serialization format, causing the server to return `BadRequest: The zip archive contains no items`.
 
 A Create call without full configuration is prohibited.
 
