@@ -3045,12 +3045,20 @@ The FQN MUST use 3 separate backtick pairs: `` `catalog`.`schema`.`table` ``. Ne
 ## Tool Usage (MANDATORY)
 
 ```text
-# CORRECT — use the template notebook pattern (create_dashboard tool is DISABLED)
+# CORRECT — use deploy_from_template (create_dashboard tool is DISABLED)
 1. Produce dashboard_design.yaml (declarative spec)
-2. Populate dashboard_notebook.py.template Cell 1 with config
-3. Copy Cells 2-N VERBATIM from template
-4. Save notebook to {OUTPUT_FOLDER}/dashboards/dashboard_deployment.ipynb
-5. Execute the notebook
+   → Write to {OUTPUT_FOLDER}/dashboards/dashboard_design.yaml
+2. Call deploy_from_template to create the dashboard notebook:
+   → template_path: {DEPLOY_ROOT}/framework/templates/dashboard_notebook.py.template
+   → output_path: {OUTPUT_FOLDER}/dashboards/dashboard_deployment.ipynb
+   → placeholders: {"DOMAIN_NAME": "...", "CATALOG": "...", "SCHEMA": "...",
+      "VERSION_SUFFIX": "...", "WAREHOUSE_ID": "...", "PARENT_PATH": "...",
+      "OUTPUT_FOLDER": "...", "DEPLOY_ROOT": "...", "METRIC_VIEW_FQNS": [...],
+      "QUALITY_GATES": {...}}
+   The tool reads the template verbatim and performs ONLY placeholder substitution.
+   Cells 2-N are guaranteed VERBATIM from the template — the LLM never touches them.
+   DO NOT use write_workspace_file or import_notebook for dashboard_ notebook paths — they are blocked by G-16.
+3. Execute the notebook
 # The template handles: Lakeview API create + publish + readback + manifest
 
 # WRONG — these tools are DISABLED and will fail:

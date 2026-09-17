@@ -1,0 +1,236 @@
+dashboards:
+  - name: member_claims_kpis_dashboard_v11
+    metric_views:
+      - '`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v11`'
+      - '`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_enrollment_metric_view_v11`'
+    filter_dimensions:
+      - field_name: Service Date
+        display_name: Service Date
+        widget_type: filter-date-range-picker
+      - field_name: Claim Type
+        display_name: Claim Type
+        widget_type: filter-multi-select
+      - field_name: Benefit Category
+        display_name: Benefit Category
+        widget_type: filter-multi-select
+      - field_name: Line Status
+        display_name: Line Status
+        widget_type: filter-multi-select
+    pages:
+      - title: Financial Overview
+        purpose: Summarize paid amounts and cost drivers while excluding metric-layer unsupported PMPM/window KPIs.
+        widgets:
+          - type: counter
+            title: Total Paid Amount
+            measure: Total Paid Amount
+            agg: SUM
+          - type: counter
+            title: Total Claims
+            measure: Total Claims
+            agg: SUM
+          - type: counter
+            title: Average Paid per Claim
+            measure: Average Paid per Claim
+            agg: AVG
+          - type: bar
+            title: Paid Amount by Claim Type
+            measure: Total Paid Amount
+            dimension: Claim Type
+            agg: SUM
+          - type: line
+            title: Paid Amount Trend
+            measure: Total Paid Amount
+            dimension: Service Month
+            agg: SUM
+          - type: bar
+            title: Benefit Category Cost Drivers
+            measure: Total Paid Amount
+            dimension: Benefit Category
+            agg: SUM
+      - title: Claims Analysis
+        purpose: Analyze claims volume, denial rates, clean claim performance, and monthly trends.
+        widgets:
+          - type: counter
+            title: Total Claim Lines
+            measure: Total Claim Lines
+            agg: SUM
+          - type: counter
+            title: Denial Rate
+            measure: Denial Rate
+            agg: AVG
+          - type: counter
+            title: Clean Claim Rate
+            measure: Clean Claim Rate
+            agg: AVG
+          - type: line
+            title: Denial Rate Trend
+            measure: Denial Rate
+            dimension: Service Month
+            agg: AVG
+          - type: bar
+            title: Clean Claim Rate by Claim Type
+            measure: Clean Claim Rate
+            dimension: Claim Type
+            agg: AVG
+          - type: bar
+            title: Claims by Line Status
+            measure: Total Claims
+            dimension: Line Status
+            agg: SUM
+      - title: Member Demographics
+        purpose: Show active member distribution by product and geography using enrollment metric view.
+        widgets:
+          - type: counter
+            title: Active Members
+            measure: Active Members
+            agg: SUM
+          - type: counter
+            title: Members by Geography
+            measure: Members by Geography
+            agg: SUM
+          - type: bar
+            title: Members by Line of Business
+            measure: Active Members
+            dimension: Line of Business
+            agg: SUM
+          - type: bar
+            title: Members by State
+            measure: Members by Geography
+            dimension: Member State
+            agg: SUM
+          - type: bar
+            title: Members by Sex
+            measure: Active Members
+            dimension: Member Sex
+            agg: SUM
+          - type: line
+            title: Active Members Trend
+            measure: Active Members
+            dimension: Service Month
+            agg: SUM
+  - name: member_claims_utilization_dashboard_v11
+    metric_views:
+      - '`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v11`'
+    filter_dimensions:
+      - field_name: Service Date
+        display_name: Service Date
+        widget_type: filter-date-range-picker
+      - field_name: Claim Type
+        display_name: Claim Type
+        widget_type: filter-multi-select
+      - field_name: Rendering Provider Specialty
+        display_name: Rendering Provider Specialty
+        widget_type: filter-multi-select
+      - field_name: Participating Provider
+        display_name: Participating Provider
+        widget_type: filter-multi-select
+    pages:
+      - title: Utilization Patterns
+        purpose: Compare claims, claim lines, inpatient/outpatient paid amounts, and utilization over time.
+        widgets:
+          - type: counter
+            title: Total Claims
+            measure: Total Claims
+            agg: SUM
+          - type: counter
+            title: Total Claim Lines
+            measure: Total Claim Lines
+            agg: SUM
+          - type: counter
+            title: Inpatient Paid Amount
+            measure: Inpatient Paid Amount
+            agg: SUM
+          - type: counter
+            title: Outpatient Paid Amount
+            measure: Outpatient Paid Amount
+            agg: SUM
+          - type: line
+            title: Claims Trend
+            measure: Total Claims
+            dimension: Service Month
+            agg: SUM
+          - type: bar
+            title: Paid by Place of Service
+            measure: Total Paid Amount
+            dimension: Place of Service
+            agg: SUM
+      - title: Provider Insights
+        purpose: Rank specialties and assess participating provider performance.
+        widgets:
+          - type: counter
+            title: Participating Provider Rate
+            measure: Participating Provider Rate
+            agg: AVG
+          - type: counter
+            title: Participating Provider Paid Amount
+            measure: Participating Provider Paid Amount
+            agg: SUM
+          - type: bar
+            title: Paid Amount by Specialty
+            measure: Total Paid Amount
+            dimension: Rendering Provider Specialty
+            agg: SUM
+          - type: bar
+            title: Participating Provider Rate by Specialty
+            measure: Participating Provider Rate
+            dimension: Rendering Provider Specialty
+            agg: AVG
+          - type: bar
+            title: Paid by Provider Type
+            measure: Total Paid Amount
+            dimension: Rendering Provider Type
+            agg: SUM
+          - type: bar
+            title: Paid by Participation Status
+            measure: Total Paid Amount
+            dimension: Participating Provider
+            agg: SUM
+      - title: Operational Metrics
+        purpose: Track denial and payment ratio performance across time and claim segments.
+        widgets:
+          - type: counter
+            title: Denial Rate
+            measure: Denial Rate
+            agg: AVG
+          - type: counter
+            title: Payment-to-Billed Ratio
+            measure: Payment-to-Billed Ratio
+            agg: AVG
+          - type: counter
+            title: Payment-to-Allowed Ratio
+            measure: Payment-to-Allowed Ratio
+            agg: AVG
+          - type: line
+            title: Denial Rate Trend
+            measure: Denial Rate
+            dimension: Service Month
+            agg: AVG
+          - type: bar
+            title: Payment-to-Billed by Claim Type
+            measure: Payment-to-Billed Ratio
+            dimension: Claim Type
+            agg: AVG
+          - type: bar
+            title: Payment-to-Allowed by Line Status
+            measure: Payment-to-Allowed Ratio
+            dimension: Line Status
+            agg: AVG
+skipped_kpis:
+  - kpi: MC-1
+    status: DASHBOARD_KPI_SKIPPED
+    reason: NOT_IMPLEMENTED in metric view layer
+  - kpi: W-1
+    status: DASHBOARD_KPI_SKIPPED
+    reason: NOT_IMPLEMENTED in metric view layer
+  - kpi: W-2
+    status: DASHBOARD_KPI_SKIPPED
+    reason: NOT_IMPLEMENTED in metric view layer
+  - kpi: MC-2
+    status: DASHBOARD_KPI_SKIPPED
+    reason: NOT_IMPLEMENTED in metric view layer
+  - kpi: MC-3
+    status: DASHBOARD_KPI_SKIPPED
+    reason: NOT_IMPLEMENTED in metric view layer
+  - kpi: MC-4
+    status: DASHBOARD_KPI_SKIPPED
+    reason: NOT_IMPLEMENTED in metric view layer

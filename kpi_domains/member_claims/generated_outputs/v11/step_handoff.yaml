@@ -1,0 +1,42 @@
+domain: member_claims
+catalog: aw_serverless_stable_catalog
+schema: aibi_member_claims
+version_suffix: _v11
+deploy_root: /Workspace/Users/arun.wagle@databricks.com/databricks-aibi-design-first-accelerator
+output_folder: /Workspace/Users/arun.wagle@databricks.com/databricks-aibi-design-first-accelerator/kpi_domains/member_claims/generated_outputs/v11
+metric_view_strategy: auto
+metric_view_naming_prefix: member_claims
+warehouse_id: 2d8e531640ffa469
+parent_path: /Users/arun.wagle@databricks.com/databricks-aibi-design-first-accelerator/kpi_domains/member_claims/generated_outputs/v11/dashboards
+workspace_host: null
+metric_view_fqns:
+  - name: member_claims_metric_view_v11
+    sql_fqn: '`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v11`'
+    primary: true
+    grain: claim_detail_line
+    source: fact_claim_detail_v11
+  - name: member_claims_enrollment_metric_view_v11
+    sql_fqn: '`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_enrollment_metric_view_v11`'
+    primary: false
+    grain: enrollment
+    source: fact_member_enrollment_v11
+assets:
+  metric_views:
+    strategy: auto
+    naming_prefix: member_claims
+  dashboards:
+    - id: kpis
+      name: member_claims_kpis_dashboard
+      display_name: member_claims_kpis_dashboard_v11
+    - id: utilization
+      name: member_claims_utilization_dashboard
+      display_name: member_claims_utilization_dashboard_v11
+  genie:
+    space_name: member_claims_analytics_genie
+    notebook_name: genie_space_configuration_member_claims
+  sample_queries_file: sample_queries_member_claims.sql
+dashboard_display_names:
+  - display_name: member_claims_kpis_dashboard_v11
+  - display_name: member_claims_utilization_dashboard_v11
+genie_title: member_claims_analytics_genie_v11
+recovery_log: "⚠️ RECOVERY: step_handoff.yaml was missing. Reconstructed from accelerator.yaml."

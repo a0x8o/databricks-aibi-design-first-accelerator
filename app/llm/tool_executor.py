@@ -202,13 +202,17 @@ class ToolExecutor:
         path = args["path"]
         content = args["content"]
 
-        # Guard: redirect template-based notebook OUTPUT paths to deploy_from_template
+        # Guard: redirect template-based NOTEBOOK deployment paths to deploy_from_template.
         # This prevents the LLM from bypassing the template by writing notebook
         # content directly (which would allow it to rewrite helper functions).
-        # Skip the guard for .template files (those are source files, not outputs)
-        # and for paths in the templates/ directory (framework template sources).
-        if not path.endswith('.template') and '/templates/' not in path:
-            filename = path.rstrip('/').split('/')[-1].lower()
+        # IMPORTANT: Only block .py files (notebook deployments), NOT .yaml/.json
+        # config files (dashboard_design.yaml, metric_view_validation.yaml, etc.)
+        # which are legitimate LLM-generated artifacts.
+        # Also skip .template files and paths in the templates/ directory (source files).
+        filename = path.rstrip('/').split('/')[-1].lower()
+        is_notebook_output = filename.endswith('.py') or filename.endswith('.ipynb')
+        is_template_source = path.endswith('.template') or '/templates/' in path
+        if is_notebook_output and not is_template_source:
             for stem in self._TEMPLATE_STEMS:
                 if stem in filename:
                     return (
@@ -259,16 +263,17 @@ class ToolExecutor:
             return f"DIRECTORY_NOT_FOUND: {path} does not exist yet. It will be created when needed."
 
     def _handle_create_dashboard(self, args: dict) -> str:
-        """Redirect: Dashboard creation uses the template notebook pattern."""
+        """Redirect: Dashboard creation uses the deploy_from_template pattern."""
         return (
             "ERROR: create_dashboard tool is disabled. "
-            "Use the template notebook pattern instead (same as Genie space): "
-            "1) Read dashboard_notebook.py.template from the templates directory. "
-            "2) Write dashboard_design.yaml to the output folder (declarative spec). "
-            "3) Populate Cell 1 (config) from step_handoff.yaml. "
-            "4) Copy Cells 2-8 VERBATIM from template (helpers, schema discovery, build, deploy, validate). "
-            "5) Use import_notebook to save the notebook. "
-            "6) Use execute_notebook to run it (template handles Lakeview API calls). "
+            "Use deploy_from_template instead: "
+            "1) Write dashboard_design.yaml to the output folder (declarative spec). "
+            "2) Call deploy_from_template with template_path=dashboard_notebook.py.template, "
+            "output_path={OUTPUT_FOLDER}/dashboards/dashboard_deployment.ipynb, "
+            "placeholders={DOMAIN_NAME, CATALOG, SCHEMA, VERSION_SUFFIX, WAREHOUSE_ID, "
+            "PARENT_PATH, OUTPUT_FOLDER, DEPLOY_ROOT, METRIC_VIEW_FQNS, QUALITY_GATES}. "
+            "3) Use execute_notebook to run it (template handles Lakeview API calls). "
+            "DO NOT use write_workspace_file or import_notebook for dashboard_ notebook paths."
             "This is the ONLY supported path for dashboard creation."
         )
 

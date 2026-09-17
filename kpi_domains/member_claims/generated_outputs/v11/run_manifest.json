@@ -1,0 +1,556 @@
+{
+  "run_id": "50b889f8-7562-458e-9281-0ee3508d5b80",
+  "domain": "member_claims",
+  "version": 11,
+  "version_suffix": "_v11",
+  "status": "failed",
+  "run_mode": "versioned",
+  "started_at": "2026-09-17T17:26:38.115503",
+  "completed_at": "2026-09-17T18:26:00.939768",
+  "duration_s": 3561.861754,
+  "error": "Hard fail: 'write_workspace_file' failed 3 times. Last: ERROR: This path contains 'dashboard_' which indicates a template-based deployment notebook. Per G-16, you MUST use the deploy_from_template tool instead of write_workspace_file. Call deploy_from_template with:\n  template_path: the .py.template file path\n  output_path: /Workspace/Users/arun.wagle@databricks.com/databricks-aibi-design-first-accelerator/kpi_domains/member_claims/generated_outputs/v11/dashboards/dashboard_validation.yaml\n  placeholders: dict of placeholder KEY -> value\nThe tool reads the template verbatim and performs only placeholder substitution \u2014 cells 8-10 stay unchanged.",
+  "steps": [
+    {
+      "step_name": "load_configuration",
+      "status": "completed",
+      "duration_s": 1.7,
+      "substeps": [
+        {
+          "phase_id": "load_yaml",
+          "phase_name": "Load Configuration",
+          "status": "completed",
+          "current_task": "Reading accelerator.yaml and resolving paths",
+          "happenings": [
+            "Reading accelerator.yaml",
+            "Resolving workspace paths",
+            "Detected data source type: erd",
+            "Version resolution: v11 (_v11)"
+          ],
+          "findings": [
+            "Domain: member_claims",
+            "Version: v11 (_v11)",
+            "Data source: erd",
+            "Output: v11"
+          ],
+          "stats": {}
+        },
+        {
+          "phase_id": "validate_config",
+          "phase_name": "Validate Configuration",
+          "status": "completed",
+          "current_task": "Validating config and resolving assets",
+          "happenings": [
+            "Checking required fields",
+            "Verifying catalog/schema references",
+            "Resolved catalog target: aw_serverless_stable_catalog.aibi_member_claims",
+            "Warehouse ID: 2d8e5316...",
+            "Clean start: no"
+          ],
+          "findings": [
+            "Catalog: aw_serverless_stable_catalog.aibi_member_claims",
+            "Warehouse: 2d8e531640ffa469",
+            "Run mode: versioned",
+            "Steps: all",
+            "Config loaded in 1.7s"
+          ],
+          "stats": {
+            "duration_s": 1.7
+          }
+        }
+      ]
+    },
+    {
+      "step_name": "environment_setup",
+      "status": "completed",
+      "duration_s": 7.69,
+      "substeps": [
+        {
+          "phase_id": "verify_connectivity",
+          "phase_name": "verify_connectivity",
+          "status": "completed",
+          "duration_ms": 1839,
+          "current_task": "SQL warehouse health check",
+          "progress_pct": null,
+          "stats": {},
+          "happenings": [
+            "Connecting to SQL warehouse 2d8e531640ff...",
+            "Executed SELECT 1 AS health_check",
+            "Warehouse responded successfully"
+          ],
+          "findings": [
+            "Warehouse ID: 2d8e531640ffa469",
+            "Connectivity: OK"
+          ]
+        },
+        {
+          "phase_id": "prepare_workspace",
+          "phase_name": "prepare_workspace",
+          "status": "completed",
+          "duration_ms": 248,
+          "current_task": "Preparing workspace directories",
+          "progress_pct": null,
+          "stats": {
+            "clean_start": 0
+          },
+          "happenings": [
+            "Clean start disabled \u2014 preserving existing outputs",
+            "Created output directories: .../v11/"
+          ],
+          "findings": [
+            "Clean start: off (incremental)",
+            "Output subdirs: notebooks/ manifests/ metric_views/"
+          ]
+        },
+        {
+          "phase_id": "setup_schemas",
+          "phase_name": "setup_schemas",
+          "status": "completed",
+          "duration_ms": 1197,
+          "current_task": "Setting up catalog schemas",
+          "progress_pct": null,
+          "stats": {},
+          "happenings": [
+            "Ensured target schema: aw_serverless_stable_catalog.aibi_member_claims",
+            "Ensured source schema: aw_serverless_stable_catalog.aibi_member_claims"
+          ],
+          "findings": [
+            "Target schema: aw_serverless_stable_catalog.aibi_member_claims",
+            "Source schema: aw_serverless_stable_catalog.aibi_member_claims"
+          ]
+        }
+      ]
+    },
+    {
+      "step_name": "create_data_layer",
+      "status": "completed",
+      "duration_s": 1589.79,
+      "substeps": [
+        {
+          "phase_id": "load_config",
+          "phase_name": "Load Configuration",
+          "status": "completed",
+          "current_task": "Configuration loaded",
+          "progress_pct": 100,
+          "stats": {
+            "templates_loaded": 2,
+            "guardrails_loaded": 3
+          },
+          "happenings": [
+            "Read accelerator.yaml",
+            "Read global, data-layer, and SQL guardrails",
+            "Read KPI specification for member claims context",
+            "Resolved configured target catalog/schema, output folder, version suffix, and template paths"
+          ],
+          "findings": [
+            "Execution condition satisfied: data_source.type=erd and greenfield.enabled=true",
+            "Synthetic data enabled with volume target: low",
+            "DDL template path: /Workspace/Users/arun.wagle@databricks.com/databricks-aibi-design-first-accelerator/framework/templates/ddl_notebook.py.template",
+            "dbldatagen template path: /Workspace/Users/arun.wagle@databricks.com/databricks-aibi-design-first-accelerator/framework/templates/dbldatagen_notebook.py.template"
+          ]
+        },
+        {
+          "phase_id": "parse_erd",
+          "phase_name": "Parse ERD",
+          "status": "completed",
+          "current_task": "Canonical ERD contract saved and gate verified",
+          "progress_pct": 100,
+          "stats": {
+            "tables": 8,
+            "relationships": 6,
+            "columns": 421,
+            "unresolved_items": 2
+          },
+          "happenings": [
+            "Normalized semantic roles to allowed schema contract values",
+            "Normalized relationship cardinalities to 1:N/N:1 form",
+            "Fixed spacing in decimal datatypes to complete Databricks-compatible forms",
+            "Wrote erd_parsed.yaml once and verified it can be read back with non-empty tables"
+          ],
+          "findings": [
+            "Parsed 8 ERD tables",
+            "Detected 6 relationships including inferred header-to-detail claim relationship",
+            "No incomplete/unbalanced datatypes remain in written contract"
+          ]
+        },
+        {
+          "phase_id": "build_semantic_model",
+          "phase_name": "Build Semantic Model",
+          "status": "completed",
+          "current_task": "Semantic model saved and gate verified",
+          "progress_pct": 100,
+          "stats": {
+            "facts": 3,
+            "dimensions": 5,
+            "relationships_resolved": 6,
+            "inferred_relationships_added": 2
+          },
+          "happenings": [
+            "Classified 8 tables into dimensions and facts",
+            "Documented primary keys, grains, and important analytical columns",
+            "Promoted inferred relationships into semantic_model.yaml",
+            "Verified semantic_model.yaml contains generation_order and relationship_inference.completed=true"
+          ],
+          "findings": [
+            "Generation order places parent/member entities before dependent facts and detail lines",
+            "Header-to-detail claim relationship added before synthetic generation",
+            "Address-to-member relationship retained as inferred_medium for FK generation"
+          ]
+        },
+        {
+          "phase_id": "generate_ddl",
+          "phase_name": "Generate DDL",
+          "status": "completed",
+          "current_task": "DDL deployment complete",
+          "progress_pct": 100,
+          "stats": {
+            "tables_created": 8,
+            "columns_total": 421
+          },
+          "happenings": [
+            "Deployed DDL notebook from framework template via deploy_from_template",
+            "Executed DDL notebook through notebook execution runtime",
+            "Verified SHOW TABLES glob gate for *_v11",
+            "Ran DESCRIBE TABLE readback for all generated tables"
+          ],
+          "findings": [
+            "GATE 4.1 passed: all 8 expected versioned tables exist",
+            "GATE 4.2 column reconciliation passed via DDL template and readback; actual schemas are available for synthetic spec generation"
+          ]
+        },
+        {
+          "phase_id": "generate_synthetic_data",
+          "phase_name": "Generate Synthetic Data",
+          "status": "completed",
+          "current_task": "Synthetic data generation complete and row-count gate passed",
+          "progress_pct": 100,
+          "stats": {
+            "tables_populated": 8,
+            "total_rows": 17250,
+            "fk_linked": 6
+          },
+          "happenings": [
+            "Deployed one dbldatagen notebook from framework template",
+            "Executed notebook via notebook runtime",
+            "Template runtime read synthetic_data_spec.yaml and generated all tables in dependency order",
+            "Verified all generated tables have rows > 0"
+          ],
+          "findings": [
+            "GATE 6.1 passed for all 8 tables",
+            "Total generated rows: 17,250",
+            "FK relationships were included in the declarative spec for parent-key sampling"
+          ]
+        },
+        {
+          "phase_id": "validate_data",
+          "phase_name": "Validate Data Layer",
+          "status": "completed",
+          "current_task": "Validation report written and PASS gate verified",
+          "progress_pct": 100,
+          "stats": {
+            "pk_tests": 8,
+            "fk_tests": 6,
+            "pk_failures": 0,
+            "fk_failures": 0,
+            "join_tests": 6,
+            "domain_failures": 0
+          },
+          "happenings": [
+            "Completed batched row-count and PK uniqueness SQL validation",
+            "Completed batched FK orphan and FK diversity SQL validation",
+            "Completed join stability validation for all N:1 relationships",
+            "Completed sampled runtime domain-value checks",
+            "Wrote data_layer_validation.yaml and verified overall_status: PASS"
+          ],
+          "findings": [
+            "All 8 tables are populated and have unique primary keys",
+            "All 6 FK relationships have zero orphans and diversity > 1",
+            "No join fanout detected",
+            "No generic categorical placeholders detected"
+          ]
+        }
+      ]
+    },
+    {
+      "step_name": "create_metric_views",
+      "status": "completed",
+      "duration_s": 922.07,
+      "substeps": [
+        {
+          "phase_id": "load_inputs",
+          "phase_name": "Load Inputs",
+          "status": "completed",
+          "current_task": "Input load and recovery completed",
+          "progress_pct": 100,
+          "stats": {
+            "kpis_defined": 23,
+            "source_tables": 8
+          },
+          "happenings": [
+            "Reconstructed step_handoff.yaml from accelerator.yaml because step_handoff.yaml and run_context.yaml were missing",
+            "Loaded KPI spec, ERD parse, semantic model, data layer validation, and table spec",
+            "Confirmed data_layer_validation overall_status is PASS"
+          ],
+          "findings": [
+            "Catalog/schema resolved to aw_serverless_stable_catalog.aibi_member_claims",
+            "Version suffix resolved to _v11",
+            "Metric view strategy is auto with naming prefix member_claims"
+          ]
+        },
+        {
+          "phase_id": "profile_schema",
+          "phase_name": "Profile Schema",
+          "status": "completed",
+          "current_task": "Schema profile written and verified",
+          "progress_pct": 100,
+          "stats": {
+            "tables_profiled": 8,
+            "columns_total": 434,
+            "relationships": 6,
+            "phantom_columns": 0
+          },
+          "happenings": [
+            "Wrote schema_profile.yaml from table_spec.yaml",
+            "Verified all profiled columns against catalog metadata",
+            "Verified all six semantic relationships with data probes"
+          ],
+          "findings": [
+            "GATE 2.1 PASS: schema_profile.yaml exists",
+            "GATE 2.2 PASS: no phantom columns found",
+            "GATE 2.5 PASS: all declared relationships passed N:1 safety checks"
+          ]
+        },
+        {
+          "phase_id": "map_kpis",
+          "phase_name": "Map KPIs",
+          "status": "completed",
+          "current_task": "KPI mapping complete",
+          "progress_pct": 100,
+          "stats": {
+            "kpis_mapped": 23,
+            "kpis_ready": 17,
+            "kpis_not_implemented": 6,
+            "measures_classified": 23
+          },
+          "happenings": [
+            "Wrote kpi_metric_mapping.yaml with complete KPI enumeration",
+            "Validated reference SQL shape for cross-fact PMPM planning and high-cost member documentation",
+            "Deferred only HAVING/window/cross-fact incompatible metrics to NOT_IMPLEMENTED documentation"
+          ],
+          "findings": [
+            "GATE 4.1 PASS: kpi_metric_mapping.yaml exists",
+            "GATE 4.2 PASS: all 23 KPI spec entries represented",
+            "GATE 4.3 PASS: no secondary-grain enrollment KPI was downgraded solely due to grain; enrollment KPIs M-1/M-2/M-3 are READY"
+          ]
+        },
+        {
+          "phase_id": "plan_metric_views",
+          "phase_name": "Plan Metric Views",
+          "status": "completed",
+          "current_task": "Metric view plan complete",
+          "progress_pct": 100,
+          "stats": {
+            "metric_views_planned": 2,
+            "intermediate_views_needed": 0,
+            "kpis_not_implemented": 6,
+            "reference_sql_validated": 6
+          },
+          "happenings": [
+            "Wrote metric_view_plan.yaml via temp-copy workaround",
+            "Updated step_handoff.yaml with primary and dynamic enrollment metric view FQNs",
+            "Validated all NOT_IMPLEMENTED reference SQL queries"
+          ],
+          "findings": [
+            "GATE 4.5 PASS: two metric views planned with SQL FQNs",
+            "Primary claim detail metric view supports 14 KPIs",
+            "Secondary enrollment metric view supports 3 KPIs",
+            "No fact table with READY KPIs was missed"
+          ]
+        },
+        {
+          "phase_id": "design_metric_views",
+          "phase_name": "Design Metric Views",
+          "status": "completed",
+          "current_task": "Metric view designs written",
+          "progress_pct": 100,
+          "stats": {
+            "metric_views_designed": 2,
+            "join_paths_validated": 1,
+            "intermediate_views": 0
+          },
+          "happenings": [
+            "Wrote metric_view_design.yaml via temp-copy workaround",
+            "Validated enrollment-to-member join row-count and distinct-key stability",
+            "Prepared KPI coverage table in design contract through supported/skipped KPI lists"
+          ],
+          "findings": [
+            "GATE 6.1 PASS: both planned metric views are represented",
+            "Join safety PASS for enrollment member dimension",
+            "Claim detail metric view is direct source with no joins"
+          ]
+        },
+        {
+          "phase_id": "create_intermediate_views",
+          "phase_name": "Create Intermediate Views",
+          "status": "completed",
+          "current_task": "Intermediate view phase complete",
+          "progress_pct": 100,
+          "stats": {
+            "intermediate_views_created": 0,
+            "fanout_checks_passed": 0
+          },
+          "happenings": [
+            "Skipped catalog DDL because plan contains no intermediate views"
+          ],
+          "findings": [
+            "GATE 7.5 PASS: zero planned intermediate views means no missing intermediate dependencies"
+          ]
+        },
+        {
+          "phase_id": "generate_metric_views",
+          "phase_name": "Generate Metric Views",
+          "status": "completed",
+          "current_task": "Metric view deployment notebook executed",
+          "progress_pct": 100,
+          "stats": {
+            "metric_views_created": 2,
+            "measures_total": 23,
+            "dimensions_total": 23
+          },
+          "happenings": [
+            "Deployed metric_view_deployment.ipynb from tested template",
+            "Executed notebook successfully via Jobs API",
+            "Template handled metric view DDL compilation, execution, smoke tests, and manifest writing"
+          ],
+          "findings": [
+            "Metric view deployment notebook completed successfully"
+          ]
+        },
+        {
+          "phase_id": "validate_metric_views",
+          "phase_name": "Validate Metric Views",
+          "status": "completed",
+          "current_task": "Validation and sample query generation complete",
+          "progress_pct": 100,
+          "stats": {
+            "validations_run": 4,
+            "passed": 4,
+            "failed": 0,
+            "metric_views_validated": 2,
+            "sample_queries": 12
+          },
+          "happenings": [
+            "Validated SHOW VIEWS returns both metric views as metric objects",
+            "Ran MEASURE() smoke and baseline reconciliation queries",
+            "Wrote metric_view_validation.yaml",
+            "Generated 12 Genie sample MEASURE() queries spanning both metric views",
+            "Read deployment manifest with api_readback validation source"
+          ],
+          "findings": [
+            "GATE 10.1 PASS: metric_view_validation.yaml exists with status PASS",
+            "GATE 5.7 PASS: planned=validated=handoff metric view count = 2",
+            "Manifest state_comparison is match and total_views_deployed is 2"
+          ]
+        }
+      ]
+    },
+    {
+      "step_name": "create_dashboards",
+      "status": "failed",
+      "duration_s": null,
+      "substeps": [
+        {
+          "phase_id": "load_config",
+          "phase_name": "Load Configuration",
+          "status": "completed",
+          "current_task": null,
+          "progress_pct": 100,
+          "stats": {
+            "kpis_eligible": 13,
+            "metric_views_loaded": 2,
+            "dashboards_configured": 2
+          },
+          "happenings": [],
+          "findings": [
+            "13 mapped KPIs eligible for dashboard rendering",
+            "6 mapped KPIs are NOT_IMPLEMENTED and excluded: MC-1, W-1, W-2, MC-2, MC-3, MC-4",
+            "2 configured dashboards resolved from assets.dashboards[]",
+            "Lakeview API contract loaded from injected supplementary reference"
+          ]
+        },
+        {
+          "phase_id": "profile_metrics",
+          "phase_name": "Profile Metrics",
+          "status": "completed",
+          "current_task": null,
+          "progress_pct": 100,
+          "stats": {
+            "measures": 23,
+            "dimensions": 23,
+            "datasets_planned": 3,
+            "metric_view_rows": 9000,
+            "enrollment_metric_view_rows": 2000
+          },
+          "happenings": [],
+          "findings": [
+            "23 metric view columns available across 2 metric views",
+            "Claim metric view: 14 dimensions, 20 measures",
+            "Enrollment metric view: 9 dimensions, 3 measures",
+            "Metric views contain data from 2020-01-01 to 2024-12-31",
+            "Field inventory complete"
+          ]
+        },
+        {
+          "phase_id": "design_dashboard",
+          "phase_name": "Design Dashboard",
+          "status": "completed",
+          "current_task": null,
+          "progress_pct": 100,
+          "stats": {
+            "pages": 8,
+            "canvas_pages": 6,
+            "widgets": 36,
+            "filters": 8
+          },
+          "happenings": [],
+          "findings": [
+            "6 canvas pages designed across 2 dashboards",
+            "36 widgets planned",
+            "8 total dashboard filter controls configured",
+            "Page counts match KPI spec dashboard mapping: 3 pages per dashboard"
+          ]
+        },
+        {
+          "phase_id": "build_datasets",
+          "phase_name": "Build Datasets",
+          "status": "completed",
+          "current_task": null,
+          "progress_pct": 100,
+          "stats": {
+            "datasets_built": 3,
+            "queries_validated": 3
+          },
+          "happenings": [],
+          "findings": [
+            "3 shared datasets validated",
+            "All queries execute successfully",
+            "All dataset SQL uses MEASURE() for metric view measures and separate three-part backtick FQNs"
+          ]
+        },
+        {
+          "phase_id": "create_dashboard",
+          "phase_name": "Create Dashboard",
+          "status": "started",
+          "current_task": "Constructing widgets and creating via Lakeview API",
+          "progress_pct": 0,
+          "stats": {},
+          "happenings": [
+            "Building widget specifications using template helpers",
+            "Constructing layout",
+            "Calling Lakeview API via deployment notebook"
+          ],
+          "findings": []
+        }
+      ]
+    }
+  ]
+}

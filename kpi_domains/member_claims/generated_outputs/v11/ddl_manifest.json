@@ -1,0 +1,64 @@
+{
+  "artifact_type": "ddl",
+  "domain": "member_claims",
+  "version_suffix": "_v11",
+  "validation_source": "api_readback",
+  "source_hash": "a3f9b26f154d8e2a5ab2f494177918a866d267d85b3443a7b802747d840fd062",
+  "generated_hash": "e4bad02638dc6f782b2136e2a866ee88f719fe5834a4dd40290f3bad896e1703",
+  "readback_hash": "9d826e7d0ead07d84cf7623b5b608ce33cb253da8d235bfea63e18b1992b1219",
+  "state_comparison": "match",
+  "catalog": "aw_serverless_stable_catalog",
+  "schema": "aibi_member_claims",
+  "tables": [
+    {
+      "name": "dim_provider_v11",
+      "fqn": "aw_serverless_stable_catalog.aibi_member_claims.dim_provider_v11",
+      "column_count": 17,
+      "comment": "Provider dimension from ERD"
+    },
+    {
+      "name": "dim_address_v11",
+      "fqn": "aw_serverless_stable_catalog.aibi_member_claims.dim_address_v11",
+      "column_count": 19,
+      "comment": "Address dimension from ERD"
+    },
+    {
+      "name": "fact_claim_detail_v11",
+      "fqn": "aw_serverless_stable_catalog.aibi_member_claims.fact_claim_detail_v11",
+      "column_count": 71,
+      "comment": "Claim detail fact from ERD"
+    },
+    {
+      "name": "fact_claim_header_v11",
+      "fqn": "aw_serverless_stable_catalog.aibi_member_claims.fact_claim_header_v11",
+      "column_count": 165,
+      "comment": "Claim header fact from ERD"
+    },
+    {
+      "name": "dim_member_v11",
+      "fqn": "aw_serverless_stable_catalog.aibi_member_claims.dim_member_v11",
+      "column_count": 58,
+      "comment": "Member dimension from ERD"
+    },
+    {
+      "name": "dim_member_identifier_v11",
+      "fqn": "aw_serverless_stable_catalog.aibi_member_claims.dim_member_identifier_v11",
+      "column_count": 12,
+      "comment": "Member identifier dimension from ERD"
+    },
+    {
+      "name": "dim_member_history_v11",
+      "fqn": "aw_serverless_stable_catalog.aibi_member_claims.dim_member_history_v11",
+      "column_count": 60,
+      "comment": "Member history dimension from ERD"
+    },
+    {
+      "name": "fact_member_enrollment_v11",
+      "fqn": "aw_serverless_stable_catalog.aibi_member_claims.fact_member_enrollment_v11",
+      "column_count": 32,
+      "comment": "Member enrollment fact from ERD"
+    }
+  ],
+  "total_tables": 8,
+  "total_tables_deployed": 8
+}

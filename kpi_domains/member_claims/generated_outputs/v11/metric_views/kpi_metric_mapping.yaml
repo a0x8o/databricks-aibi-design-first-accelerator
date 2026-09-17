@@ -1,0 +1,367 @@
+- kpi_id: M-1
+  kpi_name: New Member Enrollment
+  business_definition: Count distinct members entering coverage in the period using enrollment effective date.
+  status: READY
+  required_grain: member enrollment row
+  measure_components:
+    - physical_table: fact_member_enrollment_v11
+      physical_column: member_sk
+      aggregation: COUNT_DISTINCT
+      filter_column: mbr_enr_effective_date
+  dimensions: [mbr_enr_line_of_business, mbr_enr_plan_id, mbr_enr_status]
+  time_dimension: mbr_enr_effective_date
+  aggregation_semantics: SEMI_ADDITIVE
+  validation_strategy: compare COUNT(DISTINCT member_sk) grouped by effective month
+  gaps: []
+- kpi_id: M-2
+  kpi_name: Members by Line of Business
+  business_definition: Active member distribution across products.
+  status: READY
+  required_grain: member enrollment row
+  measure_components:
+    - physical_table: fact_member_enrollment_v11
+      physical_column: member_sk
+      aggregation: COUNT_DISTINCT
+  dimensions: [mbr_enr_line_of_business, mbr_enr_plan_id, mbr_enr_status]
+  time_dimension: mbr_enr_effective_date
+  aggregation_semantics: SEMI_ADDITIVE
+  validation_strategy: compare COUNT(DISTINCT member_sk) by mbr_enr_line_of_business
+  gaps: []
+- kpi_id: M-3
+  kpi_name: Members by Geography
+  business_definition: Active member population by location.
+  status: READY
+  required_grain: member enrollment row with member dimension
+  measure_components:
+    - physical_table: fact_member_enrollment_v11
+      physical_column: member_sk
+      aggregation: COUNT_DISTINCT
+  dimensions: [mbr_state, mbr_zip_code]
+  time_dimension: mbr_enr_effective_date
+  aggregation_semantics: SEMI_ADDITIVE
+  validation_strategy: compare COUNT(DISTINCT enrollment.member_sk) by member state after N:1 member join
+  gaps: []
+- kpi_id: C-1
+  kpi_name: Total Claims
+  business_definition: Count distinct claims.
+  status: READY
+  required_grain: claim detail line
+  measure_components:
+    - physical_table: fact_claim_detail_v11
+      physical_column: clm_dtl_claim_id
+      aggregation: COUNT_DISTINCT
+  dimensions: [clm_dtl_claim_type, clm_dtl_benefit_category, clm_dtl_line_status]
+  time_dimension: clm_dtl_specific_dos_date
+  aggregation_semantics: ADDITIVE
+  validation_strategy: compare COUNT(DISTINCT clm_dtl_claim_id)
+  gaps: []
+- kpi_id: C-2
+  kpi_name: Total Claim Lines
+  business_definition: Count service lines.
+  status: READY
+  required_grain: claim detail line
+  measure_components:
+    - physical_table: fact_claim_detail_v11
+      physical_column: '*'
+      aggregation: COUNT
+  dimensions: [clm_dtl_claim_type, clm_dtl_benefit_category, clm_dtl_line_status]
+  time_dimension: clm_dtl_specific_dos_date
+  aggregation_semantics: ADDITIVE
+  validation_strategy: compare COUNT(*)
+  gaps: []
+- kpi_id: C-3
+  kpi_name: Total Paid Amount
+  business_definition: Sum paid across all claim lines.
+  status: READY
+  required_grain: claim detail line
+  measure_components:
+    - physical_table: fact_claim_detail_v11
+      physical_column: clm_dtl_paid_amt
+      aggregation: SUM
+  dimensions: [clm_dtl_claim_type, clm_dtl_benefit_category, clm_dtl_line_status]
+  time_dimension: clm_dtl_specific_dos_date
+  aggregation_semantics: ADDITIVE
+  validation_strategy: compare SUM(clm_dtl_paid_amt)
+  gaps: []
+- kpi_id: C-4
+  kpi_name: Average Paid per Claim
+  business_definition: Total paid divided by distinct claims.
+  status: READY
+  required_grain: claim detail line
+  measure_components:
+    - physical_table: fact_claim_detail_v11
+      physical_column: clm_dtl_paid_amt
+      aggregation: SUM
+    - physical_table: fact_claim_detail_v11
+      physical_column: clm_dtl_claim_id
+      aggregation: COUNT_DISTINCT
+  dimensions: [clm_dtl_claim_type, clm_dtl_benefit_category]
+  time_dimension: clm_dtl_specific_dos_date
+  aggregation_semantics: RATIO
+  validation_strategy: compare SUM(clm_dtl_paid_amt)/COUNT(DISTINCT clm_dtl_claim_id)
+  gaps: []
+- kpi_id: MC-1
+  kpi_name: PMPM
+  business_definition: Cost per member per month.
+  status: NOT_IMPLEMENTED
+  required_grain: cross-fact monthly aggregate
+  measure_components:
+    - physical_table: fact_claim_detail_v11
+      physical_column: clm_dtl_paid_amt
+      aggregation: SUM
+    - physical_table: fact_member_enrollment_v11
+      physical_column: member_sk
+      aggregation: COUNT_DISTINCT
+  dimensions: [service_month]
+  time_dimension: service_month
+  aggregation_semantics: RATIO
+  validation_strategy: reference SQL documented in metric_view_plan.yaml
+  gaps: [Requires numerator and denominator from incompatible fact grains; implement as dashboard SQL aggregate, not a single metric view measure.]
+- kpi_id: MC-2
+  kpi_name: Claims per 1,000 Members
+  business_definition: Claim frequency normalized by member-month exposure.
+  status: NOT_IMPLEMENTED
+  required_grain: cross-fact monthly aggregate
+  measure_components:
+    - physical_table: fact_claim_detail_v11
+      physical_column: clm_dtl_claim_id
+      aggregation: COUNT_DISTINCT
+    - physical_table: fact_member_enrollment_v11
+      physical_column: member_sk
+      aggregation: COUNT_DISTINCT
+  dimensions: [service_month]
+  time_dimension: service_month
+  aggregation_semantics: RATIO
+  validation_strategy: reference SQL documented in metric_view_plan.yaml
+  gaps: [Requires denominator from enrollment fact and numerator from claim fact at different grains.]
+- kpi_id: MC-3
+  kpi_name: Utilization Rate
+  business_definition: Share of active members who used services.
+  status: NOT_IMPLEMENTED
+  required_grain: cross-fact monthly aggregate
+  measure_components:
+    - physical_table: fact_claim_detail_v11
+      physical_column: clm_dtl_member_nbr_sk
+      aggregation: COUNT_DISTINCT
+    - physical_table: fact_member_enrollment_v11
+      physical_column: member_sk
+      aggregation: COUNT_DISTINCT
+  dimensions: [service_month]
+  time_dimension: service_month
+  aggregation_semantics: RATIO
+  validation_strategy: reference SQL documented in metric_view_plan.yaml
+  gaps: [No safe same-grain source contains both service utilizers and active enrolled member denominator.]
+- kpi_id: MC-4
+  kpi_name: High-Cost Member Count
+  business_definition: Members whose spend exceeds threshold.
+  status: NOT_IMPLEMENTED
+  required_grain: member-level pre-aggregation
+  measure_components:
+    - physical_table: fact_claim_detail_v11
+      physical_column: clm_dtl_paid_amt
+      aggregation: SUM
+    - physical_table: fact_claim_detail_v11
+      physical_column: clm_dtl_member_nbr_sk
+      aggregation: COUNT_DISTINCT
+  dimensions: []
+  time_dimension: clm_dtl_specific_dos_date
+  aggregation_semantics: FILTERED
+  validation_strategy: reference SQL documented in metric_view_plan.yaml
+  gaps: [Requires HAVING SUM(paid) > threshold at member grain.]
+- kpi_id: W-1
+  kpi_name: Rolling 3-Month PMPM
+  business_definition: Smooth cost volatility over trailing 3 months.
+  status: NOT_IMPLEMENTED
+  required_grain: cross-fact monthly aggregate with trailing window
+  measure_components:
+    - physical_table: fact_claim_detail_v11
+      physical_column: clm_dtl_paid_amt
+      aggregation: SUM
+    - physical_table: fact_member_enrollment_v11
+      physical_column: member_sk
+      aggregation: COUNT_DISTINCT
+  dimensions: [service_month]
+  time_dimension: service_month
+  aggregation_semantics: WINDOW
+  validation_strategy: reference SQL documented in metric_view_plan.yaml
+  gaps: [Requires cross-fact aggregate and trailing window.]
+- kpi_id: W-2
+  kpi_name: MoM Active Member Growth
+  business_definition: Month-over-month change in active members.
+  status: NOT_IMPLEMENTED
+  required_grain: enrollment monthly aggregate with lag window
+  measure_components:
+    - physical_table: fact_member_enrollment_v11
+      physical_column: member_sk
+      aggregation: COUNT_DISTINCT
+  dimensions: [service_month]
+  time_dimension: mbr_enr_effective_date
+  aggregation_semantics: WINDOW
+  validation_strategy: reference SQL documented in metric_view_plan.yaml
+  gaps: [Requires LAG over monthly active member counts.]
+- kpi_id: DER-1
+  kpi_name: Denial Rate
+  business_definition: Denied lines divided by total lines.
+  status: READY
+  required_grain: claim detail line
+  measure_components:
+    - physical_table: fact_claim_detail_v11
+      physical_column: clm_dtl_line_status
+      aggregation: COUNT
+    - physical_table: fact_claim_detail_v11
+      physical_column: '*'
+      aggregation: COUNT
+  dimensions: [clm_dtl_claim_type, clm_dtl_adjudication_status]
+  time_dimension: clm_dtl_specific_dos_date
+  aggregation_semantics: RATIO
+  validation_strategy: compare conditional count status denied / COUNT(*)
+  gaps: []
+- kpi_id: DER-2
+  kpi_name: Clean Claim Rate
+  business_definition: Clean claim lines divided by total lines.
+  status: READY
+  required_grain: claim detail line
+  measure_components:
+    - physical_table: fact_claim_detail_v11
+      physical_column: clm_dtl_clean_claim_ind
+      aggregation: COUNT
+    - physical_table: fact_claim_detail_v11
+      physical_column: '*'
+      aggregation: COUNT
+  dimensions: [clm_dtl_claim_type, clm_dtl_line_status]
+  time_dimension: clm_dtl_specific_dos_date
+  aggregation_semantics: RATIO
+  validation_strategy: compare conditional count clean / COUNT(*)
+  gaps: []
+- kpi_id: DER-3
+  kpi_name: Payment-to-Billed Ratio
+  business_definition: Total paid divided by total billed.
+  status: READY
+  required_grain: claim detail line
+  measure_components:
+    - physical_table: fact_claim_detail_v11
+      physical_column: clm_dtl_paid_amt
+      aggregation: SUM
+    - physical_table: fact_claim_detail_v11
+      physical_column: clm_dtl_billed_amt
+      aggregation: SUM
+  dimensions: [clm_dtl_claim_type]
+  time_dimension: clm_dtl_specific_dos_date
+  aggregation_semantics: RATIO
+  validation_strategy: compare SUM(paid)/SUM(billed)
+  gaps: []
+- kpi_id: DER-4
+  kpi_name: Payment-to-Allowed Ratio
+  business_definition: Total paid divided by total allowed.
+  status: READY
+  required_grain: claim detail line
+  measure_components:
+    - physical_table: fact_claim_detail_v11
+      physical_column: clm_dtl_paid_amt
+      aggregation: SUM
+    - physical_table: fact_claim_detail_v11
+      physical_column: clm_dtl_allowed_amt
+      aggregation: SUM
+  dimensions: [clm_dtl_claim_type]
+  time_dimension: clm_dtl_specific_dos_date
+  aggregation_semantics: RATIO
+  validation_strategy: compare SUM(paid)/SUM(allowed)
+  gaps: []
+- kpi_id: DER-5
+  kpi_name: Average Paid per Member
+  business_definition: Total paid divided by unique members in claims.
+  status: READY
+  required_grain: claim detail line
+  measure_components:
+    - physical_table: fact_claim_detail_v11
+      physical_column: clm_dtl_paid_amt
+      aggregation: SUM
+    - physical_table: fact_claim_detail_v11
+      physical_column: clm_dtl_member_nbr_sk
+      aggregation: COUNT_DISTINCT
+  dimensions: [clm_dtl_claim_type]
+  time_dimension: clm_dtl_specific_dos_date
+  aggregation_semantics: RATIO
+  validation_strategy: compare SUM(paid)/COUNT(DISTINCT clm_dtl_member_nbr_sk)
+  gaps: []
+- kpi_id: DER-6
+  kpi_name: Claims per Member
+  business_definition: Total claims divided by unique members in claims.
+  status: READY
+  required_grain: claim detail line
+  measure_components:
+    - physical_table: fact_claim_detail_v11
+      physical_column: clm_dtl_claim_id
+      aggregation: COUNT_DISTINCT
+    - physical_table: fact_claim_detail_v11
+      physical_column: clm_dtl_member_nbr_sk
+      aggregation: COUNT_DISTINCT
+  dimensions: [clm_dtl_claim_type]
+  time_dimension: clm_dtl_specific_dos_date
+  aggregation_semantics: RATIO
+  validation_strategy: compare COUNT(DISTINCT claim)/COUNT(DISTINCT member)
+  gaps: []
+- kpi_id: DER-7
+  kpi_name: Lines per Claim
+  business_definition: Claim lines divided by distinct claims.
+  status: READY
+  required_grain: claim detail line
+  measure_components:
+    - physical_table: fact_claim_detail_v11
+      physical_column: '*'
+      aggregation: COUNT
+    - physical_table: fact_claim_detail_v11
+      physical_column: clm_dtl_claim_id
+      aggregation: COUNT_DISTINCT
+  dimensions: [clm_dtl_claim_type]
+  time_dimension: clm_dtl_specific_dos_date
+  aggregation_semantics: RATIO
+  validation_strategy: compare COUNT(*)/COUNT(DISTINCT claim)
+  gaps: []
+- kpi_id: DER-8
+  kpi_name: Inpatient Paid Amount
+  business_definition: Paid amount for institutional/inpatient-like claims.
+  status: READY
+  required_grain: claim detail line
+  measure_components:
+    - physical_table: fact_claim_detail_v11
+      physical_column: clm_dtl_paid_amt
+      aggregation: SUM
+      filter_column: clm_dtl_claim_type
+  dimensions: [clm_dtl_claim_type, clm_dtl_place_of_service]
+  time_dimension: clm_dtl_specific_dos_date
+  aggregation_semantics: ADDITIVE
+  validation_strategy: compare SUM(CASE WHEN claim type indicates institutional/inpatient THEN paid ELSE 0 END)
+  gaps: []
+- kpi_id: DER-9
+  kpi_name: Outpatient Paid Amount
+  business_definition: Paid amount for professional/outpatient-like claims.
+  status: READY
+  required_grain: claim detail line
+  measure_components:
+    - physical_table: fact_claim_detail_v11
+      physical_column: clm_dtl_paid_amt
+      aggregation: SUM
+      filter_column: clm_dtl_claim_type
+  dimensions: [clm_dtl_claim_type, clm_dtl_place_of_service]
+  time_dimension: clm_dtl_specific_dos_date
+  aggregation_semantics: ADDITIVE
+  validation_strategy: compare SUM(CASE WHEN claim type indicates professional/outpatient THEN paid ELSE 0 END)
+  gaps: []
+- kpi_id: DER-10
+  kpi_name: Participating Provider Rate
+  business_definition: Participating-provider paid amount divided by total paid amount.
+  status: READY
+  required_grain: claim detail line
+  measure_components:
+    - physical_table: fact_claim_detail_v11
+      physical_column: clm_dtl_paid_amt
+      aggregation: SUM
+    - physical_table: fact_claim_detail_v11
+      physical_column: clm_dtl_participating_provider
+      aggregation: SUM
+  dimensions: [clm_dtl_participating_provider, clm_dtl_rendering_provider_spec]
+  time_dimension: clm_dtl_specific_dos_date
+  aggregation_semantics: RATIO
+  validation_strategy: compare SUM(CASE WHEN participating provider flag indicates true THEN paid ELSE 0 END)/SUM(paid)
+  gaps: []

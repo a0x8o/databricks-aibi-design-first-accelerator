@@ -103,3 +103,16 @@ versions:
     \ template contains a Python 3.11-incompatible f-string expression in Cell 8 (`f\"\
     \\n{'\u2705' if status == 'PASS' else '\u274C'} ...\"`), causing execute_notebook\
     \ py_compile failure. No manifest was written because ap"
+- version: 11
+  status: failed
+  created_by: app
+  run_id: 50b889f8-7562-458e-9281-0ee3508d5b80
+  started_at: '2026-09-17T17:26:37.865346+00:00'
+  assets_created: {}
+  completed_at: '2026-09-17T18:26:01.904698+00:00'
+  error_summary: "Hard fail: 'write_workspace_file' failed 3 times. Last: ERROR: This\
+    \ path contains 'dashboard_' which indicates a template-based deployment notebook.\
+    \ Per G-16, you MUST use the deploy_from_template tool instead of write_workspace_file.\
+    \ Call deploy_from_template with:\n  template_path: the .py.template file path\n\
+    \  output_path: /Workspace/Users/arun.wagle@databricks.com/databricks-aibi-design-first-accelerator/kpi_domains/member_claims/generated_outputs/v11/dashboards/dashboard_validation.yaml\n\
+    \  pla"
