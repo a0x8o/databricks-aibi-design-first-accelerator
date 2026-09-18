@@ -1,0 +1,80 @@
+dashboards:
+  - name: member_claims_kpis_dashboard_v13
+    purpose: Executive KPI oversight across validated claims financial, claims quality, and member enrollment metrics.
+    pages:
+      - page_name: Financial Overview
+        purpose: Headline claim volume and paid amount performance with cost trend and cost-driver views; skipped PMPM/window KPIs are excluded because the metric layer did not validate them.
+        widgets:
+          - {title: Total Claims, kpi: C-1, measure: Total Claims, viz_type: counter, dimensions: [], aggregation: SUM, rationale: Headline distinct claim volume.}
+          - {title: Total Paid Amount, kpi: C-3, measure: Total Paid Amount, viz_type: counter, dimensions: [], aggregation: SUM, rationale: Headline paid financial exposure.}
+          - {title: Average Paid per Claim, kpi: C-4, measure: Average Paid per Claim, viz_type: counter, dimensions: [], aggregation: AVG, rationale: Ratio KPI shown as average across filtered rows.}
+          - {title: Paid Amount Trend, kpi: C-3, measure: Total Paid Amount, viz_type: line, dimensions: [Service Month], aggregation: SUM, rationale: Time-series trend contextualizes paid amount.}
+          - {title: Paid Amount by Benefit Category, kpi: C-3, measure: Total Paid Amount, viz_type: bar, dimensions: [Benefit Category], aggregation: SUM, rationale: Identifies top cost driver categories.}
+          - {title: Average Paid per Claim by Claim Type, kpi: C-4, measure: Average Paid per Claim, viz_type: bar, dimensions: [Claim Type], aggregation: AVG, rationale: Compares cost intensity by claim type.}
+      - page_name: Claims Analysis
+        purpose: Claim detail operational quality and processing effectiveness using line counts, denials, and clean-claim ratios.
+        widgets:
+          - {title: Total Claim Lines, kpi: C-2, measure: Total Claim Lines, viz_type: counter, dimensions: [], aggregation: SUM, rationale: Headline service-line volume.}
+          - {title: Denial Rate, kpi: Denial Rate, measure: Denial Rate, viz_type: counter, dimensions: [], aggregation: AVG, rationale: Operational quality rate; never summed.}
+          - {title: Clean Claim Rate, kpi: Clean Claim Rate, measure: Clean Claim Rate, viz_type: counter, dimensions: [], aggregation: AVG, rationale: Processing quality rate; never summed.}
+          - {title: Denial Rate Trend, kpi: Denial Rate, measure: Denial Rate, viz_type: line, dimensions: [Service Month], aggregation: AVG, rationale: Tracks denial performance over time.}
+          - {title: Clean Claim Rate Trend, kpi: Clean Claim Rate, measure: Clean Claim Rate, viz_type: line, dimensions: [Service Month], aggregation: AVG, rationale: Tracks clean-claim processing over time.}
+          - {title: Claim Lines by Line Status, kpi: C-2, measure: Total Claim Lines, viz_type: bar, dimensions: [Line Status], aggregation: SUM, rationale: Shows operational status mix.}
+          - {title: Total Claims by Claim Type, kpi: C-1, measure: Total Claims, viz_type: bar, dimensions: [Claim Type], aggregation: SUM, rationale: Compares claim volume by type.}
+      - page_name: Member Demographics
+        purpose: Validated enrollment-member distribution by product, geography, sex, and enrollment period.
+        widgets:
+          - {title: Active Members, kpi: M-2, measure: Active Members, viz_type: counter, dimensions: [], aggregation: SUM, rationale: Headline active member distribution measure.}
+          - {title: New Member Enrollment, kpi: M-1, measure: New Member Enrollment, viz_type: counter, dimensions: [], aggregation: SUM, rationale: Headline new enrollment count.}
+          - {title: Active Members by Line Of Business, kpi: M-2, measure: Active Members, viz_type: bar, dimensions: [Line Of Business], aggregation: SUM, rationale: Product mix view.}
+          - {title: Active Members by Member State, kpi: M-3, measure: Active Members, viz_type: bar, dimensions: [Member State], aggregation: SUM, rationale: Geography distribution.}
+          - {title: New Member Enrollment Trend, kpi: M-1, measure: New Member Enrollment, viz_type: line, dimensions: [Service Month], aggregation: SUM, rationale: Enrollment growth over time.}
+          - {title: Active Members by Member Sex, kpi: M-2, measure: Active Members, viz_type: bar, dimensions: [Member Sex], aggregation: SUM, rationale: Demographic composition view.}
+    filters:
+      - {dimension: Service Date, filter_type: date-range-picker, scope: global, rationale: Broad temporal filter for claim datasets.}
+      - {dimension: Claim Type, filter_type: multi-select, scope: global, rationale: Core claim segmentation dimension.}
+      - {dimension: Benefit Category, filter_type: multi-select, scope: global, rationale: Cost-driver category dimension.}
+      - {dimension: Line Status, filter_type: multi-select, scope: global, rationale: Claims operational status filter.}
+  - name: member_claims_utilization_dashboard_v13
+    purpose: Utilization, provider, and operational claims performance using validated claim-detail metric view measures.
+    pages:
+      - page_name: Utilization Patterns
+        purpose: Claim and line utilization plus inpatient/outpatient paid amount patterns over time and by claim type.
+        widgets:
+          - {title: Total Claims, kpi: C-1, measure: Total Claims, viz_type: counter, dimensions: [], aggregation: SUM, rationale: Headline utilization volume.}
+          - {title: Total Claim Lines, kpi: C-2, measure: Total Claim Lines, viz_type: counter, dimensions: [], aggregation: SUM, rationale: Service-line utilization volume.}
+          - {title: Inpatient Paid Amount, kpi: Inpatient Paid Amount, measure: Inpatient Paid Amount, viz_type: counter, dimensions: [], aggregation: SUM, rationale: Filtered institutional paid exposure.}
+          - {title: Outpatient Paid Amount, kpi: Outpatient Paid Amount, measure: Outpatient Paid Amount, viz_type: counter, dimensions: [], aggregation: SUM, rationale: Filtered professional paid exposure.}
+          - {title: Claim Lines by Claim Type, kpi: C-2, measure: Total Claim Lines, viz_type: bar, dimensions: [Claim Type], aggregation: SUM, rationale: Claim utilization mix.}
+          - {title: Paid Amount Trend, kpi: C-3, measure: Total Paid Amount, viz_type: line, dimensions: [Service Month], aggregation: SUM, rationale: Paid utilization over time.}
+      - page_name: Provider Insights
+        purpose: Provider type, specialty, and network participation analysis using available participating provider and specialty dimensions.
+        widgets:
+          - {title: Paid Amount by Rendering Provider Specialty, kpi: Specialty rankings, measure: Total Paid Amount, viz_type: bar, dimensions: [Rendering Provider Specialty], aggregation: SUM, rationale: Ranks specialty cost drivers.}
+          - {title: Claims by Rendering Provider Type, kpi: C-1, measure: Total Claims, viz_type: bar, dimensions: [Rendering Provider Type], aggregation: SUM, rationale: Provider-type volume comparison.}
+          - {title: Paid Amount by Participating Provider, kpi: Provider network mix, measure: Total Paid Amount, viz_type: bar, dimensions: [Participating Provider], aggregation: SUM, rationale: Network participation cost comparison.}
+          - {title: Payment to Allowed by Participating Provider, kpi: Payment-to-Allowed, measure: Payment to Allowed Ratio, viz_type: bar, dimensions: [Participating Provider], aggregation: AVG, rationale: Ratio comparison by participation status.}
+          - {title: Payment to Billed Ratio, kpi: Payment-to-Billed, measure: Payment to Billed Ratio, viz_type: counter, dimensions: [], aggregation: AVG, rationale: Contracting/payment ratio headline.}
+          - {title: Paid Amount by Place Of Service, kpi: C-3, measure: Total Paid Amount, viz_type: bar, dimensions: [Place Of Service], aggregation: SUM, rationale: Service location cost comparison.}
+      - page_name: Operational Metrics
+        purpose: Denial, clean-claim, and payment ratio operational trends and adjudication mix.
+        widgets:
+          - {title: Denial Rate, kpi: Denial Rate, measure: Denial Rate, viz_type: counter, dimensions: [], aggregation: AVG, rationale: Headline denial quality measure.}
+          - {title: Clean Claim Rate, kpi: Clean Claim Rate, measure: Clean Claim Rate, viz_type: counter, dimensions: [], aggregation: AVG, rationale: Headline processing quality measure.}
+          - {title: Payment to Billed Ratio, kpi: Payment-to-Billed, measure: Payment to Billed Ratio, viz_type: counter, dimensions: [], aggregation: AVG, rationale: Payment-to-charge ratio.}
+          - {title: Payment to Allowed Ratio, kpi: Payment-to-Allowed, measure: Payment to Allowed Ratio, viz_type: counter, dimensions: [], aggregation: AVG, rationale: Payment-to-allowed ratio.}
+          - {title: Denial Rate Trend, kpi: Denial Rate, measure: Denial Rate, viz_type: line, dimensions: [Service Month], aggregation: AVG, rationale: Denial trend over time.}
+          - {title: Payment to Billed Trend, kpi: Payment-to-Billed, measure: Payment to Billed Ratio, viz_type: line, dimensions: [Service Month], aggregation: AVG, rationale: Ratio trend over time.}
+          - {title: Claim Lines by Adjudication Status, kpi: C-2, measure: Total Claim Lines, viz_type: bar, dimensions: [Adjudication Status], aggregation: SUM, rationale: Operational adjudication distribution.}
+    filters:
+      - {dimension: Service Date, filter_type: date-range-picker, scope: global, rationale: Broad temporal utilization filter.}
+      - {dimension: Claim Type, filter_type: multi-select, scope: global, rationale: Core utilization segmentation.}
+      - {dimension: Rendering Provider Specialty, filter_type: multi-select, scope: global, rationale: Provider specialty filter.}
+      - {dimension: Participating Provider, filter_type: multi-select, scope: global, rationale: Network participation filter.}
+skipped_kpis:
+  - {kpi: MC-1, status: DASHBOARD_KPI_SKIPPED, reason: SKIPPED_UNSAFE_GRAIN in metric_view_validation.yaml}
+  - {kpi: MC-2, status: DASHBOARD_KPI_SKIPPED, reason: SKIPPED_UNSAFE_GRAIN in metric_view_validation.yaml}
+  - {kpi: MC-3, status: DASHBOARD_KPI_SKIPPED, reason: SKIPPED_UNSAFE_GRAIN in metric_view_validation.yaml}
+  - {kpi: MC-4, status: DASHBOARD_KPI_SKIPPED, reason: NOT_IMPLEMENTED documentation-only in metric_view_plan.yaml}
+  - {kpi: W-1, status: DASHBOARD_KPI_SKIPPED, reason: SKIPPED_UNSAFE_GRAIN in metric_view_validation.yaml}
+  - {kpi: W-2, status: DASHBOARD_KPI_SKIPPED, reason: NOT_IMPLEMENTED documentation-only in metric_view_plan.yaml}

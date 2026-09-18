@@ -1,0 +1,10 @@
+space_id: 01f1b31272b01bef962dd25299c857ae
+title: member_claims_analytics_genie_v13
+benchmark_validation:
+  total: 15
+  passed: 15
+  failed: 0
+  pass_rate: 1.0
+  threshold: 0.8
+  status: PASS
+validation_source: sql_ground_truth_execution

@@ -1,0 +1,36 @@
+catalog: aw_serverless_stable_catalog
+schema: aibi_member_claims
+version_suffix: _v12
+output_folder: /Workspace/Users/arun.wagle@databricks.com/databricks-aibi-design-first-accelerator/kpi_domains/member_claims/generated_outputs/v12
+warehouse_id: "2d8e531640ffa469"
+domain_name: member_claims
+status: completed
+phases_completed:
+  - load_inputs
+  - profile_metrics
+  - llm_design
+  - design_instructions
+  - generate_sql
+  - create_genie_space
+  - validate_genie
+  - gather_artifacts
+  - generate_documentation
+  - validate_documentation
+  - generate_manifest
+assets:
+  documentation:
+    readme_path: /Workspace/Users/arun.wagle@databricks.com/databricks-aibi-design-first-accelerator/kpi_domains/member_claims/generated_outputs/v12/documentation/readme.md
+    run_manifest_path: /Workspace/Users/arun.wagle@databricks.com/databricks-aibi-design-first-accelerator/kpi_domains/member_claims/generated_outputs/v12/run_manifest.json
+    status: completed
+  genie:
+    space_name: member_claims_analytics_genie
+    title: member_claims_analytics_genie_v12
+    space_id: "01f1b2d846f41d2f8dbf8b7187dab740"
+    notebook_path: /Workspace/Users/arun.wagle@databricks.com/databricks-aibi-design-first-accelerator/kpi_domains/member_claims/generated_outputs/v12/genie_space/genie_space_configuration_member_claims
+    validation_source: api_readback
+    configured: true
+    validated: true
+  metric_views:
+    - aw_serverless_stable_catalog.aibi_member_claims.member_claims_metric_view_v12
+    - aw_serverless_stable_catalog.aibi_member_claims.member_claims_enrollment_metric_view_v12
+    - aw_serverless_stable_catalog.aibi_member_claims.member_claims_member_metric_view_v12

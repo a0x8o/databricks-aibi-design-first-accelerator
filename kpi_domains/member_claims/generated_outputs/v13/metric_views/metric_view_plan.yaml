@@ -1,0 +1,87 @@
+metric_view_plan:
+  total_kpis: 12
+  implementable_in_metric_views: 7
+  not_implemented: 2
+  skipped: 3
+  metric_views:
+    - name: member_claims_metric_view_v13
+      sql_fqn: "`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v13`"
+      source: fact_claim_detail_v13
+      source_fqn: aw_serverless_stable_catalog.aibi_member_claims.fact_claim_detail_v13
+      primary: true
+      intermediate_view: null
+      grain: one row represents one claim detail line for a claim
+      kpis: [C-1, C-2, C-3, C-4]
+    - name: member_claims_enrollment_metric_view_v13
+      sql_fqn: "`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_enrollment_metric_view_v13`"
+      source: fact_member_enrollment_v13
+      source_fqn: aw_serverless_stable_catalog.aibi_member_claims.fact_member_enrollment_v13
+      primary: false
+      intermediate_view: null
+      grain: one row represents one member enrollment coverage record for a plan/group/product period or event
+      kpis: [M-1, M-2, M-3]
+  not_implemented:
+    - kpi: MC-4
+      name: High-Cost Member Count
+      reason: Requires pre-aggregation to member level and HAVING threshold; not expressible as a grain-safe metric view measure over claim-line source.
+      status: NOT_IMPLEMENTED
+      documentation_only: true
+      sql: |
+        SELECT member_key, total_paid_amount
+        FROM (
+          SELECT h.clm_member_sk AS member_key, SUM(d.clm_dtl_paid_amt) AS total_paid_amount
+          FROM aw_serverless_stable_catalog.aibi_member_claims.fact_claim_detail_v13 d
+          JOIN aw_serverless_stable_catalog.aibi_member_claims.fact_claim_header_v13 h ON d.clm_dtl_claim_id = h.clm_claim_id
+          GROUP BY h.clm_member_sk
+          HAVING SUM(d.clm_dtl_paid_amt) > 10000
+        ) q
+      validated: true
+      validation_row_count: 10
+      manual_implementation_notes: |
+        To implement: Add as a named SQL dataset in a dashboard or create a pre-aggregated member-spend table. Cannot be a metric view measure due to member-level HAVING threshold.
+    - kpi: W-2
+      name: MoM Active Member Growth
+      reason: Requires LAG window offset over monthly active member counts; documented as SQL because metric view implementation is avoided for this window KPI.
+      status: NOT_IMPLEMENTED
+      documentation_only: true
+      sql: |
+        SELECT service_month, active_members, prior_month_members,
+               (active_members - prior_month_members) / NULLIF(prior_month_members, 0) AS mom_active_member_growth
+        FROM (
+          SELECT date_trunc('MONTH', mbr_enr_effective_date) AS service_month,
+                 COUNT(DISTINCT member_sk) AS active_members,
+                 LAG(COUNT(DISTINCT member_sk)) OVER (ORDER BY date_trunc('MONTH', mbr_enr_effective_date)) AS prior_month_members
+          FROM aw_serverless_stable_catalog.aibi_member_claims.fact_member_enrollment_v13
+          GROUP BY date_trunc('MONTH', mbr_enr_effective_date)
+        ) m
+      validated: true
+      validation_row_count: 10
+      manual_implementation_notes: |
+        To implement: Add as a named SQL dataset using LAG in the dashboard. Cannot be represented as a simple metric view measure without window offset semantics.
+  skipped:
+    - kpi: MC-1
+      name: PMPM
+      status: SKIPPED_UNSAFE_GRAIN
+      reason: Requires paid claims and member-month exposure at common monthly grain; no physical co-grained member-month exposure table exists.
+    - kpi: MC-2
+      name: Claims per 1,000 Members
+      status: SKIPPED_UNSAFE_GRAIN
+      reason: Requires member-month denominator at common grain with claim counts; no physical co-grained denominator source exists.
+    - kpi: MC-3
+      name: Utilization Rate
+      status: SKIPPED_UNSAFE_GRAIN
+      reason: Requires active enrolled denominator and members-with-claims numerator at common monthly grain; no pre-aggregated utilization population source exists.
+  grain_analysis:
+    fact_tables_in_schema: [fact_member_enrollment_v13, fact_claim_header_v13, fact_claim_detail_v13]
+    fact_tables_with_ready_kpis:
+      fact_claim_detail_v13: 4
+      fact_member_enrollment_v13: 3
+    fact_tables_with_metric_views: [fact_claim_detail_v13, fact_member_enrollment_v13]
+    fact_tables_without_metric_views: []
+  dynamic_fqn_generation:
+    strategy: auto
+    primary: member_claims_metric_view_v13
+    additional:
+      - name: member_claims_enrollment_metric_view_v13
+        grain_qualifier: enrollment
+        source: fact_member_enrollment_v13

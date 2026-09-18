@@ -1,0 +1,103 @@
+metric_view_designs:
+  - metric_view:
+      name: member_claims_metric_view_v12
+      sql_fqn: "`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v12`"
+      source_table: fact_claim_detail_v12
+      source_fqn: aw_serverless_stable_catalog.aibi_member_claims.fact_claim_detail_v12
+      source_grain: one row represents a claim detail service line
+    measures:
+      - {name: Total Claims, expr: COUNT(DISTINCT clm_dtl_claim_id), kpi: C-1}
+      - {name: Total Claim Lines, expr: COUNT(*), kpi: C-2}
+      - {name: Total Paid Amount, expr: SUM(clm_dtl_paid_amt), kpi: C-3}
+      - {name: Average Paid per Claim, expr: MEASURE(`Total Paid Amount`) / NULLIF(MEASURE(`Total Claims`), 0), kpi: C-4}
+      - {name: Denied Lines, expr: SUM(CASE WHEN lower(clm_dtl_adjudication_status) LIKE '%deny%' OR lower(clm_dtl_line_status) LIKE '%deny%' THEN 1 ELSE 0 END), kpi: ADD-1-component}
+      - {name: Denial Rate, expr: MEASURE(`Denied Lines`) / NULLIF(MEASURE(`Total Claim Lines`), 0), kpi: ADD-1}
+      - {name: Clean Claim Lines, expr: SUM(CASE WHEN lower(clm_dtl_clean_claim_ind) IN ('y','yes','true','clean','1') THEN 1 ELSE 0 END), kpi: ADD-2-component}
+      - {name: Clean Claim Rate, expr: MEASURE(`Clean Claim Lines`) / NULLIF(MEASURE(`Total Claim Lines`), 0), kpi: ADD-2}
+      - {name: Total Billed Amount, expr: SUM(clm_dtl_billed_amt), kpi: ADD-3-component}
+      - {name: Payment-to-Billed Ratio, expr: MEASURE(`Total Paid Amount`) / NULLIF(MEASURE(`Total Billed Amount`), 0), kpi: ADD-3}
+      - {name: Total Allowed Amount, expr: SUM(clm_dtl_allowed_amt), kpi: ADD-4-component}
+      - {name: Payment-to-Allowed Ratio, expr: MEASURE(`Total Paid Amount`) / NULLIF(MEASURE(`Total Allowed Amount`), 0), kpi: ADD-4}
+      - {name: Unique Claim Members, expr: COUNT(DISTINCT clm_dtl_member_nbr_sk), kpi: ADD-5-component}
+      - {name: Average Paid per Member, expr: MEASURE(`Total Paid Amount`) / NULLIF(MEASURE(`Unique Claim Members`), 0), kpi: ADD-5}
+      - {name: Claims per Member, expr: MEASURE(`Total Claims`) / NULLIF(MEASURE(`Unique Claim Members`), 0), kpi: ADD-6}
+      - {name: Lines per Claim, expr: MEASURE(`Total Claim Lines`) / NULLIF(MEASURE(`Total Claims`), 0), kpi: ADD-7}
+      - {name: Inpatient Paid Amount, expr: SUM(CASE WHEN lower(clm_dtl_claim_type) LIKE '%institutional%' OR lower(clm_dtl_claim_type) LIKE '%inpatient%' THEN clm_dtl_paid_amt ELSE 0 END), kpi: ADD-8}
+      - {name: Outpatient Paid Amount, expr: SUM(CASE WHEN lower(clm_dtl_claim_type) LIKE '%professional%' OR lower(clm_dtl_claim_type) LIKE '%outpatient%' THEN clm_dtl_paid_amt ELSE 0 END), kpi: ADD-9}
+    dimensions:
+      - {name: service_month, expr: date_trunc('MONTH', clm_dtl_specific_dos_date), comment: Common monthly service period}
+      - {name: service_date, expr: clm_dtl_specific_dos_date, comment: Claim line service date}
+      - {name: claim_type, expr: clm_dtl_claim_type, comment: Claim type from detail line}
+      - {name: line_status, expr: clm_dtl_line_status, comment: Claim line status}
+      - {name: adjudication_status, expr: clm_dtl_adjudication_status, comment: Claim adjudication status}
+      - {name: clean_claim_indicator, expr: clm_dtl_clean_claim_ind, comment: Clean claim indicator}
+      - {name: place_of_service, expr: clm_dtl_place_of_service, comment: Place of service}
+      - {name: procedure_code, expr: clm_dtl_procedure_code, comment: Procedure code}
+      - {name: revenue_code, expr: clm_dtl_revenue_code, comment: Revenue code}
+      - {name: member_identifier, expr: clm_dtl_member_nbr_sk, comment: Claim detail member identifier}
+    joins: []
+    kpis_supported: [C-1, C-2, C-3, C-4, ADD-1, ADD-2, ADD-3, ADD-4, ADD-5, ADD-6, ADD-7, ADD-8, ADD-9]
+    kpis_skipped: [MC-1, MC-2, MC-3, W-1, ADD-10]
+    data_quality_blockers: []
+  - metric_view:
+      name: member_claims_enrollment_metric_view_v12
+      sql_fqn: "`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_enrollment_metric_view_v12`"
+      source_table: fact_member_enrollment_v12
+      source_fqn: aw_serverless_stable_catalog.aibi_member_claims.fact_member_enrollment_v12
+      source_grain: one row represents a member enrollment record or coverage event
+    measures:
+      - {name: New Member Enrollment, expr: COUNT(DISTINCT member_sk), kpi: M-1}
+      - {name: Active Members, expr: COUNT(DISTINCT member_sk), kpi: M-2}
+      - {name: Enrollment Records, expr: COUNT(*), kpi: support}
+    dimensions:
+      - {name: service_month, expr: date_trunc('MONTH', mbr_enr_effective_date), comment: Common monthly enrollment effective period}
+      - {name: enrollment_effective_date, expr: mbr_enr_effective_date, comment: Enrollment effective date}
+      - {name: line_of_business, expr: mbr_enr_line_of_business, comment: Enrollment line of business}
+      - {name: enrollment_status, expr: mbr_enr_status, comment: Enrollment status}
+      - {name: plan_id, expr: mbr_enr_plan_id, comment: Plan identifier}
+      - {name: termination_reason, expr: mbr_enr_termination_reason, comment: Enrollment termination reason}
+    joins: []
+    kpis_supported: [M-1, M-2]
+    kpis_skipped: [W-2]
+    data_quality_blockers: []
+  - metric_view:
+      name: member_claims_member_metric_view_v12
+      sql_fqn: "`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_member_metric_view_v12`"
+      source_table: dim_member_v12
+      source_fqn: aw_serverless_stable_catalog.aibi_member_claims.dim_member_v12
+      source_grain: one row represents a current member dimension record
+    measures:
+      - {name: Members by Geography, expr: COUNT(DISTINCT member_sk), kpi: M-3}
+      - {name: Current Members, expr: COUNT(DISTINCT member_sk), kpi: support}
+    dimensions:
+      - {name: service_month, expr: date_trunc('MONTH', created_at), comment: Common monthly member-created period for dashboard filtering}
+      - {name: state, expr: mbr_state, comment: Member state}
+      - {name: zip_code, expr: mbr_zip_code, comment: Member zip code}
+      - {name: sex, expr: mbr_sex, comment: Member sex}
+      - {name: race, expr: mbr_race, comment: Member race}
+      - {name: ethnicity, expr: mbr_ethnicity, comment: Member ethnicity}
+      - {name: line_of_business, expr: mbr_line_of_business, comment: Member line of business}
+      - {name: relationship_type, expr: mbr_relationship_type, comment: Member relationship type}
+      - {name: is_active, expr: is_active, comment: Active member flag}
+    joins: []
+    kpis_supported: [M-3]
+    kpis_skipped: []
+    data_quality_blockers: []
+not_implemented_kpis:
+  - kpi: MC-4
+    name: High-Cost Member Count
+    reason: Requires member-level pre-aggregation and HAVING threshold.
+    reference_sql: See metric_view_plan.yaml
+  - kpi: W-2
+    name: MoM Active Member Growth
+    reason: Requires LAG over monthly aggregate active members.
+    reference_sql: See metric_view_plan.yaml
+intermediate_views: []
+coverage_table:
+  - {kpi: M-1, source: fact_member_enrollment_v12, grain: member enrollment record, measure: New Member Enrollment, join_safety: no_join_required, status: READY}
+  - {kpi: M-2, source: fact_member_enrollment_v12, grain: member enrollment record, measure: Active Members, join_safety: no_join_required, status: READY}
+  - {kpi: M-3, source: dim_member_v12, grain: current member, measure: Members by Geography, join_safety: no_join_required, status: READY}
+  - {kpi: C-1, source: fact_claim_detail_v12, grain: claim detail line, measure: Total Claims, join_safety: no_join_required, status: READY}
+  - {kpi: C-2, source: fact_claim_detail_v12, grain: claim detail line, measure: Total Claim Lines, join_safety: no_join_required, status: READY}
+  - {kpi: C-3, source: fact_claim_detail_v12, grain: claim detail line, measure: Total Paid Amount, join_safety: no_join_required, status: READY}
+  - {kpi: C-4, source: fact_claim_detail_v12, grain: claim detail line, measure: Average Paid per Claim, join_safety: no_join_required, status: READY}

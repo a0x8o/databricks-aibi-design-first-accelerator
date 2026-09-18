@@ -1,0 +1,51 @@
+status: PASS
+validation_source: statement_execution_api
+warehouse_id: "2d8e531640ffa469"
+datasets:
+  - name: ds_claims_shared
+    dashboard: member_claims_kpis_dashboard_v12
+    pages: [Executive Summary, Quality and Adjudication, Utilization and Cost Detail]
+    widgets: [kpi_total_claims, kpi_total_claim_lines, kpi_total_paid_amount, kpi_average_paid_per_claim, bar_paid_by_claim_type, line_monthly_paid, kpi_denied_lines, kpi_denial_rate, kpi_clean_claim_rate, kpi_payment_to_billed, bar_denial_rate_by_claim_type, line_clean_claim_rate, kpi_unique_claim_members, kpi_claims_per_member, kpi_lines_per_claim, kpi_average_paid_per_member, bar_claims_by_line_status, line_claims_per_member]
+    sql_status: PASS
+    metric_view: "`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v12`"
+    expected_shape: one row per service_month/service_date/claim_type/line_status/adjudication_status/clean_claim_indicator/place_of_service combination
+    actual_rows_sampled: 5
+    actual_columns: [service_month, service_date, claim_type, line_status, adjudication_status, clean_claim_indicator, place_of_service, total_claims, total_claim_lines, total_paid_amount, average_paid_per_claim, denied_lines, denial_rate, clean_claim_rate, payment_to_billed_ratio, unique_claim_members, average_paid_per_member, claims_per_member, lines_per_claim]
+    measures: [Total Claims, Total Claim Lines, Total Paid Amount, Average Paid per Claim, Denied Lines, Denial Rate, Clean Claim Rate, Payment-to-Billed Ratio, Unique Claim Members, Average Paid per Member, Claims per Member, Lines per Claim]
+    dimensions: [service_month, service_date, claim_type, line_status, adjudication_status, clean_claim_indicator, place_of_service]
+    filters: [service_month, claim_type, line_status, adjudication_status]
+    semantic_status: PASS
+    failure_reason: null
+  - name: ds_enrollment_shared
+    dashboard: member_claims_utilization_dashboard_v12
+    pages: [Enrollment Summary, Enrollment Trend and Plan Detail]
+    widgets: [kpi_new_member_enrollment, kpi_active_members, kpi_enrollment_records, bar_enrollment_by_lob, line_active_members, line_new_enrollment, bar_active_by_plan, bar_records_by_plan, bar_new_by_status]
+    sql_status: PASS
+    metric_view: "`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_enrollment_metric_view_v12`"
+    expected_shape: one row per service_month/enrollment_effective_date/line_of_business/enrollment_status/plan_id/termination_reason combination
+    actual_rows_sampled: 5
+    actual_columns: [service_month, enrollment_effective_date, line_of_business, enrollment_status, plan_id, termination_reason, new_member_enrollment, active_members, enrollment_records]
+    measures: [New Member Enrollment, Active Members, Enrollment Records]
+    dimensions: [service_month, enrollment_effective_date, line_of_business, enrollment_status, plan_id, termination_reason]
+    filters: [service_month, line_of_business, enrollment_status, plan_id]
+    semantic_status: PASS
+    failure_reason: null
+  - name: ds_member_shared
+    dashboard: member_claims_utilization_dashboard_v12
+    pages: [Member Geography and Demographics]
+    widgets: [kpi_current_members, kpi_members_by_geography, bar_members_by_state, bar_current_by_lob, line_current_members]
+    sql_status: PASS
+    metric_view: "`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_member_metric_view_v12`"
+    expected_shape: one row per service_month/state/sex/race/ethnicity/line_of_business/is_active combination
+    actual_rows_sampled: 5
+    actual_columns: [service_month, state, sex, race, ethnicity, line_of_business, is_active, current_members, members_by_geography]
+    measures: [Current Members, Members by Geography]
+    dimensions: [service_month, state, sex, race, ethnicity, line_of_business, is_active]
+    filters: [service_month, line_of_business, state, sex]
+    semantic_status: PASS
+    failure_reason: null
+pre_deploy_sql_check:
+  all_datasets_executed: true
+  failed_datasets: []
+  measure_function_usage: PASS
+  fqn_format: 3_separate_backtick_pairs

@@ -1,0 +1,198 @@
+- kpi_id: M-1
+  kpi_name: New Member Enrollment
+  business_definition: Count distinct members entering coverage in the period using enrollment effective date.
+  status: READY
+  required_grain: member enrollment coverage record
+  measure_components:
+    - physical_table: fact_member_enrollment_v13
+      physical_column: member_sk
+      aggregation: COUNT_DISTINCT
+      filter_column: mbr_enr_effective_date
+  dimensions: [mbr_enr_line_of_business, mbr_enr_plan_id, mbr_enr_status, mbr_enr_group_name]
+  time_dimension: mbr_enr_effective_date
+  aggregation_semantics: DISTINCT_COUNT
+  validation_strategy: compare COUNT(DISTINCT member_sk) from enrollment fact to MEASURE New Member Enrollment
+  gaps: []
+- kpi_id: M-2
+  kpi_name: Members by Line of Business
+  business_definition: Active member distribution across products/lines of business.
+  status: READY
+  required_grain: member enrollment coverage record
+  measure_components:
+    - physical_table: fact_member_enrollment_v13
+      physical_column: member_sk
+      aggregation: COUNT_DISTINCT
+  dimensions: [mbr_enr_line_of_business, mbr_enr_plan_id, mbr_enr_status]
+  time_dimension: mbr_enr_effective_date
+  aggregation_semantics: SEMI_ADDITIVE
+  validation_strategy: compare COUNT(DISTINCT member_sk) grouped by mbr_enr_line_of_business
+  gaps: []
+- kpi_id: M-3
+  kpi_name: Members by Geography
+  business_definition: Active member population by geography using member dimension state.
+  status: READY
+  required_grain: member enrollment coverage record joined to current member dimension
+  measure_components:
+    - physical_table: fact_member_enrollment_v13
+      physical_column: member_sk
+      aggregation: COUNT_DISTINCT
+  dimensions: [mbr_enr_line_of_business, mbr_enr_plan_id, member_state]
+  time_dimension: mbr_enr_effective_date
+  aggregation_semantics: SEMI_ADDITIVE
+  validation_strategy: compare COUNT(DISTINCT enrollment.member_sk) after validated N:1 member join
+  gaps: []
+- kpi_id: C-1
+  kpi_name: Total Claims
+  business_definition: Count distinct claim identifiers at claim line grain.
+  status: READY
+  required_grain: claim detail line
+  measure_components:
+    - physical_table: fact_claim_detail_v13
+      physical_column: clm_dtl_claim_id
+      aggregation: COUNT_DISTINCT
+  dimensions: [clm_dtl_claim_type, clm_dtl_benefit_category, clm_dtl_benefit_level, clm_dtl_line_status]
+  time_dimension: clm_dtl_specific_dos_date
+  aggregation_semantics: DISTINCT_COUNT
+  validation_strategy: compare COUNT(DISTINCT clm_dtl_claim_id) from claim detail
+  gaps: []
+- kpi_id: C-2
+  kpi_name: Total Claim Lines
+  business_definition: Count service line detail rows.
+  status: READY
+  required_grain: claim detail line
+  measure_components:
+    - physical_table: fact_claim_detail_v13
+      physical_column: '*'
+      aggregation: COUNT
+  dimensions: [clm_dtl_claim_type, clm_dtl_benefit_category, clm_dtl_line_status]
+  time_dimension: clm_dtl_specific_dos_date
+  aggregation_semantics: ADDITIVE
+  validation_strategy: compare COUNT(*) from claim detail
+  gaps: []
+- kpi_id: C-3
+  kpi_name: Total Paid Amount
+  business_definition: Sum paid amount across all claim lines.
+  status: READY
+  required_grain: claim detail line
+  measure_components:
+    - physical_table: fact_claim_detail_v13
+      physical_column: clm_dtl_paid_amt
+      aggregation: SUM
+  dimensions: [clm_dtl_claim_type, clm_dtl_benefit_category, clm_dtl_line_status]
+  time_dimension: clm_dtl_specific_dos_date
+  aggregation_semantics: ADDITIVE
+  validation_strategy: compare SUM(clm_dtl_paid_amt) from claim detail
+  gaps: []
+- kpi_id: C-4
+  kpi_name: Average Paid per Claim
+  business_definition: Total paid divided by distinct claim count.
+  status: READY
+  required_grain: claim detail line
+  measure_components:
+    - physical_table: fact_claim_detail_v13
+      physical_column: clm_dtl_paid_amt
+      aggregation: SUM
+    - physical_table: fact_claim_detail_v13
+      physical_column: clm_dtl_claim_id
+      aggregation: COUNT_DISTINCT
+  dimensions: [clm_dtl_claim_type, clm_dtl_benefit_category]
+  time_dimension: clm_dtl_specific_dos_date
+  aggregation_semantics: RATIO
+  validation_strategy: compare SUM(clm_dtl_paid_amt)/COUNT(DISTINCT clm_dtl_claim_id)
+  gaps: []
+- kpi_id: MC-1
+  kpi_name: PMPM
+  business_definition: Cost per member per month; requires paid numerator and member-month denominator.
+  status: UNSAFE
+  required_grain: monthly member exposure and monthly claim paid co-grain
+  measure_components:
+    - physical_table: fact_claim_detail_v13
+      physical_column: clm_dtl_paid_amt
+      aggregation: SUM
+    - physical_table: fact_member_enrollment_v13
+      physical_column: member_sk
+      aggregation: COUNT_DISTINCT
+  dimensions: [service_month, line_of_business]
+  time_dimension: null
+  aggregation_semantics: RATIO
+  validation_strategy: skipped because no physical co-grained member-month exposure source exists
+  gaps: [No physical monthly exposure table at same grain as paid claims]
+- kpi_id: MC-2
+  kpi_name: Claims per 1,000 Members
+  business_definition: Claim frequency normalized by member-month exposure.
+  status: UNSAFE
+  required_grain: monthly member exposure and monthly claim count co-grain
+  measure_components:
+    - physical_table: fact_claim_detail_v13
+      physical_column: clm_dtl_claim_id
+      aggregation: COUNT_DISTINCT
+    - physical_table: fact_member_enrollment_v13
+      physical_column: member_sk
+      aggregation: COUNT_DISTINCT
+  dimensions: [service_month, line_of_business]
+  time_dimension: null
+  aggregation_semantics: RATIO
+  validation_strategy: skipped because no physical co-grained member-month denominator source exists
+  gaps: [No precomputed member_months fact at common grain]
+- kpi_id: MC-3
+  kpi_name: Utilization Rate
+  business_definition: Share of active enrolled members who used services.
+  status: UNSAFE
+  required_grain: monthly active member population and monthly members-with-claims co-grain
+  measure_components:
+    - physical_table: fact_claim_header_v13
+      physical_column: clm_member_sk
+      aggregation: COUNT_DISTINCT
+    - physical_table: fact_member_enrollment_v13
+      physical_column: member_sk
+      aggregation: COUNT_DISTINCT
+  dimensions: [service_month, line_of_business]
+  time_dimension: null
+  aggregation_semantics: RATIO
+  validation_strategy: skipped because no physical co-grained utilization population table exists
+  gaps: [Requires monthly member utilization pre-aggregation not present as a source table]
+- kpi_id: MC-4
+  kpi_name: High-Cost Member Count
+  business_definition: Count members whose spend exceeds threshold.
+  status: UNSUPPORTED
+  required_grain: member-level pre-aggregation over claim detail
+  measure_components:
+    - physical_table: fact_claim_detail_v13
+      physical_column: clm_dtl_paid_amt
+      aggregation: SUM
+  dimensions: [service_month]
+  time_dimension: clm_dtl_specific_dos_date
+  aggregation_semantics: WINDOW
+  validation_strategy: reference SQL with member-level HAVING threshold
+  gaps: [Requires HAVING/subquery over member paid amount]
+- kpi_id: W-1
+  kpi_name: Rolling 3-Month PMPM
+  business_definition: Rolling paid amount divided by rolling member-month exposure.
+  status: UNSUPPORTED
+  required_grain: monthly pre-aggregated paid and member-months
+  measure_components:
+    - physical_table: fact_claim_detail_v13
+      physical_column: clm_dtl_paid_amt
+      aggregation: SUM
+    - physical_table: fact_member_enrollment_v13
+      physical_column: member_sk
+      aggregation: COUNT_DISTINCT
+  dimensions: [service_month]
+  time_dimension: null
+  aggregation_semantics: WINDOW
+  validation_strategy: reference SQL or dashboard dataset; rolling window across numerator and denominator is not implemented in metric view
+  gaps: [Requires rolling window and co-grained monthly numerator/denominator]
+- kpi_id: W-2
+  kpi_name: MoM Active Member Growth
+  business_definition: Month-over-month change in active members.
+  status: UNSUPPORTED
+  required_grain: monthly active member snapshot
+  measure_components:
+    - physical_table: fact_member_enrollment_v13
+      physical_column: member_sk
+      aggregation: COUNT_DISTINCT
+  dimensions: [service_month]
+  time_dimension: mbr_enr_effective_date
+  aggregation_semantics: WINDOW
+  validation_strategy: reference SQL with LAG over monthly members
+  gaps: [Requires LAG/window offset]

@@ -1,0 +1,98 @@
+tables:
+  - fqn: aw_serverless_stable_catalog.aibi_member_claims.dim_member_v12
+    table_name: dim_member_v12
+    semantic_role: DIMENSION
+    grain: one row represents a current member dimension record
+    row_count: 500
+    keys: [member_sk]
+    dimensions: [mbr_source_member_id, mbr_member_id, mbr_dob, mbr_race, mbr_sex, mbr_ethnicity, mbr_marital_status, mbr_line_of_business, mbr_relationship_type, mbr_state, mbr_zip_code, source_system_code, source_system_name, is_active]
+    measures: []
+    temporal_columns: [mbr_dob, created_at, updated_at, end_date]
+  - fqn: aw_serverless_stable_catalog.aibi_member_claims.dim_provider_v12
+    table_name: dim_provider_v12
+    semantic_role: DIMENSION
+    grain: one row represents a provider dimension version or provider record
+    row_count: 300
+    keys: [provider_sk]
+    dimensions: [assigned_provider_sk, source_provider_id, provider_npi, provider_tax_id, provider_name, provider_address_sk, pcp_flag, affiliation_id, is_active, source_system]
+    measures: []
+    temporal_columns: [valid_from_date, valid_to_date, created_at, updated_at, last_update_dt]
+  - fqn: aw_serverless_stable_catalog.aibi_member_claims.dim_address_v12
+    table_name: dim_address_v12
+    semantic_role: DIMENSION
+    grain: one row represents an address for an entity and address type
+    row_count: 600
+    keys: [address_key, entity_dimension_key]
+    dimensions: [entity_type_key, address_type_code, city, state, zip_code, country_code, county, is_active, source_system_code, source_system_name]
+    measures: []
+    temporal_columns: [valid_from_date, valid_to_date, created_at, updated_at]
+  - fqn: aw_serverless_stable_catalog.aibi_member_claims.dim_member_identifier_v12
+    table_name: dim_member_identifier_v12
+    semantic_role: DIMENSION
+    grain: one row represents one identifier value for a member
+    row_count: 900
+    keys: [mbr_identifier_sk, member_sk]
+    dimensions: [id_type, id_value, source_system_code, source_system_name, is_active]
+    measures: []
+    temporal_columns: [valid_to_date, valid_from_date, created_at, updated_at]
+  - fqn: aw_serverless_stable_catalog.aibi_member_claims.dim_member_history_v12
+    table_name: dim_member_history_v12
+    semantic_role: SNAPSHOT
+    grain: one row represents a historical member dimension version
+    row_count: 1000
+    keys: [mbr_history_sk, member_sk]
+    dimensions: [mbr_source_member_id, mbr_member_id, mbr_dob, mbr_race, mbr_sex, mbr_ethnicity, mbr_marital_status, mbr_line_of_business, mbr_relationship_type, mbr_state, mbr_zip_code, source_system_code, source_system_name, is_active]
+    measures: []
+    temporal_columns: [mbr_dob, created_at, updated_at, valid_to_date, valid_from_date]
+  - fqn: aw_serverless_stable_catalog.aibi_member_claims.fact_member_enrollment_v12
+    table_name: fact_member_enrollment_v12
+    semantic_role: FACT
+    grain: one row represents a member enrollment record or enrollment event
+    row_count: 3000
+    keys: [enrollment_sk, member_sk]
+    dimensions: [source_system, src_member_business_id, mbr_enr_source_member_id, mbr_enr_insured_id, mbr_enr_contract_id, mbr_enr_insured_code, mbr_enr_insured_event_code, mbr_enr_status, mbr_enr_plan_id, mbr_enr_line_of_business, mbr_enr_termination_reason, is_active, id_value, id_type]
+    measures: []
+    temporal_columns: [mbr_enr_insured_add_date, mbr_enr_insured_event_date, mbr_enr_effective_date, mbr_enr_termination_date]
+  - fqn: aw_serverless_stable_catalog.aibi_member_claims.fact_claim_header_v12
+    table_name: fact_claim_header_v12
+    semantic_role: FACT
+    grain: one row represents a claim header
+    row_count: 2500
+    keys: [clm_header_sk, clm_claim_id, clm_member_sk]
+    dimensions: [clm_claim_type, clm_bill_type, clm_admission_type, clm_admission_source, clm_member_nbr, clm_member_name, clm_plan_code, clm_line_of_business, clm_submitting_provider_type, clm_billing_provider, clm_is_par_referring_provider, clm_is_par_rendering_provider, clm_pcp_visit_flag, clm_service_facility_address_sk, clm_diagnosis_1, clm_drg_code, clm_service_type_code, clm_cob_type, clm_claim_timely_filing, is_active, source_system_code, source_system_name]
+    measures: [clm_birth_weight, clm_covered_days]
+    temporal_columns: [clm_admit_date, clm_claim_thru_date, clm_discharge_date, clm_add_date, clm_update_date, clm_extract_date, end_date, created_at, updated_at]
+  - fqn: aw_serverless_stable_catalog.aibi_member_claims.fact_claim_detail_v12
+    table_name: fact_claim_detail_v12
+    semantic_role: FACT
+    grain: one row represents a claim detail line
+    row_count: 9000
+    keys: [clm_dtl_claim_id, clm_dtl_line_nbr]
+    dimensions: [clm_dtl_source_system, clm_dtl_member_nbr_sk, clm_dtl_claim_type, clm_dtl_copay_reason, clm_dtl_line_status, clm_dtl_clean_claim_ind, clm_dtl_place_of_service, clm_dtl_fee_schedule_code, clm_dtl_adjudication_status, clm_dtl_procedure_code, clm_dtl_procedure_modifier, clm_dtl_revenue_code, clm_dtl_diagnosis_ind_1, is_active]
+    measures: [clm_dtl_allowed_amt, clm_dtl_billed_amt, clm_dtl_deduct_amt, clm_dtl_net_amt, clm_dtl_paid_amt, clm_dtl_actual_paid_amt, clm_dtl_not_covered_amt, clm_dtl_co_insurance_amt, clm_dtl_copay_amt, clm_dtl_procedure_qty, clm_dtl_paid_days]
+    temporal_columns: [clmdetail_admit_dt, clm_dtl_specific_dos_date, clm_dtl_specific_dos_thru_date, clm_dtl_claim_receive_date, clm_dtl_check_date, updated_at, created_at]
+relationships:
+  - {parent: dim_member_v12, parent_key: member_sk, child: dim_address_v12, child_key: entity_dimension_key, cardinality: '1:N', confidence: erd_declared}
+  - {parent: dim_member_v12, parent_key: member_sk, child: fact_claim_header_v12, child_key: clm_member_sk, cardinality: '1:N', confidence: erd_declared}
+  - {parent: dim_member_v12, parent_key: member_sk, child: dim_member_identifier_v12, child_key: member_sk, cardinality: '1:N', confidence: erd_declared}
+  - {parent: dim_member_v12, parent_key: member_sk, child: dim_member_history_v12, child_key: member_sk, cardinality: '1:N', confidence: erd_declared}
+  - {parent: dim_member_v12, parent_key: member_sk, child: fact_member_enrollment_v12, child_key: member_sk, cardinality: '1:N', confidence: erd_declared}
+  - {parent: fact_claim_header_v12, parent_key: clm_claim_id, child: fact_claim_detail_v12, child_key: clm_dtl_claim_id, cardinality: '1:N', confidence: inferred_medium}
+schema_drift: []
+unresolved_relationships: []
+join_key_diversity_precheck:
+  status: PASS
+  checked: 8
+  min_distinct_vals: 500
+  failures: []
+profile_cross_check:
+  status: PASS
+  method: information_schema.columns single-query catalog cross-check
+  phantom_columns: []
+relationship_verification:
+  - {relationship: 'dim_address_v12.entity_dimension_key -> dim_member_v12.member_sk', source: erd_declared, child_rows: 600, joined_rows: 600, child_distinct: 500, parent_distinct: 500, join_safety: N:1_SAFE, status: PASS}
+  - {relationship: 'fact_claim_header_v12.clm_member_sk -> dim_member_v12.member_sk', source: erd_declared, child_rows: 2500, joined_rows: 2500, child_distinct: 500, parent_distinct: 500, join_safety: N:1_SAFE, status: PASS}
+  - {relationship: 'dim_member_identifier_v12.member_sk -> dim_member_v12.member_sk', source: erd_declared, child_rows: 900, joined_rows: 900, child_distinct: 500, parent_distinct: 500, join_safety: N:1_SAFE, status: PASS}
+  - {relationship: 'dim_member_history_v12.member_sk -> dim_member_v12.member_sk', source: erd_declared, child_rows: 1000, joined_rows: 1000, child_distinct: 500, parent_distinct: 500, join_safety: N:1_SAFE, status: PASS}
+  - {relationship: 'fact_member_enrollment_v12.member_sk -> dim_member_v12.member_sk', source: erd_declared, child_rows: 3000, joined_rows: 3000, child_distinct: 500, parent_distinct: 500, join_safety: N:1_SAFE, status: PASS}
+  - {relationship: 'fact_claim_detail_v12.clm_dtl_claim_id -> fact_claim_header_v12.clm_claim_id', source: inferred_medium, child_rows: 9000, joined_rows: 9000, child_distinct: 2500, parent_distinct: 2500, join_safety: N:1_SAFE, status: PASS}

@@ -1,0 +1,278 @@
+metric_views:
+  - name: member_claims_metric_view_v13
+    sql_fqn: "`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v13`"
+    yaml:
+      version: 1.1
+      comment: Member claims metric view at claim detail line grain for claims, paid amounts, ratios, denial and clean claim analytics.
+      source: aw_serverless_stable_catalog.aibi_member_claims.fact_claim_detail_v13
+      fields:
+        - name: Service Date
+          expr: clm_dtl_specific_dos_date
+          comment: Claim line service date.
+        - name: Service Month
+          expr: date_trunc('MONTH', clm_dtl_specific_dos_date)
+          comment: Common month dimension derived from claim line service date.
+        - name: Claim Type
+          expr: clm_dtl_claim_type
+          comment: Claim type on the claim detail line.
+        - name: Benefit Category
+          expr: clm_dtl_benefit_category
+          comment: Benefit category for the claim line.
+        - name: Benefit Level
+          expr: clm_dtl_benefit_level
+          comment: Benefit level for the claim line.
+        - name: Line Status
+          expr: clm_dtl_line_status
+          comment: Claim line status.
+        - name: Clean Claim Indicator
+          expr: clm_dtl_clean_claim_ind
+          comment: Indicator identifying clean claim lines.
+        - name: Place Of Service
+          expr: clm_dtl_place_of_service
+          comment: Place of service code.
+        - name: Rendering Provider Type
+          expr: clm_dtl_rendering_provider_type
+          comment: Rendering provider type.
+        - name: Rendering Provider Specialty
+          expr: clm_dtl_rendering_provider_spec
+          comment: Rendering provider specialty.
+        - name: Participating Provider
+          expr: clm_dtl_participating_provider
+          comment: Participating provider indicator or label.
+        - name: Adjudication Status
+          expr: clm_dtl_adjudication_status
+          comment: Claim line adjudication status.
+        - name: Procedure Code
+          expr: clm_dtl_procedure_code
+          comment: Procedure code for the claim line.
+        - name: Revenue Code
+          expr: clm_dtl_revenue_code
+          comment: Revenue code for the claim line.
+      measures:
+        - name: Total Claims
+          expr: COUNT(DISTINCT clm_dtl_claim_id)
+          comment: Count of distinct claims.
+          format:
+            type: number
+            decimal_places:
+              type: exact
+              places: 0
+        - name: Total Claim Lines
+          expr: COUNT(*)
+          comment: Count of claim detail service lines.
+          format:
+            type: number
+            decimal_places:
+              type: exact
+              places: 0
+        - name: Total Paid Amount
+          expr: SUM(clm_dtl_paid_amt)
+          comment: Total paid amount across claim detail lines.
+          format:
+            type: currency
+            currency_code: USD
+            decimal_places:
+              type: exact
+              places: 2
+        - name: Average Paid per Claim
+          expr: MEASURE(`Total Paid Amount`) / NULLIF(MEASURE(`Total Claims`), 0)
+          comment: Average paid amount per distinct claim.
+          format:
+            type: currency
+            currency_code: USD
+            decimal_places:
+              type: exact
+              places: 2
+        - name: Total Billed Amount
+          expr: SUM(clm_dtl_billed_amt)
+          comment: Total billed amount across claim lines.
+          format:
+            type: currency
+            currency_code: USD
+            decimal_places:
+              type: exact
+              places: 2
+        - name: Total Allowed Amount
+          expr: SUM(clm_dtl_allowed_amt)
+          comment: Total allowed amount across claim lines.
+          format:
+            type: currency
+            currency_code: USD
+            decimal_places:
+              type: exact
+              places: 2
+        - name: Unique Claim Members
+          expr: COUNT(DISTINCT clm_dtl_member_nbr_sk)
+          comment: Count of distinct member identifiers present on claim detail lines.
+          format:
+            type: number
+            decimal_places:
+              type: exact
+              places: 0
+        - name: Denied Lines
+          expr: SUM(CASE WHEN clm_dtl_line_status = 'Denied' OR clm_dtl_adjudication_status = 'Denied' THEN 1 ELSE 0 END)
+          comment: Count of denied claim lines.
+          format:
+            type: number
+            decimal_places:
+              type: exact
+              places: 0
+        - name: Clean Claim Lines
+          expr: SUM(CASE WHEN clm_dtl_clean_claim_ind = 'Y' THEN 1 ELSE 0 END)
+          comment: Count of clean claim lines.
+          format:
+            type: number
+            decimal_places:
+              type: exact
+              places: 0
+        - name: Denial Rate
+          expr: MEASURE(`Denied Lines`) / NULLIF(MEASURE(`Total Claim Lines`), 0)
+          comment: Denied lines divided by total claim lines.
+          format:
+            type: percentage
+            decimal_places:
+              type: exact
+              places: 2
+        - name: Clean Claim Rate
+          expr: MEASURE(`Clean Claim Lines`) / NULLIF(MEASURE(`Total Claim Lines`), 0)
+          comment: Clean claim lines divided by total claim lines.
+          format:
+            type: percentage
+            decimal_places:
+              type: exact
+              places: 2
+        - name: Payment to Billed Ratio
+          expr: MEASURE(`Total Paid Amount`) / NULLIF(MEASURE(`Total Billed Amount`), 0)
+          comment: Total paid divided by total billed amount.
+          format:
+            type: percentage
+            decimal_places:
+              type: exact
+              places: 2
+        - name: Payment to Allowed Ratio
+          expr: MEASURE(`Total Paid Amount`) / NULLIF(MEASURE(`Total Allowed Amount`), 0)
+          comment: Total paid divided by total allowed amount.
+          format:
+            type: percentage
+            decimal_places:
+              type: exact
+              places: 2
+        - name: Average Paid per Member
+          expr: MEASURE(`Total Paid Amount`) / NULLIF(MEASURE(`Unique Claim Members`), 0)
+          comment: Average paid amount per distinct claim member identifier.
+          format:
+            type: currency
+            currency_code: USD
+            decimal_places:
+              type: exact
+              places: 2
+        - name: Claims per Member
+          expr: MEASURE(`Total Claims`) / NULLIF(MEASURE(`Unique Claim Members`), 0)
+          comment: Distinct claims divided by distinct claim members.
+          format:
+            type: number
+            decimal_places:
+              type: exact
+              places: 2
+        - name: Lines per Claim
+          expr: MEASURE(`Total Claim Lines`) / NULLIF(MEASURE(`Total Claims`), 0)
+          comment: Claim line count divided by distinct claim count.
+          format:
+            type: number
+            decimal_places:
+              type: exact
+              places: 2
+        - name: Inpatient Paid Amount
+          expr: SUM(CASE WHEN clm_dtl_claim_type = 'Institutional' THEN clm_dtl_paid_amt ELSE 0 END)
+          comment: Paid amount for institutional claim type lines.
+          format:
+            type: currency
+            currency_code: USD
+            decimal_places:
+              type: exact
+              places: 2
+        - name: Outpatient Paid Amount
+          expr: SUM(CASE WHEN clm_dtl_claim_type = 'Professional' THEN clm_dtl_paid_amt ELSE 0 END)
+          comment: Paid amount for professional claim type lines.
+          format:
+            type: currency
+            currency_code: USD
+            decimal_places:
+              type: exact
+              places: 2
+  - name: member_claims_enrollment_metric_view_v13
+    sql_fqn: "`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_enrollment_metric_view_v13`"
+    yaml:
+      version: 1.1
+      comment: Member enrollment metric view at enrollment coverage record grain for active members, new enrollment, and geography slices.
+      source: aw_serverless_stable_catalog.aibi_member_claims.fact_member_enrollment_v13
+      fields:
+        - name: Service Date
+          expr: source.mbr_enr_effective_date
+          comment: Enrollment effective date.
+        - name: Service Month
+          expr: date_trunc('MONTH', source.mbr_enr_effective_date)
+          comment: Common month dimension derived from enrollment effective date.
+        - name: Line Of Business
+          expr: source.mbr_enr_line_of_business
+          comment: Enrollment line of business.
+        - name: Plan Id
+          expr: source.mbr_enr_plan_id
+          comment: Enrollment plan identifier.
+        - name: Enrollment Status
+          expr: source.mbr_enr_status
+          comment: Enrollment status.
+        - name: Enrollment Group
+          expr: source.mbr_enr_group_name
+          comment: Enrollment group name.
+        - name: Member State
+          expr: member.mbr_state
+          comment: Current member state from member dimension.
+        - name: Member Sex
+          expr: member.mbr_sex
+          comment: Current member sex from member dimension.
+        - name: Member Race
+          expr: member.mbr_race
+          comment: Current member race from member dimension.
+        - name: Member Ethnicity
+          expr: member.mbr_ethnicity
+          comment: Current member ethnicity from member dimension.
+      measures:
+        - name: New Member Enrollment
+          expr: COUNT(DISTINCT source.member_sk)
+          comment: Count of distinct members entering coverage by enrollment effective period.
+          format:
+            type: number
+            decimal_places:
+              type: exact
+              places: 0
+        - name: Active Members
+          expr: COUNT(DISTINCT source.member_sk)
+          comment: Distinct active members represented in enrollment records.
+          format:
+            type: number
+            decimal_places:
+              type: exact
+              places: 0
+        - name: Enrollment Records
+          expr: COUNT(*)
+          comment: Count of enrollment records.
+          format:
+            type: number
+            decimal_places:
+              type: exact
+              places: 0
+        - name: Terminated Members
+          expr: COUNT(DISTINCT CASE WHEN source.mbr_enr_termination_date IS NOT NULL THEN source.member_sk END)
+          comment: Count of distinct members with a termination date.
+          format:
+            type: number
+            decimal_places:
+              type: exact
+              places: 0
+      joins:
+        - name: member
+          source: aw_serverless_stable_catalog.aibi_member_claims.dim_member_v13
+          'on': source.member_sk = member.member_sk
+          rely:
+            at_most_one_match: true

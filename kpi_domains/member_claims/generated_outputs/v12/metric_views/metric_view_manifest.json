@@ -1,0 +1,65 @@
+{
+  "artifact_type": "metric_views",
+  "domain": "member_claims",
+  "version_suffix": "_v12",
+  "validation_source": "api_readback",
+  "source_hash": "4b3bfa68828cf4e4d1afac9f15fc2b3c06249c9c0e5b86767af203bf7bef051d",
+  "generated_hash": "ebf3143e8a31b12b536ffc14fed9a814fcaf6ff7ff4559ce6d750b89252c9bb3",
+  "readback_hash": "2158398baf6400dea7349c7fe125994bf2cfb0b60fc2ae9b1b12ea1ab61a2537",
+  "state_comparison": "match",
+  "warehouse_id": "2d8e531640ffa469",
+  "catalog": "aw_serverless_stable_catalog",
+  "schema": "aibi_member_claims",
+  "metric_views": [
+    {
+      "name": "member_claims_metric_view_v12",
+      "fqn": "aw_serverless_stable_catalog.aibi_member_claims.member_claims_metric_view_v12",
+      "source": "aw_serverless_stable_catalog.aibi_member_claims.fact_claim_detail_v12",
+      "measure_count": 18,
+      "dimension_count": 10,
+      "join_count": 0,
+      "smoke_test": true
+    },
+    {
+      "name": "member_claims_enrollment_metric_view_v12",
+      "fqn": "aw_serverless_stable_catalog.aibi_member_claims.member_claims_enrollment_metric_view_v12",
+      "source": "aw_serverless_stable_catalog.aibi_member_claims.fact_member_enrollment_v12",
+      "measure_count": 3,
+      "dimension_count": 6,
+      "join_count": 0,
+      "smoke_test": true
+    },
+    {
+      "name": "member_claims_member_metric_view_v12",
+      "fqn": "aw_serverless_stable_catalog.aibi_member_claims.member_claims_member_metric_view_v12",
+      "source": "aw_serverless_stable_catalog.aibi_member_claims.dim_member_v12",
+      "measure_count": 2,
+      "dimension_count": 9,
+      "join_count": 0,
+      "smoke_test": true
+    }
+  ],
+  "verification": [
+    {
+      "view": "member_claims_metric_view_v12",
+      "exists": true,
+      "smoke_test": true,
+      "measure_tested": "Total Claims"
+    },
+    {
+      "view": "member_claims_enrollment_metric_view_v12",
+      "exists": true,
+      "smoke_test": true,
+      "measure_tested": "New Member Enrollment"
+    },
+    {
+      "view": "member_claims_member_metric_view_v12",
+      "exists": true,
+      "smoke_test": true,
+      "measure_tested": "Members by Geography"
+    }
+  ],
+  "total_views": 3,
+  "total_views_deployed": 3,
+  "deploy_errors": []
+}

@@ -1,0 +1,23 @@
+{
+  "dashboard_id": "01f1b2fec53a1f179d94457d25e6f3d1",
+  "display_name": "member_claims_kpis_dashboard_v13",
+  "path": "/dashboardsv3/01f1b2fec53a1f179d94457d25e6f3d1",
+  "published": true,
+  "validation_source": "api_readback",
+  "source_hash": "28a3d552134f2736bc7f5f94938ddfa36b31c2fa5a7a0119220cb62508cdc80c",
+  "readback_hash": "fbc039518f664edd4c1f25604970030ec2b5ce3312d1be3e98a0128823a46bbe",
+  "state_comparison": "match",
+  "total_pages": 4,
+  "canvas_pages": 3,
+  "filter_pages": 1,
+  "total_canvas_widgets": 22,
+  "total_filters": 4,
+  "datasets": [
+    "ds_member_claims_metric_view_v13",
+    "ds_member_claims_enrollment_metric_view_v13"
+  ],
+  "metric_views": [
+    "`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v13`",
+    "`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_enrollment_metric_view_v13`"
+  ]
+}

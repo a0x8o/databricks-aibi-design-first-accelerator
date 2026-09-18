@@ -1,0 +1,272 @@
+version: 1
+source: dashboard_stage_template_contract
+generated_at_step: create_dashboards_v12
+warehouse_id: 2d8e531640ffa469
+parent_path: /Users/arun.wagle@databricks.com/databricks-aibi-design-first-accelerator/kpi_domains/member_claims/generated_outputs/v12/dashboards
+skipped_kpis:
+- kpi: MC-4
+  dashboard_status: DASHBOARD_KPI_SKIPPED
+  reason: NOT_IMPLEMENTED in metric view validation
+- kpi: W-2
+  dashboard_status: DASHBOARD_KPI_SKIPPED
+  reason: NOT_IMPLEMENTED in metric view validation
+- kpi: MC-1
+  dashboard_status: DASHBOARD_KPI_SKIPPED
+  reason: SKIPPED_UNSAFE_GRAIN in metric view validation
+- kpi: MC-2
+  dashboard_status: DASHBOARD_KPI_SKIPPED
+  reason: SKIPPED_UNSAFE_GRAIN in metric view validation
+- kpi: MC-3
+  dashboard_status: DASHBOARD_KPI_SKIPPED
+  reason: SKIPPED_UNSAFE_GRAIN in metric view validation
+- kpi: W-1
+  dashboard_status: DASHBOARD_KPI_SKIPPED
+  reason: SKIPPED_UNSUPPORTED_METRIC_VIEW_FEATURE in metric view validation
+- kpi: ADD-10
+  dashboard_status: DASHBOARD_KPI_SKIPPED
+  reason: SKIPPED_UNRESOLVED_RELATIONSHIP in metric view validation
+dashboards:
+- name: member_claims_kpis_dashboard_v12
+  metric_views:
+  - '`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v12`'
+  filter_dimensions:
+  - field_name: service_month
+    display_name: Service Month
+  - field_name: claim_type
+    display_name: Claim Type
+  - field_name: line_status
+    display_name: Line Status
+  - field_name: adjudication_status
+    display_name: Adjudication Status
+  pages:
+  - title: Executive Summary
+    purpose: Headline claims volume, payment, and cost intensity.
+    widgets:
+    - type: text
+      title: '# Member Claims KPI Executive Summary'
+    - type: counter
+      title: Total Claims
+      measure: Total Claims
+      agg: SUM
+      display_name: Total Claims
+    - type: counter
+      title: Total Claim Lines
+      measure: Total Claim Lines
+      agg: SUM
+      display_name: Claim Lines
+    - type: counter
+      title: Total Paid Amount
+      measure: Total Paid Amount
+      agg: SUM
+      display_name: Total Paid
+    - type: counter
+      title: Average Paid per Claim
+      measure: Average Paid per Claim
+      agg: AVG
+      display_name: Avg Paid/Claim
+    - type: bar
+      title: Paid Amount by Claim Type
+      measure: Total Paid Amount
+      dimension: claim_type
+      agg: SUM
+      y_display: Total Paid
+    - type: line
+      title: Monthly Paid Amount Trend
+      measure: Total Paid Amount
+      dimension: service_month
+      agg: SUM
+      y_display: Total Paid
+  - title: Quality and Adjudication
+    purpose: Denial, clean-claim, and payment-ratio performance.
+    widgets:
+    - type: text
+      title: '# Claims Quality and Adjudication'
+    - type: counter
+      title: Denied Lines
+      measure: Denied Lines
+      agg: SUM
+      display_name: Denied Lines
+    - type: counter
+      title: Denial Rate
+      measure: Denial Rate
+      agg: AVG
+      display_name: Denial Rate
+    - type: counter
+      title: Clean Claim Rate
+      measure: Clean Claim Rate
+      agg: AVG
+      display_name: Clean Claim Rate
+    - type: counter
+      title: Payment-to-Billed Ratio
+      measure: Payment-to-Billed Ratio
+      agg: AVG
+      display_name: Paid/Billed
+    - type: bar
+      title: Denial Rate by Claim Type
+      measure: Denial Rate
+      dimension: claim_type
+      agg: AVG
+      y_display: Denial Rate
+    - type: line
+      title: Clean Claim Rate Trend
+      measure: Clean Claim Rate
+      dimension: service_month
+      agg: AVG
+      y_display: Clean Claim Rate
+  - title: Utilization and Cost Detail
+    purpose: Member-related claim utilization and cost intensity.
+    widgets:
+    - type: text
+      title: '# Claims Utilization and Cost Detail'
+    - type: counter
+      title: Unique Claim Members
+      measure: Unique Claim Members
+      agg: SUM
+      display_name: Unique Members
+    - type: counter
+      title: Claims per Member
+      measure: Claims per Member
+      agg: AVG
+      display_name: Claims/Member
+    - type: counter
+      title: Lines per Claim
+      measure: Lines per Claim
+      agg: AVG
+      display_name: Lines/Claim
+    - type: counter
+      title: Average Paid per Member
+      measure: Average Paid per Member
+      agg: AVG
+      display_name: Avg Paid/Member
+    - type: bar
+      title: Claims by Line Status
+      measure: Total Claims
+      dimension: line_status
+      agg: SUM
+      y_display: Claims
+    - type: line
+      title: Claims per Member Trend
+      measure: Claims per Member
+      dimension: service_month
+      agg: AVG
+      y_display: Claims/Member
+  dashboard_id: 01f1b2d63dc9100e8940ef1d240ebc48
+- name: member_claims_utilization_dashboard_v12
+  metric_views:
+  - '`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_enrollment_metric_view_v12`'
+  - '`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_member_metric_view_v12`'
+  filter_dimensions:
+  - field_name: service_month
+    display_name: Service Month
+  - field_name: line_of_business
+    display_name: Line of Business
+  - field_name: enrollment_status
+    display_name: Enrollment Status
+  - field_name: plan_id
+    display_name: Plan ID
+  pages:
+  - title: Enrollment Summary
+    purpose: Headline member enrollment and active member counts.
+    widgets:
+    - type: text
+      title: '# Enrollment Summary'
+    - type: counter
+      title: New Member Enrollment
+      measure: New Member Enrollment
+      agg: SUM
+      display_name: New Enrollment
+    - type: counter
+      title: Active Members
+      measure: Active Members
+      agg: SUM
+      display_name: Active Members
+    - type: counter
+      title: Enrollment Records
+      measure: Enrollment Records
+      agg: SUM
+      display_name: Records
+    - type: bar
+      title: New Enrollment by Line of Business
+      measure: New Member Enrollment
+      dimension: line_of_business
+      agg: SUM
+      y_display: New Enrollment
+    - type: line
+      title: Monthly Active Member Trend
+      measure: Active Members
+      dimension: service_month
+      agg: SUM
+      y_display: Active Members
+  - title: Enrollment Trend and Plan Detail
+    purpose: Trends and plan-level comparisons for enrollment growth and activity.
+    widgets:
+    - type: text
+      title: '# Enrollment Trends and Plan Detail'
+    - type: line
+      title: Monthly New Enrollment Trend
+      measure: New Member Enrollment
+      dimension: service_month
+      agg: SUM
+      y_display: New Enrollment
+    - type: bar
+      title: Active Members by Plan
+      measure: Active Members
+      dimension: plan_id
+      agg: SUM
+      y_display: Active Members
+    - type: bar
+      title: Enrollment Records by Plan
+      measure: Enrollment Records
+      dimension: plan_id
+      agg: SUM
+      y_display: Records
+    - type: bar
+      title: New Enrollment by Status
+      measure: New Member Enrollment
+      dimension: enrollment_status
+      agg: SUM
+      y_display: New Enrollment
+  - title: Member Geography and Demographics
+    purpose: Member population distribution by state, business line, and creation
+      period.
+    widgets:
+    - type: text
+      title: '# Member Geography and Demographics'
+    - type: counter
+      title: Current Members
+      measure: Current Members
+      agg: SUM
+      display_name: Current Members
+    - type: counter
+      title: Members by Geography
+      measure: Members by Geography
+      agg: SUM
+      display_name: Geo Members
+    - type: bar
+      title: Members by State
+      measure: Members by Geography
+      dimension: state
+      agg: SUM
+      y_display: Members
+    - type: bar
+      title: Current Members by Line of Business
+      measure: Current Members
+      dimension: line_of_business
+      agg: SUM
+      y_display: Members
+    - type: line
+      title: Current Members Created by Month
+      measure: Current Members
+      dimension: service_month
+      agg: SUM
+      y_display: Current Members
+  dashboard_id: 01f1b2d63ee91078840d3692c9aeb7cf
+page_count_validation:
+  member_claims_kpis_dashboard_v12:
+    expected_canvas_pages: 3
+    actual_canvas_pages: 3
+    status: PASS
+  member_claims_utilization_dashboard_v12:
+    expected_canvas_pages: 3
+    actual_canvas_pages: 3
+    status: PASS

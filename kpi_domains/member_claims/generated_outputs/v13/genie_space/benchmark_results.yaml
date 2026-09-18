@@ -1,0 +1,24 @@
+space_id: 01f1b31272b01bef962dd25299c857ae
+title: member_claims_analytics_genie_v13
+validation_method: benchmark_sql_ground_truth_execution
+benchmark_total: 15
+benchmark_passed: 15
+benchmark_failed: 0
+pass_rate: 1.0
+status: PASS
+results:
+- {qid: b1, status: PASS, question: Give me overall claim volume line volume and paid dollars.}
+- {qid: b2, status: PASS, question: Trend claims spend by month of service.}
+- {qid: b3, status: PASS, question: Rank claim categories by paid dollars.}
+- {qid: b4, status: PASS, question: Which benefit categories have the greatest denial percentage?}
+- {qid: b5, status: PASS, question: For Professional claims what share are clean claims?}
+- {qid: b6, status: PASS, question: Show top specialties by total paid claims spend.}
+- {qid: b7, status: PASS, question: Compare claim counts and average claim cost by claim type.}
+- {qid: b8, status: PASS, question: Show paid-to-billed and paid-to-allowed percentages by network tier.}
+- {qid: b9, status: PASS, question: Calculate line density per claim for each line status.}
+- {qid: b10, status: PASS, question: Compare institutional and professional paid amounts.}
+- {qid: b11, status: PASS, question: Break out active membership by LOB.}
+- {qid: b12, status: PASS, question: Show new enrollments over time by effective month.}
+- {qid: b13, status: PASS, question: What are the top states for enrolled active members?}
+- {qid: b14, status: PASS, question: Segment active members by sex and race.}
+- {qid: b15, status: PASS, question: By enrollment status how many terminations and coverage records exist?}

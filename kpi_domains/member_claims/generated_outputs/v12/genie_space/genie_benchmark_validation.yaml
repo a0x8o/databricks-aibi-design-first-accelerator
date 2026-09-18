@@ -1,0 +1,30 @@
+status: PASS
+validation_source: authoritative_metric_view_sql
+benchmark_summary:
+  total: 20
+  passed: 20
+  failed: 0
+  pass_rate: 1.0
+  pass_rate_pct: 100
+  threshold_pct: 80
+benchmarks:
+  - {id: b01, status: PASS, question: "How much has been paid on claims in total?", failure_reason: null}
+  - {id: b02, status: PASS, question: "Show monthly paid dollars for claims.", failure_reason: null}
+  - {id: b03, status: PASS, question: "Rank claim categories by distinct claim count.", failure_reason: null}
+  - {id: b04, status: PASS, question: "What is paid spend and average paid claim cost by claim type?", failure_reason: null}
+  - {id: b05, status: PASS, question: "For Professional claims, what percent of lines were denied?", failure_reason: null}
+  - {id: b06, status: PASS, question: "List service line volume and denied line count by line status.", failure_reason: null}
+  - {id: b07, status: PASS, question: "Trend denied-line percentage and clean-claim percentage over service months.", failure_reason: null}
+  - {id: b08, status: PASS, question: "Top five places of service by paid claim dollars.", failure_reason: null}
+  - {id: b09, status: PASS, question: "Which procedure codes appear most frequently on claim lines?", failure_reason: null}
+  - {id: b10, status: PASS, question: "Compare paid-to-billed and paid-to-allowed percentages by revenue code.", failure_reason: null}
+  - {id: b11, status: PASS, question: "For lines identified as Clean, what is the clean claim percentage?", failure_reason: null}
+  - {id: b12, status: PASS, question: "Compare institutional/inpatient paid and professional/outpatient paid by claim category.", failure_reason: null}
+  - {id: b13, status: PASS, question: "Give me the monthly trend of active membership.", failure_reason: null}
+  - {id: b14, status: PASS, question: "By LOB, show active enrolled members and new member count.", failure_reason: null}
+  - {id: b15, status: PASS, question: "How many enrollment records are in each enrollment status?", failure_reason: null}
+  - {id: b16, status: PASS, question: "For Medicare, which plan IDs have the largest new enrollment?", failure_reason: null}
+  - {id: b17, status: PASS, question: "Rank member states by member count.", failure_reason: null}
+  - {id: b18, status: PASS, question: "What is current membership by gender/sex?", failure_reason: null}
+  - {id: b19, status: PASS, question: "Show geographic member counts by race and ethnicity categories.", failure_reason: null}
+  - {id: b20, status: PASS, question: "For active members only, split current members by LOB and relationship.", failure_reason: null}

@@ -1,0 +1,127 @@
+datasets:
+  - name: ds_member_claims_metric_view_v13
+    dashboard: member_claims_kpis_dashboard_v13
+    page: Financial Overview / Claims Analysis
+    widget: shared claim widgets
+    sql_status: PASS
+    metric_view: "`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v13`"
+    expected_shape: grouped rows by all claim metric view dimensions with all measures wrapped in MEASURE()
+    actual_rows_sampled: 5
+    actual_columns:
+      - Adjudication Status
+      - Benefit Category
+      - Benefit Level
+      - Claim Type
+      - Clean Claim Indicator
+      - Line Status
+      - Participating Provider
+      - Place Of Service
+      - Procedure Code
+      - Rendering Provider Specialty
+      - Rendering Provider Type
+      - Revenue Code
+      - Service Date
+      - Service Month
+      - Average Paid per Claim
+      - Average Paid per Member
+      - Claims per Member
+      - Clean Claim Lines
+      - Clean Claim Rate
+      - Denial Rate
+      - Denied Lines
+      - Inpatient Paid Amount
+      - Lines per Claim
+      - Outpatient Paid Amount
+      - Payment to Allowed Ratio
+      - Payment to Billed Ratio
+      - Total Allowed Amount
+      - Total Billed Amount
+      - Total Claim Lines
+      - Total Claims
+      - Total Paid Amount
+      - Unique Claim Members
+    measures: [Average Paid per Claim, Average Paid per Member, Claims per Member, Clean Claim Lines, Clean Claim Rate, Denial Rate, Denied Lines, Inpatient Paid Amount, Lines per Claim, Outpatient Paid Amount, Payment to Allowed Ratio, Payment to Billed Ratio, Total Allowed Amount, Total Billed Amount, Total Claim Lines, Total Claims, Total Paid Amount, Unique Claim Members]
+    dimensions: [Adjudication Status, Benefit Category, Benefit Level, Claim Type, Clean Claim Indicator, Line Status, Participating Provider, Place Of Service, Procedure Code, Rendering Provider Specialty, Rendering Provider Type, Revenue Code, Service Date, Service Month]
+    filters: [Service Date, Claim Type, Benefit Category, Line Status]
+    semantic_status: PASS
+    failure_reason: null
+  - name: ds_member_claims_enrollment_metric_view_v13
+    dashboard: member_claims_kpis_dashboard_v13
+    page: Member Demographics
+    widget: shared enrollment widgets
+    sql_status: PASS
+    metric_view: "`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_enrollment_metric_view_v13`"
+    expected_shape: grouped rows by all enrollment metric view dimensions with all measures wrapped in MEASURE()
+    actual_rows_sampled: 5
+    actual_columns:
+      - Enrollment Group
+      - Enrollment Status
+      - Line Of Business
+      - Member Ethnicity
+      - Member Race
+      - Member Sex
+      - Member State
+      - Plan Id
+      - Service Date
+      - Service Month
+      - Active Members
+      - Enrollment Records
+      - New Member Enrollment
+      - Terminated Members
+    measures: [Active Members, Enrollment Records, New Member Enrollment, Terminated Members]
+    dimensions: [Enrollment Group, Enrollment Status, Line Of Business, Member Ethnicity, Member Race, Member Sex, Member State, Plan Id, Service Date, Service Month]
+    filters: [Service Date]
+    semantic_status: PASS
+    failure_reason: null
+  - name: ds_main
+    dashboard: member_claims_utilization_dashboard_v13
+    page: Utilization Patterns / Provider Insights / Operational Metrics
+    widget: shared utilization claim widgets
+    sql_status: PASS
+    metric_view: "`aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v13`"
+    expected_shape: grouped rows by all claim metric view dimensions with all measures wrapped in MEASURE()
+    actual_rows_sampled: 5
+    actual_columns:
+      - Adjudication Status
+      - Benefit Category
+      - Benefit Level
+      - Claim Type
+      - Clean Claim Indicator
+      - Line Status
+      - Participating Provider
+      - Place Of Service
+      - Procedure Code
+      - Rendering Provider Specialty
+      - Rendering Provider Type
+      - Revenue Code
+      - Service Date
+      - Service Month
+      - Average Paid per Claim
+      - Average Paid per Member
+      - Claims per Member
+      - Clean Claim Lines
+      - Clean Claim Rate
+      - Denial Rate
+      - Denied Lines
+      - Inpatient Paid Amount
+      - Lines per Claim
+      - Outpatient Paid Amount
+      - Payment to Allowed Ratio
+      - Payment to Billed Ratio
+      - Total Allowed Amount
+      - Total Billed Amount
+      - Total Claim Lines
+      - Total Claims
+      - Total Paid Amount
+      - Unique Claim Members
+    measures: [Average Paid per Claim, Average Paid per Member, Claims per Member, Clean Claim Lines, Clean Claim Rate, Denial Rate, Denied Lines, Inpatient Paid Amount, Lines per Claim, Outpatient Paid Amount, Payment to Allowed Ratio, Payment to Billed Ratio, Total Allowed Amount, Total Billed Amount, Total Claim Lines, Total Claims, Total Paid Amount, Unique Claim Members]
+    dimensions: [Adjudication Status, Benefit Category, Benefit Level, Claim Type, Clean Claim Indicator, Line Status, Participating Provider, Place Of Service, Procedure Code, Rendering Provider Specialty, Rendering Provider Type, Revenue Code, Service Date, Service Month]
+    filters: [Service Date, Claim Type, Rendering Provider Specialty, Participating Provider]
+    semantic_status: PASS
+    failure_reason: null
+validation_summary:
+  source: execute_sql_smoke_tests
+  all_sql_status: PASS
+  all_semantic_status: PASS
+  datasets_validated: 3
+  queries_validated: 3

@@ -1,0 +1,105 @@
+genie_design:
+  instructions: |-
+    ## Domain
+    This Genie Space provides governed healthcare member claims and enrollment analytics using validated Databricks Metric Views only. The claims view answers claim volume, service-line, paid amount, denial, clean-claim, and claim-mix questions. The enrollment view answers new enrollment, active member distribution, terminations, geography, and demographic questions.
+
+    ## Authoritative Metric Views
+    - `aw_serverless_stable_catalog.aibi_member_claims.member_claims_metric_view_v13`: claim detail line grain for C-1 Total Claims, C-2 Total Claim Lines, C-3 Total Paid Amount, C-4 Average Paid per Claim, plus derived denial, clean-claim, payment ratio, and paid amount measures.
+    - `aw_serverless_stable_catalog.aibi_member_claims.member_claims_enrollment_metric_view_v13`: member enrollment coverage record grain for M-1 New Member Enrollment, M-2 Members by Line of Business, and M-3 Members by Geography.
+    - Do NOT mix measures from different metric views in one SQL query. Use the claims view for claim/cost/denial questions and the enrollment view for member/enrollment/geography questions.
+
+    ## Measures (always use MEASURE(`name`))
+    - Claims measures: `Total Claims`, `Total Claim Lines`, `Total Paid Amount`, `Average Paid per Claim`, `Total Billed Amount`, `Total Allowed Amount`, `Unique Claim Members`, `Denied Lines`, `Clean Claim Lines`, `Denial Rate`, `Clean Claim Rate`, `Payment to Billed Ratio`, `Payment to Allowed Ratio`, `Average Paid per Member`, `Claims per Member`, `Lines per Claim`, `Inpatient Paid Amount`, `Outpatient Paid Amount`.
+    - Enrollment measures: `New Member Enrollment`, `Active Members`, `Enrollment Records`, `Terminated Members`.
+
+    ## Dimensions
+    - Claims dimensions: `Service Date`, `Service Month`, `Claim Type`, `Benefit Category`, `Benefit Level`, `Line Status`, `Clean Claim Indicator`, `Place Of Service`, `Rendering Provider Type`, `Rendering Provider Specialty`, `Participating Provider`, `Adjudication Status`, `Procedure Code`, `Revenue Code`.
+    - Enrollment dimensions: `Service Date`, `Service Month`, `Line Of Business`, `Plan Id`, `Enrollment Status`, `Enrollment Group`, `Member State`, `Member Sex`, `Member Race`, `Member Ethnicity`.
+
+    ## Query Rules and Warnings
+    - Query measures only with `MEASURE(`name`)`; never rebuild formulas from raw source columns or raw SUM/COUNT logic.
+    - Use `GROUP BY ALL` whenever grouping by dimensions and order time trends by `Service Month`.
+    - Ratios such as `Average Paid per Claim`, `Denial Rate`, `Clean Claim Rate`, `Payment to Billed Ratio`, `Payment to Allowed Ratio`, `Average Paid per Member`, `Claims per Member`, and `Lines per Claim` are non-additive; do not sum them across groups or months.
+    - `Active Members` is semi-additive and must not be summed across time; use the metric view measure at the requested time grain.
+    - Excluded KPIs include PMPM, Claims per 1,000 Members, Utilization Rate, High-Cost Member Count, Rolling 3-Month PMPM, and MoM Active Member Growth because they were skipped or documented outside metric views.
+  metric_view_descriptions:
+    aw_serverless_stable_catalog.aibi_member_claims.member_claims_enrollment_metric_view_v13: Validated enrollment analytics at member enrollment coverage record grain. Supports new enrollment, active members, enrollment records, and terminations by line of business, plan, enrollment status, group, geography, sex, race, ethnicity, and service month.
+    aw_serverless_stable_catalog.aibi_member_claims.member_claims_metric_view_v13: Validated claims analytics at claim detail line grain. Supports claim counts, line counts, paid/billed/allowed dollars, average paid, denial and clean claim rates, payment ratios, inpatient/outpatient paid measures, and claim/provider/service dimensions.
+  sample_questions:
+    - {question: What are the total claims, claim lines, and paid amount?, pattern: HEADLINE, measures_tested: [Total Claims, Total Claim Lines, Total Paid Amount], dimensions_tested: []}
+    - {question: How has total paid amount trended by service month?, pattern: TIME_TREND, measures_tested: [Total Paid Amount], dimensions_tested: [Service Month]}
+    - {question: Which claim types have the highest paid amount?, pattern: DIMENSION_BREAKDOWN, measures_tested: [Total Paid Amount], dimensions_tested: [Claim Type]}
+    - {question: Show denial rate by benefit category., pattern: DIMENSION_BREAKDOWN, measures_tested: [Denial Rate], dimensions_tested: [Benefit Category]}
+    - {question: What is the clean claim rate for Professional claims?, pattern: FILTERED, measures_tested: [Clean Claim Rate], dimensions_tested: [Claim Type]}
+    - {question: Which rendering provider specialties have the top paid amount?, pattern: RANKING, measures_tested: [Total Paid Amount], dimensions_tested: [Rendering Provider Specialty]}
+    - {question: Compare total claims and average paid per claim across claim types., pattern: MULTI_MEASURE, measures_tested: [Total Claims, Average Paid per Claim], dimensions_tested: [Claim Type]}
+    - {question: How do payment to billed and payment to allowed ratios vary by benefit level?, pattern: RATIO, measures_tested: [Payment to Billed Ratio, Payment to Allowed Ratio], dimensions_tested: [Benefit Level]}
+    - {question: What are lines per claim by line status?, pattern: DIMENSION_BREAKDOWN, measures_tested: [Lines per Claim], dimensions_tested: [Line Status]}
+    - {question: What are the inpatient and outpatient paid amounts?, pattern: MULTI_MEASURE, measures_tested: [Inpatient Paid Amount, Outpatient Paid Amount], dimensions_tested: []}
+    - {question: How many active members are there by line of business?, pattern: DIMENSION_BREAKDOWN, measures_tested: [Active Members], dimensions_tested: [Line Of Business]}
+    - {question: What is the monthly trend for new member enrollment?, pattern: TIME_TREND, measures_tested: [New Member Enrollment], dimensions_tested: [Service Month]}
+    - {question: Which member states have the most active members?, pattern: RANKING, measures_tested: [Active Members], dimensions_tested: [Member State]}
+    - {question: Show active members by member sex and race., pattern: DIMENSION_BREAKDOWN, measures_tested: [Active Members], dimensions_tested: [Member Sex, Member Race]}
+    - {question: Compare terminated members and enrollment records by enrollment status., pattern: MULTI_MEASURE, measures_tested: [Terminated Members, Enrollment Records], dimensions_tested: [Enrollment Status]}
+  example_sqls:
+    - question: What are the total claims, claim lines, and paid amount?
+      sql: SELECT MEASURE(`Total Claims`) AS total_claims, MEASURE(`Total Claim Lines`) AS total_claim_lines, MEASURE(`Total Paid Amount`) AS total_paid_amount FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v13`
+    - question: How has total paid amount trended by service month?
+      sql: SELECT `Service Month` AS service_month, MEASURE(`Total Paid Amount`) AS total_paid_amount FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v13` GROUP BY ALL ORDER BY service_month
+    - question: Which claim types have the highest paid amount?
+      sql: SELECT `Claim Type` AS claim_type, MEASURE(`Total Paid Amount`) AS total_paid_amount FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v13` GROUP BY ALL ORDER BY total_paid_amount DESC
+    - question: Show denial rate by benefit category.
+      sql: SELECT `Benefit Category` AS benefit_category, MEASURE(`Denial Rate`) AS denial_rate FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v13` GROUP BY ALL ORDER BY denial_rate DESC
+    - question: What is the clean claim rate for Professional claims?
+      sql: SELECT MEASURE(`Clean Claim Rate`) AS clean_claim_rate FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v13` WHERE `Claim Type` = 'Professional'
+    - question: Which rendering provider specialties have the top paid amount?
+      sql: SELECT `Rendering Provider Specialty` AS rendering_provider_specialty, MEASURE(`Total Paid Amount`) AS total_paid_amount FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v13` GROUP BY ALL ORDER BY total_paid_amount DESC LIMIT 5
+    - question: Compare total claims and average paid per claim across claim types.
+      sql: SELECT `Claim Type` AS claim_type, MEASURE(`Total Claims`) AS total_claims, MEASURE(`Average Paid per Claim`) AS average_paid_per_claim FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v13` GROUP BY ALL ORDER BY total_claims DESC
+    - question: How do payment to billed and payment to allowed ratios vary by benefit level?
+      sql: SELECT `Benefit Level` AS benefit_level, MEASURE(`Payment to Billed Ratio`) AS payment_to_billed_ratio, MEASURE(`Payment to Allowed Ratio`) AS payment_to_allowed_ratio FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v13` GROUP BY ALL ORDER BY benefit_level
+    - question: What are lines per claim by line status?
+      sql: SELECT `Line Status` AS line_status, MEASURE(`Lines per Claim`) AS lines_per_claim FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v13` GROUP BY ALL ORDER BY lines_per_claim DESC
+    - question: What are the inpatient and outpatient paid amounts?
+      sql: SELECT MEASURE(`Inpatient Paid Amount`) AS inpatient_paid_amount, MEASURE(`Outpatient Paid Amount`) AS outpatient_paid_amount FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v13`
+    - question: How many active members are there by line of business?
+      sql: SELECT `Line Of Business` AS line_of_business, MEASURE(`Active Members`) AS active_members FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_enrollment_metric_view_v13` GROUP BY ALL ORDER BY active_members DESC
+    - question: What is the monthly trend for new member enrollment?
+      sql: SELECT `Service Month` AS service_month, MEASURE(`New Member Enrollment`) AS new_member_enrollment FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_enrollment_metric_view_v13` GROUP BY ALL ORDER BY service_month
+    - question: Which member states have the most active members?
+      sql: SELECT `Member State` AS member_state, MEASURE(`Active Members`) AS active_members FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_enrollment_metric_view_v13` GROUP BY ALL ORDER BY active_members DESC LIMIT 5
+    - question: Show active members by member sex and race.
+      sql: SELECT `Member Sex` AS member_sex, `Member Race` AS member_race, MEASURE(`Active Members`) AS active_members FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_enrollment_metric_view_v13` GROUP BY ALL ORDER BY active_members DESC
+    - question: Compare terminated members and enrollment records by enrollment status.
+      sql: SELECT `Enrollment Status` AS enrollment_status, MEASURE(`Terminated Members`) AS terminated_members, MEASURE(`Enrollment Records`) AS enrollment_records FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_enrollment_metric_view_v13` GROUP BY ALL ORDER BY terminated_members DESC
+  benchmark_questions:
+    - question: Give me overall claim volume, line volume, and paid dollars.
+      sql: SELECT MEASURE(`Total Claims`) AS total_claims, MEASURE(`Total Claim Lines`) AS total_claim_lines, MEASURE(`Total Paid Amount`) AS total_paid_amount FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v13`
+    - question: Trend claims spend by month of service.
+      sql: SELECT `Service Month` AS service_month, MEASURE(`Total Paid Amount`) AS total_paid_amount FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v13` GROUP BY ALL ORDER BY service_month
+    - question: Rank claim categories by paid dollars.
+      sql: SELECT `Claim Type` AS claim_type, MEASURE(`Total Paid Amount`) AS total_paid_amount FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v13` GROUP BY ALL ORDER BY total_paid_amount DESC
+    - question: Which benefit categories have the greatest denial percentage?
+      sql: SELECT `Benefit Category` AS benefit_category, MEASURE(`Denial Rate`) AS denial_rate FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v13` GROUP BY ALL ORDER BY denial_rate DESC
+    - question: For Professional claims, what share are clean claims?
+      sql: SELECT MEASURE(`Clean Claim Rate`) AS clean_claim_rate FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v13` WHERE `Claim Type` = 'Professional'
+    - question: Show top specialties by total paid claims spend.
+      sql: SELECT `Rendering Provider Specialty` AS rendering_provider_specialty, MEASURE(`Total Paid Amount`) AS total_paid_amount FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v13` GROUP BY ALL ORDER BY total_paid_amount DESC LIMIT 5
+    - question: Compare claim counts and average claim cost by claim type.
+      sql: SELECT `Claim Type` AS claim_type, MEASURE(`Total Claims`) AS total_claims, MEASURE(`Average Paid per Claim`) AS average_paid_per_claim FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v13` GROUP BY ALL ORDER BY total_claims DESC
+    - question: Show paid-to-billed and paid-to-allowed percentages by network tier.
+      sql: SELECT `Benefit Level` AS benefit_level, MEASURE(`Payment to Billed Ratio`) AS payment_to_billed_ratio, MEASURE(`Payment to Allowed Ratio`) AS payment_to_allowed_ratio FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v13` GROUP BY ALL ORDER BY benefit_level
+    - question: Calculate line density per claim for each line status.
+      sql: SELECT `Line Status` AS line_status, MEASURE(`Lines per Claim`) AS lines_per_claim FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v13` GROUP BY ALL ORDER BY lines_per_claim DESC
+    - question: Compare institutional and professional paid amounts.
+      sql: SELECT MEASURE(`Inpatient Paid Amount`) AS inpatient_paid_amount, MEASURE(`Outpatient Paid Amount`) AS outpatient_paid_amount FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_metric_view_v13`
+    - question: Break out active membership by LOB.
+      sql: SELECT `Line Of Business` AS line_of_business, MEASURE(`Active Members`) AS active_members FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_enrollment_metric_view_v13` GROUP BY ALL ORDER BY active_members DESC
+    - question: Show new enrollments over time by effective month.
+      sql: SELECT `Service Month` AS service_month, MEASURE(`New Member Enrollment`) AS new_member_enrollment FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_enrollment_metric_view_v13` GROUP BY ALL ORDER BY service_month
+    - question: What are the top states for enrolled active members?
+      sql: SELECT `Member State` AS member_state, MEASURE(`Active Members`) AS active_members FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_enrollment_metric_view_v13` GROUP BY ALL ORDER BY active_members DESC LIMIT 5
+    - question: Segment active members by sex and race.
+      sql: SELECT `Member Sex` AS member_sex, `Member Race` AS member_race, MEASURE(`Active Members`) AS active_members FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_enrollment_metric_view_v13` GROUP BY ALL ORDER BY active_members DESC
+    - question: By enrollment status, how many terminations and coverage records exist?
+      sql: SELECT `Enrollment Status` AS enrollment_status, MEASURE(`Terminated Members`) AS terminated_members, MEASURE(`Enrollment Records`) AS enrollment_records FROM `aw_serverless_stable_catalog`.`aibi_member_claims`.`member_claims_enrollment_metric_view_v13` GROUP BY ALL ORDER BY terminated_members DESC

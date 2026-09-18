@@ -1,0 +1,16 @@
+catalog: aw_serverless_stable_catalog
+schema: aibi_member_claims
+version_suffix: _v13
+output_folder: /Workspace/Users/arun.wagle@databricks.com/databricks-aibi-design-first-accelerator/kpi_domains/member_claims/generated_outputs/v13
+status: completed
+current_step: generate_documentation
+completed_phases:
+  - gather_artifacts
+  - generate_documentation
+  - validate_documentation
+artifacts:
+  readme: /Workspace/Users/arun.wagle@databricks.com/databricks-aibi-design-first-accelerator/kpi_domains/member_claims/generated_outputs/v13/documentation/readme.md
+  run_manifest: /Workspace/Users/arun.wagle@databricks.com/databricks-aibi-design-first-accelerator/kpi_domains/member_claims/generated_outputs/v13/run_manifest.json
+overall_run_status: PARTIAL_SUCCESS
+notes:
+  - ground_truth_validation.yaml was missing; documentation used individual manifests and API-readback validation artifacts.
