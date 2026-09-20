@@ -1,0 +1,147 @@
+# Versioned source contract for Genie design and benchmark quality.
+# Runtime stages consume only the Step-0-resolved snapshot frozen in run_context.validation.
+schema_version: "1.0"
+
+contract:
+  name: genie_quality
+  contract_version: "2026.09.1"
+  policy_id: GENIE_QUALITY_V1
+  status: APPROVED
+  owner: aibi_design_first_accelerator
+
+resolution_policy:
+  contract_required: true
+  source_path_authority: run_context.inputs.genie_quality_contract
+  source_hash_basis: RAW_FILE_BYTES
+  requested_overrides_phase: STEP_0_ONLY
+  requested_overrides_source: accelerator.validation
+  downstream_override: FORBIDDEN
+  allowed_override_keys:
+    - min_instruction_chars
+    - min_sample_questions
+    - min_sample_query_file_queries
+    - min_example_sqls
+    - min_benchmark_questions
+    - min_analytical_patterns
+    - min_kpi_question_references
+    - min_dimension_question_references
+    - benchmark_pass_rate
+    - benchmark_warn_rate
+    - max_genie_correction_cycles
+  missing_contract: HALT_GENIE_QUALITY_CONTRACT_MISSING
+  invalid_or_unapproved_contract: HALT_GENIE_QUALITY_CONTRACT_INVALID
+  unknown_key_or_value: HALT_GENIE_QUALITY_CONTRACT_INVALID
+  same_version_hash_change: HALT_GENIE_QUALITY_CONTRACT_MUTATED
+  missing_frozen_effective_value: HALT_GENIE_VALIDATION_POLICY_MISSING
+
+thresholds:
+  min_instruction_chars: 500
+  min_sample_questions: 15
+  min_sample_query_file_queries: 10
+  min_example_sqls: 10
+  min_benchmark_questions: 15
+  min_analytical_patterns: 5
+  min_kpi_question_references: 2
+  min_dimension_question_references: 1
+  benchmark_pass_rate: 0.80
+  benchmark_warn_rate: 0.60
+  max_genie_correction_cycles: 3
+
+threshold_schema:
+  min_instruction_chars:
+    type: INTEGER
+    minimum: 1
+  min_sample_questions:
+    type: INTEGER
+    minimum: 1
+  min_sample_query_file_queries:
+    type: INTEGER
+    minimum: 1
+  min_example_sqls:
+    type: INTEGER
+    minimum: 1
+  min_benchmark_questions:
+    type: INTEGER
+    minimum: 1
+  min_analytical_patterns:
+    type: INTEGER
+    minimum: 1
+    maximum: 8
+  min_kpi_question_references:
+    type: INTEGER
+    minimum: 1
+  min_dimension_question_references:
+    type: INTEGER
+    minimum: 1
+  benchmark_pass_rate:
+    type: RATE
+    minimum: 0.0
+    maximum: 1.0
+  benchmark_warn_rate:
+    type: RATE
+    minimum: 0.0
+    maximum: 1.0
+  max_genie_correction_cycles:
+    type: INTEGER
+    minimum: 0
+
+invariants:
+  - id: benchmark_threshold_order
+    expression: benchmark_warn_rate <= benchmark_pass_rate
+  - id: analytical_pattern_catalog_bound
+    expression: min_analytical_patterns <= 8
+
+outcome_semantics:
+  benchmark:
+    evaluation_order:
+      - PASS
+      - WARN
+      - FAIL
+    PASS:
+      predicate: GTE
+      threshold_field: benchmark_pass_rate
+      action: ACCEPT
+      stage_status: PASS
+      validation_overall_status: PASS
+      manifest_allowed: true
+      correction_cycle: NONE
+    WARN:
+      predicate: GTE_LOWER_AND_LT_UPPER
+      lower_threshold_field: benchmark_warn_rate
+      upper_threshold_field: benchmark_pass_rate
+      action: PROCEED_WITH_DOCUMENTED_GAPS
+      stage_status: PARTIAL_SUCCESS
+      validation_overall_status: PASS
+      manifest_allowed: true
+      correction_cycle: NONE
+    FAIL:
+      predicate: LT
+      threshold_field: benchmark_warn_rate
+      action: CORRECT_THEN_HALT_IF_EXHAUSTED
+      stage_status: FAIL
+      validation_overall_status: FAIL
+      manifest_allowed: false
+      correction_cycle: REQUIRED_UP_TO_MAX
+
+effective_policy_fingerprint:
+  canonicalization: CANONICAL_JSON_UTF8_SHA256_V1
+  value:
+    policy_id: contract.policy_id
+    thresholds: STEP_0_RESOLVED_THRESHOLDS
+    benchmark_outcomes: outcome_semantics.benchmark
+  store_at: run_context.validation.genie_quality_effective_policy_sha256
+
+artifact_requirements:
+  source_contract_path: run_context.inputs.genie_quality_contract
+  immutable_per_contract_version: true
+  record_in:
+    - run_context.yaml
+    - genie_validation.yaml
+    - genie_manifest.json
+  required_identity_fields:
+    - genie_quality_contract_name
+    - genie_quality_contract_version
+    - genie_quality_contract_sha256
+    - genie_quality_policy_id
+    - genie_quality_effective_policy_sha256
+  stale_when_source_hash_or_effective_policy_changes: true
