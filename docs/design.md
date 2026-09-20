@@ -56,14 +56,14 @@ paths:
   bundle_root: ../..
   databricks_yml: ../../databricks.yml
   framework_root: ../../framework
-  framework_prompts: ../../framework/prompts
-  master_prompt: ../../framework/prompts/00_master_prompt.md
+  framework_prompts: ../../framework/agent_skills
+  master_prompt: ../../framework/agent_skills/00_master_prompt.md
 ```
 
 | Key | Resolves to (on workspace) |
 |-----|------------------------------|
 | `paths.databricks_yml` | `{deploy_root}/databricks.yml` |
-| `paths.framework_prompts` | `{deploy_root}/framework/prompts/` |
+| `paths.framework_prompts` | `{deploy_root}/framework/agent_skills/` |
 
 ### workspace
 
@@ -225,7 +225,7 @@ Files sync to: `/Workspace/Users/<you>/aibi-design-first-accelerator/`
 Paste into **Databricks Genie** (replace `<you>`):
 
 ```
-Execute the master prompt at /Workspace/Users/<you>/aibi-design-first-accelerator/framework/prompts/00_master_prompt.md with EXAMPLE_DIR /Workspace/Users/<you>/aibi-design-first-accelerator/examples/member_claims — run end to end.
+Execute the master prompt at /Workspace/Users/<you>/aibi-design-first-accelerator/framework/agent_skills/00_master_prompt.md with EXAMPLE_DIR /Workspace/Users/<you>/aibi-design-first-accelerator/examples/member_claims — run end to end.
 ```
 
 ---
@@ -283,16 +283,16 @@ Runtime assets Genie loads from the deployed bundle. Paths below are under `{dep
 
 ### Genie pipeline prompts
 
-Orchestrated by [`prompts/00_master_prompt.md`](../framework/prompts/00_master_prompt.md).
+Orchestrated by [`prompts/00_master_prompt.md`](../framework/agent_skills/00_master_prompt.md).
 
 | Step | Prompt | Output |
 |------|--------|--------|
-| 0 | [`00_master_prompt.md`](../framework/prompts/00_master_prompt.md) | Full pipeline |
-| 1 | [`01_create_data_layer.md`](../framework/prompts/01_create_data_layer.md) | Greenfield DDL + synthetic (`erd` only) |
-| 2 | [`02_create_metric_views.md`](../framework/prompts/02_create_metric_views.md) | Metric view YAML + UC views |
-| 3 | [`03_create_dashboards.md`](../framework/prompts/03_create_dashboards.md) | Live Lakeview dashboards + manifests |
-| 4 | [`04_create_genie_space.md`](../framework/prompts/04_create_genie_space.md) | Genie config notebook + fully configured space |
-| 5 | [`05_generate_documentation.md`](../framework/prompts/05_generate_documentation.md) | Run summary in `output/readme.md` |
+| 0 | [`00_master_prompt.md`](../framework/agent_skills/00_master_prompt.md) | Full pipeline |
+| 1 | [`01_create_data_layer.md`](../framework/agent_skills/01_create_data_layer.md) | Greenfield DDL + synthetic (`erd` only) |
+| 2 | [`02_create_metric_views.md`](../framework/agent_skills/02_create_metric_views.md) | Metric view YAML + UC views |
+| 3 | [`03_create_dashboards.md`](../framework/agent_skills/03_create_dashboards.md) | Live Lakeview dashboards + manifests |
+| 4 | [`04_create_genie_space.md`](../framework/agent_skills/04_create_genie_space.md) | Genie config notebook + fully configured space |
+| 5 | [`05_generate_documentation.md`](../framework/agent_skills/05_generate_documentation.md) | Run summary in `output/readme.md` |
 
 ### Templates
 

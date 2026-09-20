@@ -176,6 +176,76 @@ def _get_latest_version_info(domain_name, config):
     return result
 
 
+def _list_agent_skills_versions():
+    """Discover available agent_skills versions from framework/agent_skills/ directory."""
+    versions = []
+    agent_skills_path = f"{_get_workspace_root()}/framework/agent_skills"
+    w = _get_client()
+    try:
+        for item in sorted(w.workspace.list(path=agent_skills_path), key=lambda x: x.path or ''):
+            if item.object_type == ObjectType.DIRECTORY:
+                name = (item.path or '').split('/')[-1]
+                if name.startswith('v'):
+                    versions.append(name)
+    except Exception as e:
+        logger.warning(f"Cannot list agent_skills versions at {agent_skills_path}: {e}")
+    return versions or ['v1']  # Default to v1 if nothing found
+
+
+@domain_bp.route('/agent-skills-versions', methods=['GET'])
+def list_agent_skills_versions():
+    """List all available agent_skills versions."""
+    return jsonify({'versions': _list_agent_skills_versions()})
+
+
+@domain_bp.route('/<domain_name>/agent-skills-version', methods=['PUT'])
+def set_agent_skills_version(domain_name):
+    """Set the agent_skills version for a domain (persisted in accelerator.yaml)."""
+    data = request.get_json()
+    version = data.get('version', '')
+    if not version:
+        return jsonify({'error': 'version is required'}), 400
+
+    available = _list_agent_skills_versions()
+    if version not in available:
+        return jsonify({'error': f'Invalid version: {version}. Available: {available}'}), 400
+
+    config_ws_path = f"{_get_examples_path()}/{domain_name}/accelerator.yaml"
+    try:
+        config = _load_yaml_from_workspace(config_ws_path)
+    except Exception as e:
+        return jsonify({'error': f'Domain not found: {e}'}), 404
+
+    # Update workspace.agent_skills_version in the config
+    if 'workspace' not in config:
+        config['workspace'] = {}
+    config['workspace']['agent_skills_version'] = version
+
+    try:
+        _save_yaml_to_workspace(config_ws_path, config)
+        logger.info(f"Agent skills version set to '{version}' for domain '{domain_name}'")
+        return jsonify({'success': True, 'version': version})
+    except Exception as e:
+        return jsonify({'error': f'Save failed: {e}'}), 500
+
+
+@domain_bp.route('/<domain_name>/agent-skills-prompts', methods=['GET'])
+def get_agent_skills_prompts(domain_name):
+    """List prompt files for a specific agent_skills version."""
+    version = request.args.get('version', 'v1')
+    prompts_path = f"{_get_workspace_root()}/framework/agent_skills/{version}"
+    prompts = []
+    w = _get_client()
+    try:
+        for item in sorted(w.workspace.list(path=prompts_path), key=lambda x: x.path or ''):
+            fname = (item.path or '').split('/')[-1]
+            if fname.endswith('.md'):
+                prompts.append(fname)
+    except Exception:
+        pass
+    return jsonify({'version': version, 'prompts': prompts})
+
+
 @domain_bp.route('/<domain_name>/asset-counts', methods=['GET'])
 def get_asset_counts(domain_name):
     """Return live counts of tables, metric views, dashboards, and genie spaces."""
@@ -210,9 +280,15 @@ def get_domain_detail(domain_name):
     except Exception:
         pass
 
-    # List framework prompt files
+    # Discover available agent_skills versions
+    agent_skills_versions = _list_agent_skills_versions()
+    # Determine selected version from config (default to v1)
+    workspace_cfg = config.get('workspace', {})
+    selected_version = workspace_cfg.get('agent_skills_version', 'v1')
+
+    # List framework prompt files from the selected agent_skills version
     prompts = []
-    prompts_path = f"{_get_workspace_root()}/framework/prompts"
+    prompts_path = f"{_get_workspace_root()}/framework/agent_skills/{selected_version}"
     try:
         for item in sorted(w.workspace.list(path=prompts_path), key=lambda x: x.path or ''):
             fname = (item.path or '').split('/')[-1]
@@ -232,6 +308,8 @@ def get_domain_detail(domain_name):
         'schema': catalog_cfg.get('schema', ''),
         'input_files': input_files,
         'prompts': prompts,
+        'agent_skills_versions': agent_skills_versions,
+        'agent_skills_version': selected_version,
         'pipeline_steps': list((config.get('pipeline', {}).get('steps', {}) or {}).keys()),
         'version_info': version_info,
         'path': f"{_get_examples_path()}/{domain_name}",

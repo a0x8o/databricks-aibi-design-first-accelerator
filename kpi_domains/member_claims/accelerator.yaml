@@ -10,10 +10,11 @@ paths:
   bundle_root: ../..
   databricks_yml: ../../databricks.yml
   framework_root: ../../framework
-  framework_prompts: ../../framework/prompts
-  master_prompt: ../../framework/prompts/00_master_prompt.md
+  framework_prompts: ../../framework/agent_skills
+  master_prompt: ../../framework/agent_skills/{agent_skills_version}/00_master_prompt.md
 workspace:
   short_name: null
+  agent_skills_version: v2
   output_subpath: generated_outputs
 catalog:
   source:
@@ -38,14 +39,8 @@ inputs:
   best_practices: ../../framework/inputs/best_practices.md
 assets:
   metric_views:
-    # strategy: auto — pipeline determines count and names via grain analysis
-    # strategy: explicit — use the hardcoded list below (legacy behavior)
     strategy: auto
-    naming_prefix: member_claims   # Base prefix for auto-generated metric view names
-    # Explicit list (used only when strategy: explicit)
-    # views:
-    # - name: member_claims_metric_view
-    #   primary: true
+    naming_prefix: member_claims
   dashboards:
   - id: kpis
     name: member_claims_kpis_dashboard
@@ -63,68 +58,68 @@ pipeline:
   steps:
     create_data_layer:
       enabled: true
-      execution_type: notebook    # Write notebook + execute via Jobs API
-      vision_input: true           # Pass ERD image to LLM via vision model
+      execution_type: notebook
+      vision_input: true
     create_metric_views:
       enabled: true
-      execution_type: sql          # Execute via SQL Statement API
+      execution_type: sql
     create_dashboards:
       enabled: true
-      execution_type: api          # Call Lakeview REST API
+      execution_type: api
     create_genie_space:
       enabled: true
-      execution_type: notebook     # Populate template notebook → execute cells → Genie API via notebook
+      execution_type: notebook
     generate_documentation:
       enabled: true
-      execution_type: file         # Write file to output folder
+      execution_type: file
   clean_start: false
 llm:
   default_model: databricks-gpt-5-5
   vision_model: databricks-gpt-5-5
-  temperature: 1  # databricks-gpt-5-5 only supports temperature=1
-  max_tokens: 32000  # reasoning model needs high budget (reasoning consumes ~4000-8000 tokens)
+  temperature: 1
+  max_tokens: 32000
   steps:
     parse_erd:
       model: databricks-gpt-5-5
       capability: vision
-      instruction: Must use vision model to read ERD image directly. Never read from previous version outputs.
+      instruction: Must use vision model to read ERD image directly. Never read from
+        previous version outputs.
     generate_sql:
       model: databricks-gpt-5-5
     dashboard_design:
       model: databricks-gpt-5-5
-      instruction: >
-        Design rich multi-page dashboard layout using reasoning model.
-        Input: KPI spec + metric view YAML + validation results + data profile.
-        Output: YAML with pages, widgets, viz types, measure/dimension mappings.
-        Validate: ≥2 canvas pages, 4-8 widgets/page, ≥3 viz types, exact measure names.
+      instruction: 'Design rich multi-page dashboard layout using reasoning model.
+        Input: KPI spec + metric view YAML + validation results + data profile. Output:
+        YAML with pages, widgets, viz types, measure/dimension mappings. Validate:
+        ≥2 canvas pages, 4-8 widgets/page, ≥3 viz types, exact measure names.
+
+        '
     create_dashboards:
       model: databricks-gpt-5-5
-      instruction: Must read lakeview_dashboard_api.md fully before building serialized_dashboard JSON.
+      instruction: Must read lakeview_dashboard_api.md fully before building serialized_dashboard
+        JSON.
     genie_design:
       model: databricks-gpt-5-5
-      instruction: >
-        Design complete Genie Space configuration using reasoning model.
-        Input: metric view DDL + validation + KPI spec + semantic inventory + data profile.
-        Output: YAML with instructions (≥500 chars, no newlines), sample questions (≥15, ≥5 patterns),
-        example SQL (≥10, all MEASURE()), benchmarks (≥15, different phrasing).
-        Validate: measure/dimension names exact match, no skipped KPIs, grounded filter values.
+      instruction: 'Design complete Genie Space configuration using reasoning model.
+        Input: metric view DDL + validation + KPI spec + semantic inventory + data
+        profile. Output: YAML with instructions (≥500 chars, no newlines), sample
+        questions (≥15, ≥5 patterns), example SQL (≥10, all MEASURE()), benchmarks
+        (≥15, different phrasing). Validate: measure/dimension names exact match,
+        no skipped KPIs, grounded filter values.
+
+        '
     create_genie_space:
       model: databricks-gpt-5-5
 validation:
   require_all_kpis: true
   min_benchmark_questions: 15
-# Quality gates — configurable thresholds for gate_checks.py programmatic enforcement.
-# These override the defaults in framework/templates/gate_checks.py.
-# If a key is omitted, gate_checks.py uses its built-in DEFAULT_QUALITY_GATES.
 quality_gates:
-  # Dashboard thresholds
-  min_widgets_per_canvas_page: 2    # Minimum widgets on each canvas page (rejects empty pages)
-  min_filters_per_dashboard: 3      # Minimum filter widgets per dashboard
-  min_datasets_per_dashboard: 1     # Minimum datasets per dashboard
-  min_canvas_pages_per_dashboard: 1  # Minimum canvas pages (KPI spec may require more)
-  # Genie thresholds
-  min_genie_instruction_chars: 200   # Minimum instruction text length
-  min_genie_tables: 1                # Minimum metric views attached
-  min_genie_sample_questions: 5      # Minimum sample questions in UI
-  min_genie_example_sqls: 5          # Minimum example SQL teaching queries
-  min_genie_description_chars: 50    # Minimum space description length
+  min_widgets_per_canvas_page: 2
+  min_filters_per_dashboard: 3
+  min_datasets_per_dashboard: 1
+  min_canvas_pages_per_dashboard: 1
+  min_genie_instruction_chars: 200
+  min_genie_tables: 1
+  min_genie_sample_questions: 5
+  min_genie_example_sqls: 5
+  min_genie_description_chars: 50

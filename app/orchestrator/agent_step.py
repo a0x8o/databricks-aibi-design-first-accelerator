@@ -51,6 +51,7 @@ class AgentStep:
         self._prompt_loader = PromptLoader(
             workspace_service=services["workspace"],
             framework_root=config.framework_root,
+            agent_skills_version=getattr(config, 'agent_skills_version', 'v1'),
         )
         self._tool_executor = ToolExecutor(config, services, llm_client=llm_client)
         self._agent = AgentLoop(llm_client, self._tool_executor, config)

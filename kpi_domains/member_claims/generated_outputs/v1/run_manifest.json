@@ -1,14 +1,14 @@
 {
-  "run_id": "86ccea09-4f47-48d4-b81d-a250f0d1fdf9",
+  "run_id": "c8990154-e6f1-4394-815d-e238634ca4be",
   "domain": "member_claims",
   "version": 1,
   "version_suffix": "_v1",
   "status": "failed",
   "run_mode": "versioned",
-  "started_at": "2026-09-11T21:40:49.922106",
-  "completed_at": "2026-09-11T21:49:17.192433",
-  "duration_s": 506.197063,
-  "error": "Critical failure in 'execute_notebook': NOTEBOOK ERROR (run_id=1055369662870256): AssertionError: Unbalanced datatype: DECIMAL(28",
+  "started_at": "2026-09-20T22:06:35.782415",
+  "completed_at": "2026-09-20T22:20:31.314625",
+  "duration_s": 834.424015,
+  "error": "\u274c EXECUTION HALTED: Data layer artifacts, tables, and synthetic data were generated, but mandatory GATE 4.2/7.1 validation failed due to unsafe deployed datatype mismatches in fact_claim_detail_v1 monetary DECIMAL columns. The table is non-empty (24,000 rows), so DEPLOYED_DATATYPE_REPAIR_V1 prohibits automatic drop/recreate, ALTER, casts, coercion, overwrite, or mutation of table_spec.yaml/erd_parsed.yaml.",
   "steps": [
     {
       "step_name": "load_configuration",
@@ -62,13 +62,13 @@
     {
       "step_name": "environment_setup",
       "status": "completed",
-      "duration_s": 6.76,
+      "duration_s": 11.93,
       "substeps": [
         {
           "phase_id": "verify_connectivity",
           "phase_name": "verify_connectivity",
           "status": "completed",
-          "duration_ms": 1687,
+          "duration_ms": 6026,
           "current_task": "SQL warehouse health check",
           "progress_pct": null,
           "stats": {},
@@ -86,7 +86,7 @@
           "phase_id": "prepare_workspace",
           "phase_name": "prepare_workspace",
           "status": "completed",
-          "duration_ms": 310,
+          "duration_ms": 230,
           "current_task": "Preparing workspace directories",
           "progress_pct": null,
           "stats": {
@@ -105,7 +105,7 @@
           "phase_id": "setup_schemas",
           "phase_name": "setup_schemas",
           "status": "completed",
-          "duration_ms": 1118,
+          "duration_ms": 1551,
           "current_task": "Setting up catalog schemas",
           "progress_pct": null,
           "stats": {},
@@ -129,94 +129,139 @@
           "phase_id": "load_config",
           "phase_name": "Load Configuration",
           "status": "completed",
-          "current_task": "Configuration, guardrails, templates, and KPI context loaded",
+          "current_task": "Configuration evidence loaded; run-context sibling artifacts unavailable",
           "progress_pct": 100,
           "stats": {
-            "templates_loaded": 2,
-            "guardrails_loaded": 3,
-            "kpi_specs_loaded": 1
+            "templates_loaded": 0,
+            "kpi_spec_loaded": 1,
+            "missing_run_context_files": 2
           },
           "happenings": [
-            "Loaded accelerator.yaml",
-            "Loaded global, data-layer, and SQL generation guardrails",
-            "Loaded DDL and dbldatagen notebook templates",
-            "Loaded KPI specification for domain-aware synthetic values"
+            "Read accelerator.yaml",
+            "Read KPI specification",
+            "Attempted to read current-run run_context.yaml and step_handoff.yaml from the configured output folder",
+            "Called vision model against the ERD image as required"
           ],
           "findings": [
-            "data_source.type is erd",
-            "greenfield.enabled is true",
-            "synthetic_data is true",
-            "volume target is low",
-            "Target catalog/schema is aw_serverless_stable_catalog.aibi_member_claims",
-            "Version suffix is _v1"
+            "run_context.yaml and step_handoff.yaml were not present in generated_outputs/v1; proceeding with developer-supplied execution context and accelerator request values",
+            "Greenfield ERD data source is enabled with synthetic data",
+            "KPI spec includes member, claim, member-claim, window, and derived KPIs"
           ]
         },
         {
           "phase_id": "parse_erd",
           "phase_name": "Parse ERD",
           "status": "completed",
-          "current_task": "Canonical ERD schema contract written and verified",
+          "current_task": "ERD parsed and canonical schema contract written",
           "progress_pct": 100,
           "stats": {
             "tables": 8,
-            "relationships": 6,
-            "columns": 184,
-            "datatype_fixes": 1
+            "relationships": 8,
+            "columns": 192
           },
           "happenings": [
-            "Wrote erd_parsed.yaml in a single write operation",
-            "Read back erd_parsed.yaml to verify artifact exists with non-empty tables array",
-            "Captured ERD-declared and inferred header-detail relationship for downstream FK handling"
+            "Vision extraction normalized to table/column/relationship contract",
+            "Datatype completeness gate passed for generated contract",
+            "Wrote erd_parsed.yaml in a single write"
           ],
           "findings": [
             "8 tables parsed",
-            "6 relationships captured, including claim header to claim detail inferred relationship",
-            "All datatypes are complete and balanced",
-            "Line-number column clm_dtl_line_nbr normalized to integer per mandatory sequence rule"
+            "Core relationships include member\u2192claims/enrollment/history/identifier, address\u2192provider/claim_header, and inferred claim_header\u2192claim_detail"
           ]
         },
         {
           "phase_id": "build_semantic_model",
           "phase_name": "Build Semantic Model",
           "status": "completed",
-          "current_task": "Semantic model artifact written and verified",
+          "current_task": "Semantic model written",
           "progress_pct": 100,
           "stats": {
             "facts": 3,
-            "dimensions": 4,
-            "snapshots": 1,
-            "relationships_resolved": 6,
-            "inferred_relationships_added": 1
+            "dimensions_reference_snapshot": 5,
+            "relationships_resolved": 8,
+            "inferred_relationships": 1
           },
           "happenings": [
-            "Classified table roles, grains, primary keys, FKs, measures, categoricals, statuses, and timestamps",
-            "Computed parent-before-child generation order",
-            "Documented relationship inference status and inferred claim header/detail link",
-            "Read back semantic_model.yaml to verify generation_order exists"
+            "Classified 8 tables",
+            "Computed generation order",
+            "Added 8 relationship intents including 1 inferred relationship",
+            "Wrote semantic_model.yaml"
           ],
           "findings": [
-            "3 fact tables, 4 dimensions, 1 snapshot",
-            "Generation order starts with dim_member and ends with fact_claim_detail",
-            "All relationships are available for FK replacement and join validation"
+            "Relationship inference completed",
+            "fact_claim_header.clm_claim_id to fact_claim_detail.clm_dtl_claim_id included for synthetic FK replacement"
           ]
         },
         {
           "phase_id": "generate_ddl",
           "phase_name": "Generate DDL",
-          "status": "update",
-          "current_task": "Correcting DDL notebook cell preamble to satisfy notebook dependency cell structure before execution",
-          "progress_pct": 35,
+          "status": "completed",
+          "current_task": "DDL notebook executed and table existence verified",
+          "progress_pct": 100,
           "stats": {
-            "expected_tables": 8,
-            "table_spec_written": 1
+            "tables_created": 8,
+            "columns_total": 192,
+            "show_tables_count": 8
           },
           "happenings": [
-            "Detected notebook preamble needs explicit %pip/restart/import cells per execution framework",
-            "Re-importing DDL notebook with dependency cells before template runtime",
-            "Keeping DDL and synthetic notebooks separate"
+            "Wrote table_spec.yaml",
+            "Deployed DDL notebook from frozen template via deploy_from_template",
+            "Executed DDL notebook",
+            "Verified expected versioned table count via SHOW TABLES glob"
           ],
           "findings": [
-            "table_spec.yaml was written successfully with 8 expected tables"
+            "8 expected versioned tables exist in aw_serverless_stable_catalog.aibi_member_claims",
+            "No DDL execution errors observed"
+          ]
+        },
+        {
+          "phase_id": "generate_synthetic_data",
+          "phase_name": "Synthetic Data",
+          "status": "completed",
+          "current_task": "Synthetic data notebook executed and row counts verified",
+          "progress_pct": 100,
+          "stats": {
+            "tables_populated": 8,
+            "total_rows": 41800,
+            "fk_linked": 8
+          },
+          "happenings": [
+            "Wrote synthetic_data_spec.yaml in one write",
+            "Deployed dbldatagen runtime notebook from template",
+            "Executed synthetic data notebook",
+            "Verified non-zero row count for every table in one batched SQL call"
+          ],
+          "findings": [
+            "All 8 tables populated",
+            "Total generated rows: 41800",
+            "Domain columns used healthcare-specific values; no generic val_N placeholders were introduced"
+          ]
+        },
+        {
+          "phase_id": "validate_data",
+          "phase_name": "Validate Data",
+          "status": "failed",
+          "current_task": "Validation halted due to unsafe deployed datatype mismatch",
+          "progress_pct": 100,
+          "stats": {
+            "pk_tests": 8,
+            "fk_tests": 8,
+            "pk_failures": 0,
+            "fk_failures": 0,
+            "join_fanout_failures": 0,
+            "unresolved_schema_mismatches": 7
+          },
+          "happenings": [
+            "Batched PK uniqueness checks passed",
+            "Batched FK orphan/diversity checks passed",
+            "Batched join stability checks passed",
+            "Catalog DESCRIBE readback detected datatype drift in fact_claim_detail_v1 monetary DECIMAL columns",
+            "Wrote data_layer_validation.yaml with FAIL evidence"
+          ],
+          "findings": [
+            "GATE 4.2 cannot auto-repair because fact_claim_detail_v1 is non-empty (24000 rows)",
+            "Observed DECIMAL scales are 2 while table_spec.yaml expects scale 4 for multiple monetary columns",
+            "Per DEPLOYED_DATATYPE_REPAIR_V1, no drop/recreate, ALTER, cast, or intent mutation is permitted for non-empty target"
           ]
         }
       ]

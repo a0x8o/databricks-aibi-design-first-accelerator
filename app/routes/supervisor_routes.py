@@ -214,9 +214,16 @@ def start_pipeline_run():
             except Exception as e:
                 logger.warning(f"Could not write run_manifest.json: {e}")
 
-            # Read master prompt
-            prompt_path = f"{config.deploy_root}/framework/prompts/00_master_prompt.md"
+            # Read master prompt from the selected agent_skills version
+            agent_skills_version = body.get('agent_skills_version', 'v1')
+            # v2+ uses prompts/ subdirectory; v1 has flat layout
+            if agent_skills_version >= 'v2':
+                master_file = 'prompts/00_master_prompt.md'
+            else:
+                master_file = '00_master_prompt.md'
+            prompt_path = f"{config.deploy_root}/framework/agent_skills/{agent_skills_version}/{master_file}"
             master_prompt = ws.read_file(prompt_path) or ""
+            logger.info(f"Using agent_skills version '{agent_skills_version}': {prompt_path}")
 
             # Run supervisor
             supervisor = AIBIPipelineSupervisor()

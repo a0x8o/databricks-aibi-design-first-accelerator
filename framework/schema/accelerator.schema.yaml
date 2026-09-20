@@ -32,11 +32,12 @@ paths:
   framework_prompts:
     type: string
     required: true
-    default: ../../framework/prompts
+    default: ../../framework/agent_skills
   master_prompt:
     type: string
     required: true
-    default: ../../framework/prompts/00_master_prompt.md
+    default: ../../framework/agent_skills/{agent_skills_version}/00_master_prompt.md
+    description: "Resolved at runtime from workspace.agent_skills_version"
 
 workspace:
   short_name:
@@ -44,6 +45,11 @@ workspace:
     required: false
     nullable: true
     pattern: "^[a-z][a-z0-9_]*$|^$"
+  agent_skills_version:
+    type: string
+    required: false
+    default: v1
+    description: "Version of framework/agent_skills to use (v1, v2, etc.)"
   output_subpath:
     type: string
     required: false

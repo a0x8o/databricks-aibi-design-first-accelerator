@@ -1,4 +1,4 @@
-"""AgentLoop - Runs framework prompts with tool-calling, identical to Genie Code.
+"""AgentLoop - Runs versioned framework agent_skills prompts with tool-calling, identical to Genie Code.
 
 This is the core mechanism that makes the app work exactly like Genie Code:
 1. Load a framework prompt file (e.g. 01_create_data_layer.md)
@@ -174,7 +174,7 @@ class AgentLoop:
     Usage:
         agent = AgentLoop(llm_client, tool_executor, config)
         result = agent.run(
-            prompt_path="framework/prompts/01_create_data_layer.md",
+            prompt_path="framework/agent_skills/<version>/01_create_data_layer.md",
             context_vars={"CATALOG": "my_catalog", ...},
             callback=my_progress_handler,
         )

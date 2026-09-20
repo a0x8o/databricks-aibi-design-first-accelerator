@@ -74,6 +74,7 @@ class AcceleratorConfig:
     output_folder: str = ""
     framework_root: str = ""
     prompts_dir: str = ""
+    agent_skills_version: str = "v1"  # Selected agent_skills version (v1, v2, ...)
     inputs_dir: str = ""
     catalog: CatalogConfig = field(default_factory=CatalogConfig)
     data_source: DataSourceConfig = field(default_factory=DataSourceConfig)
@@ -166,6 +167,7 @@ class ConfigLoader:
         workspace_block = raw.get("workspace", {})
         short_name = workspace_block.get("short_name")
         output_subpath = workspace_block.get("output_subpath", "generated_outputs")
+        agent_skills_version = workspace_block.get("agent_skills_version", "v1")
 
         # Compute output folder (workspace path for writing)
         output_folder = f"{ws_example_dir}/{output_subpath}"
@@ -266,16 +268,17 @@ class ConfigLoader:
             example_dir=example_dir,
             output_folder=output_folder,
             framework_root=f"{deploy_root}/framework",
-            prompts_dir=f"{deploy_root}/framework/prompts",
+            prompts_dir=f"{deploy_root}/framework/agent_skills",
             inputs_dir=f"{example_dir}/inputs",
             catalog=catalog,
             data_source=data_source,
             pipeline=pipeline,
             assets=assets,
-            short_name=short_name
+            short_name=short_name,
+            agent_skills_version=agent_skills_version,
         )
 
-        logger.info(f"Config loaded: domain={domain_name}, type={data_source.type}")
+        logger.info(f"Config loaded: domain={domain_name}, type={data_source.type}, agent_skills={agent_skills_version}")
         return config
 
     def validate(self, config: AcceleratorConfig) -> list:

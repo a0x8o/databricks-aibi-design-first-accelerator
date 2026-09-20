@@ -1,0 +1,41 @@
+{
+  "artifact_type": "synthetic_data",
+  "validation_source": "template_runtime",
+  "source_hash": "46a635c345d55cb572aeb9168a8a74ed3c30ee1eaa6ed8ff5d2ed41a08e47dac",
+  "tables_generated": 8,
+  "table_hashes": [
+    {
+      "table": "dim_member_v1",
+      "hash": "87be94c805623b73c5c59d03a20a54ab6a54474c60b0eed011ab871d8cbbcf45"
+    },
+    {
+      "table": "dim_address_v1",
+      "hash": "b184316e89da1bddb3aface4c0f0fccbfb63487bfa547cf6a62dae37b61bd2fe"
+    },
+    {
+      "table": "dim_provider_v1",
+      "hash": "57b1fcef0beff0d4235103b012cc21a29d019cc548e73d763cfbd163112bafcd"
+    },
+    {
+      "table": "dim_member_identifier_v1",
+      "hash": "0c269ca63a6d353828f78dd078b4fab9e7686e416f243f2021b4aa1baa3facf3"
+    },
+    {
+      "table": "dim_member_history_v1",
+      "hash": "94f630144f57a0a132bdbdbf8605fdb64bb71846525b2d1303db0cfdec992a90"
+    },
+    {
+      "table": "fact_member_enrollment_v1",
+      "hash": "cc46f6463f91e75c4d1b386539d333869b654beac55593c5284d1379e4f0ff4d"
+    },
+    {
+      "table": "fact_claim_header_v1",
+      "hash": "e58b85346fadb83b9535f8e752bf39a56cee2ce4ae37ec541e43662746bf7fe8"
+    },
+    {
+      "table": "fact_claim_detail_v1",
+      "hash": "3586dd0a49951aac76092516744ccd4f1204f4b7353527643ed61c1b681b381e"
+    }
+  ],
+  "state_comparison": "match"
+}

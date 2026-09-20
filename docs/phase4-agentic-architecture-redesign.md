@@ -385,7 +385,7 @@ def _execute_tool(self, tool_name, args, config):
 def _execute_tool(self, tool_name, args, config):
     # Load the stage prompt
     stage_prompt_file = STAGE_PROMPT_MAP.get(tool_name)
-    stage_prompt = self._read_file(f"{config.deploy_root}/framework/prompts/{stage_prompt_file}")
+    stage_prompt = self._read_file(f"{config.deploy_root}/framework/agent_skills/{config.agent_skills_version}/prompts/{stage_prompt_file}")
 
     # Build runtime context (just facts, no instructions)
     runtime_context = f"""

@@ -1,0 +1,110 @@
+overall_status: FAIL
+failure_owner: DATA_LAYER_STAGE
+failure_code: DATATYPE_MISMATCH_UNSAFE_TO_REPAIR
+authority:
+  expected_schema_source: table_spec.yaml
+  deployed_schema_source: catalog_describe
+schema:
+  tables_expected: 8
+  tables_created: 8
+  missing: []
+  unexpected: []
+schema_reconciliation:
+  policy_id: DEPLOYED_DATATYPE_REPAIR_V1
+  status: FAIL
+  datatype_policy: EMPTY_CURRENT_VERSION_TABLE_RECREATE_ONLY
+  unresolved_mismatches:
+    - table_fqn: aw_serverless_stable_catalog.aibi_member_claims.fact_claim_detail_v1
+      column: clm_dtl_allowed_amt
+      expected_datatype: DECIMAL(28,4)
+      observed_datatype: decimal(28,2)
+    - table_fqn: aw_serverless_stable_catalog.aibi_member_claims.fact_claim_detail_v1
+      column: clm_dtl_billed_amt
+      expected_datatype: DECIMAL(27,4)
+      observed_datatype: decimal(27,2)
+    - table_fqn: aw_serverless_stable_catalog.aibi_member_claims.fact_claim_detail_v1
+      column: clm_dtl_deduct_amt
+      expected_datatype: DECIMAL(27,4)
+      observed_datatype: decimal(27,2)
+    - table_fqn: aw_serverless_stable_catalog.aibi_member_claims.fact_claim_detail_v1
+      column: clm_dtl_net_amt
+      expected_datatype: DECIMAL(28,4)
+      observed_datatype: decimal(28,2)
+    - table_fqn: aw_serverless_stable_catalog.aibi_member_claims.fact_claim_detail_v1
+      column: clm_dtl_paid_amt
+      expected_datatype: DECIMAL(28,4)
+      observed_datatype: decimal(28,2)
+    - table_fqn: aw_serverless_stable_catalog.aibi_member_claims.fact_claim_detail_v1
+      column: clm_dtl_actual_paid_amt
+      expected_datatype: DECIMAL(38,4)
+      observed_datatype: decimal(38,2)
+    - table_fqn: aw_serverless_stable_catalog.aibi_member_claims.fact_claim_detail_v1
+      column: clm_dtl_not_covered_amt
+      expected_datatype: DECIMAL(27,4)
+      observed_datatype: decimal(27,2)
+  attempts:
+    - table_fqn: aw_serverless_stable_catalog.aibi_member_claims.fact_claim_detail_v1
+      mismatch_kind: DATATYPE
+      expected_schema:
+        - {column: clm_dtl_allowed_amt, datatype: DECIMAL(28,4)}
+        - {column: clm_dtl_billed_amt, datatype: DECIMAL(27,4)}
+        - {column: clm_dtl_deduct_amt, datatype: DECIMAL(27,4)}
+        - {column: clm_dtl_net_amt, datatype: DECIMAL(28,4)}
+        - {column: clm_dtl_paid_amt, datatype: DECIMAL(28,4)}
+        - {column: clm_dtl_actual_paid_amt, datatype: DECIMAL(38,4)}
+        - {column: clm_dtl_not_covered_amt, datatype: DECIMAL(27,4)}
+      observed_schema:
+        - {column: clm_dtl_allowed_amt, datatype: decimal(28,2)}
+        - {column: clm_dtl_billed_amt, datatype: decimal(27,2)}
+        - {column: clm_dtl_deduct_amt, datatype: decimal(27,2)}
+        - {column: clm_dtl_net_amt, datatype: decimal(28,2)}
+        - {column: clm_dtl_paid_amt, datatype: decimal(28,2)}
+        - {column: clm_dtl_actual_paid_amt, datatype: decimal(38,2)}
+        - {column: clm_dtl_not_covered_amt, datatype: decimal(27,2)}
+      canonical_comparison: MISMATCH
+      ownership: CURRENT_VERSION_GENERATED_TARGET
+      row_count_before: 24000
+      action: HALT_NO_MUTATION
+      attempt: 0
+      post_repair_schema: []
+      status: FAIL
+      error_code: DATATYPE_MISMATCH_UNSAFE_TO_REPAIR
+primary_keys:
+  tested: 8
+  failures: []
+foreign_keys:
+  tested: 8
+  orphan_counts:
+    dim_address.entity_dimension_key: 0
+    dim_provider.provider_address_sk: 0
+    dim_member_identifier.member_sk: 0
+    dim_member_history.member_sk: 0
+    fact_member_enrollment.member_sk: 0
+    fact_claim_header.clm_member_sk: 0
+    fact_claim_header.clm_service_facility_address_sk: 0
+    fact_claim_detail.clm_dtl_claim_id: 0
+  diversity:
+    dim_address.entity_dimension_key: 1000
+    dim_provider.provider_address_sk: 700
+    dim_member_identifier.member_sk: 1000
+    dim_member_history.member_sk: 1000
+    fact_member_enrollment.member_sk: 1000
+    fact_claim_header.clm_member_sk: 1000
+    fact_claim_header.clm_service_facility_address_sk: 1200
+    fact_claim_detail.clm_dtl_claim_id: 8000
+  failures: []
+join_stability:
+  tested: 8
+  fanout_failures: []
+relationships:
+  - {relationship_id: dim_member.member_sk__dim_address.entity_dimension_key, source: erd_declared, confidence: MEDIUM, parent: dim_member, parent_key: member_sk, child: dim_address, child_key: entity_dimension_key, expected_cardinality: '1:N', orphan_count: 0, parent_key_duplicates: 0, before_rows: 1200, after_rows: 1200, validation_status: PASS}
+  - {relationship_id: dim_address.address_key__dim_provider.provider_address_sk, source: erd_declared, confidence: HIGH, parent: dim_address, parent_key: address_key, child: dim_provider, child_key: provider_address_sk, expected_cardinality: '1:N', orphan_count: 0, parent_key_duplicates: 0, before_rows: 700, after_rows: 700, validation_status: PASS}
+  - {relationship_id: dim_member.member_sk__dim_member_identifier.member_sk, source: erd_declared, confidence: HIGH, parent: dim_member, parent_key: member_sk, child: dim_member_identifier, child_key: member_sk, expected_cardinality: '1:N', orphan_count: 0, parent_key_duplicates: 0, before_rows: 1300, after_rows: 1300, validation_status: PASS}
+  - {relationship_id: dim_member.member_sk__dim_member_history.member_sk, source: erd_declared, confidence: HIGH, parent: dim_member, parent_key: member_sk, child: dim_member_history, child_key: member_sk, expected_cardinality: '1:N', orphan_count: 0, parent_key_duplicates: 0, before_rows: 1600, after_rows: 1600, validation_status: PASS}
+  - {relationship_id: dim_member.member_sk__fact_member_enrollment.member_sk, source: erd_declared, confidence: HIGH, parent: dim_member, parent_key: member_sk, child: fact_member_enrollment, child_key: member_sk, expected_cardinality: '1:N', orphan_count: 0, parent_key_duplicates: 0, before_rows: 4000, after_rows: 4000, validation_status: PASS}
+  - {relationship_id: dim_member.member_sk__fact_claim_header.clm_member_sk, source: erd_declared, confidence: HIGH, parent: dim_member, parent_key: member_sk, child: fact_claim_header, child_key: clm_member_sk, expected_cardinality: '1:N', orphan_count: 0, parent_key_duplicates: 0, before_rows: 8000, after_rows: 8000, validation_status: PASS}
+  - {relationship_id: dim_address.address_key__fact_claim_header.clm_service_facility_address_sk, source: erd_declared, confidence: HIGH, parent: dim_address, parent_key: address_key, child: fact_claim_header, child_key: clm_service_facility_address_sk, expected_cardinality: '1:N', orphan_count: 0, parent_key_duplicates: 0, before_rows: 8000, after_rows: 8000, validation_status: PASS}
+  - {relationship_id: fact_claim_header.clm_claim_id__fact_claim_detail.clm_dtl_claim_id, source: inferred, confidence: HIGH, parent: fact_claim_header, parent_key: clm_claim_id, child: fact_claim_detail, child_key: clm_dtl_claim_id, expected_cardinality: '1:N', orphan_count: 0, parent_key_duplicates: 0, before_rows: 24000, after_rows: 24000, validation_status: PASS}
+semantic_constraints: {tested: 0, failures: []}
+domain_values: {columns_checked: 33, generic_value_failures: []}
+data_quality: {null_violations: [], generic_fallback_columns: []}

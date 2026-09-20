@@ -1,7 +1,7 @@
 """Prompt builders for AI/BI Studio pipeline steps.
 
 Each function returns a (system_message, user_message) tuple derived from
-the framework prompts in framework/prompts/*.md. The prompts guide the LLM
+the framework prompts in framework/agent_skills/<version>/*.md. The prompts guide the LLM
 to produce structured output aligned with pipeline requirements.
 
 Design notes:
@@ -28,7 +28,7 @@ def erd_parser_prompt(
 ) -> tuple:
     """Build prompt for ERD image parsing via vision model.
 
-    Source: framework/prompts/01_create_data_layer.md (Phase A)
+    Source: framework/agent_skills/<version>/01_create_data_layer.md (Phase A)
 
     Args:
         catalog_source: Target catalog.schema for table names.
@@ -94,7 +94,7 @@ def ddl_generator_prompt(
 ) -> tuple:
     """Build prompt for DDL notebook generation.
 
-    Source: framework/prompts/01_create_data_layer.md (Phase B)
+    Source: framework/agent_skills/<version>/01_create_data_layer.md (Phase B)
 
     Args:
         parsed_erd: Parsed ERD from Step 1A (tables, relationships).
@@ -242,7 +242,7 @@ def synthetic_data_prompt(
 ) -> tuple:
     """Build prompt for synthetic data notebook generation.
 
-    Source: framework/prompts/01_create_data_layer.md (Phase C)
+    Source: framework/agent_skills/<version>/01_create_data_layer.md (Phase C)
 
     Args:
         parsed_erd: Parsed ERD (tables, relationships, types).
@@ -352,7 +352,7 @@ def metric_view_prompt(
 ) -> tuple:
     """Build prompt for metric view YAML generation.
 
-    Source: framework/prompts/02_create_metric_views.md
+    Source: framework/agent_skills/<version>/02_create_metric_views.md
 
     Args:
         kpi_spec: KPI specification markdown.
@@ -498,7 +498,7 @@ def genie_content_prompt(
 ) -> tuple:
     """Build prompt for Genie space content generation.
 
-    Source: framework/prompts/04_create_genie_space.md
+    Source: framework/agent_skills/<version>/04_create_genie_space.md
 
     Args:
         kpi_spec: KPI spec for question/SQL generation.
@@ -544,7 +544,7 @@ def documentation_prompt(
 ) -> tuple:
     """Build prompt for run summary generation (optional LLM enhancement).
 
-    Source: framework/prompts/05_generate_documentation.md
+    Source: framework/agent_skills/<version>/05_generate_documentation.md
 
     Args:
         config: Pipeline config summary dict.

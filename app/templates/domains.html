@@ -101,6 +101,18 @@
         letter-spacing: 0.5px; color: var(--text-muted); margin-bottom: 12px;
     }
     .config-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 20px; }
+    .config-field select {
+        width: 100%; padding: 8px 10px; font-size: 0.82rem;
+        background: var(--bg-app); border: 1px solid var(--border);
+        border-radius: 6px; color: var(--text-primary);
+        cursor: pointer; appearance: auto;
+    }
+    .config-field select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
+    .version-badge {
+        display: inline-block; font-size: 0.68rem; font-weight: 600;
+        padding: 2px 7px; border-radius: 4px; margin-left: 6px;
+        background: rgba(59,130,246,0.1); color: var(--primary);
+    }
     .config-field label {
         display: block; font-size: 0.75rem; font-weight: 500;
         color: var(--text-secondary); margin-bottom: 4px;
@@ -310,6 +322,12 @@
                         <label>Schema</label>
                         <input type="text" id="cfg-schema" readonly>
                     </div>
+                    <div class="config-field">
+                        <label>Agent Skills Version</label>
+                        <select id="cfg-agent-skills-version" onchange="onVersionChanged(this.value)">
+                            <option value="v1">v1</option>
+                        </select>
+                    </div>
                     <div class="config-field full">
                         <label>Domain Path</label>
                         <input type="text" id="cfg-path" readonly>
@@ -437,6 +455,9 @@ async function selectDomain(domain) {
         document.getElementById('cfg-schema').value = d.schema || '';
         document.getElementById('cfg-path').value = d.path || '';
 
+        // Populate agent_skills version selector
+        populateVersionSelector(d.agent_skills_versions || ['v1'], d.agent_skills_version || 'v1');
+
         // Build files panel dynamically
         let html = '';
 
@@ -461,9 +482,10 @@ async function selectDomain(domain) {
             html += '</div>';
         }
 
-        // Framework prompts
+        // Framework prompts (with version badge)
         if (d.prompts && d.prompts.length > 0) {
-            html += '<div class="file-group"><div class="file-group-title">Framework Prompts</div>';
+            const vLabel = d.agent_skills_version || 'v1';
+            html += `<div class="file-group"><div class="file-group-title">Agent Skills Prompts <span class="version-badge">${vLabel}</span></div>`;
             for (const p of d.prompts) {
                 html += `<div class="file-item"><span class="file-icon prompt">&#9654;</span><span class="file-name">${p}</span></div>`;
             }
@@ -477,6 +499,59 @@ async function selectDomain(domain) {
     } catch(e) {
         document.getElementById('detail-title').textContent = domain;
         document.getElementById('files-content').innerHTML = `<span style="color:var(--danger);">Error: ${e.message}</span>`;
+    }
+}
+
+// --- Agent Skills Version Management ---
+function populateVersionSelector(versions, selected) {
+    const sel = document.getElementById('cfg-agent-skills-version');
+    sel.innerHTML = versions.map(v =>
+        `<option value="${v}" ${v === selected ? 'selected' : ''}>${v}</option>`
+    ).join('');
+}
+
+async function onVersionChanged(version) {
+    if (!selectedDomain) return;
+    const sel = document.getElementById('cfg-agent-skills-version');
+    sel.disabled = true;
+    try {
+        // Persist the version selection to accelerator.yaml
+        const resp = await fetch(`/api/domains/${selectedDomain}/agent-skills-version`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ version }),
+        });
+        if (!resp.ok) {
+            const err = await resp.json();
+            throw new Error(err.error || 'Failed to save version');
+        }
+        // Reload the prompts list for the new version
+        const promptsResp = await fetch(`/api/domains/${selectedDomain}/agent-skills-prompts?version=${version}`);
+        if (promptsResp.ok) {
+            const data = await promptsResp.json();
+            // Update the prompts list in the files panel
+            const filesContent = document.getElementById('files-content');
+            const promptGroup = filesContent.querySelector('.file-group:last-child');
+            if (promptGroup) {
+                let html = `<div class="file-group-title">Agent Skills Prompts <span class="version-badge">${version}</span></div>`;
+                for (const p of (data.prompts || [])) {
+                    html += `<div class="file-item"><span class="file-icon prompt">&#9654;</span><span class="file-name">${p}</span></div>`;
+                }
+                promptGroup.innerHTML = html;
+            }
+        }
+        // Update cache
+        if (domainCache[selectedDomain]) {
+            domainCache[selectedDomain].agent_skills_version = version;
+        }
+    } catch(e) {
+        alert('Failed to change version: ' + e.message);
+        // Revert selector to previous value
+        if (domainCache[selectedDomain]) {
+            sel.value = domainCache[selectedDomain].agent_skills_version || 'v1';
+        }
+    } finally {
+        sel.disabled = false;
     }
 }
 
@@ -617,10 +692,12 @@ async function launchPipeline() {
     btn.disabled = true;
     btn.textContent = 'Starting...';
 
+    const agentSkillsVersion = document.getElementById('cfg-agent-skills-version').value || 'v1';
     const payload = {
         domain: selectedDomain,
         run_mode: 'versioned',
         version_mode: 'fresh',  // Always create a new version — Resume handles retries
+        agent_skills_version: agentSkillsVersion,
     };
 
     try {

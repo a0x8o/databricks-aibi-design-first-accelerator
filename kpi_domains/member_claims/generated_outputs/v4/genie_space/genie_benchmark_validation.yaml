@@ -1,8 +1,0 @@
-status: PASS
-source: benchmark_results.yaml
-benchmarks_total: 15
-benchmarks_passed: 15
-benchmarks_failed: 0
-pass_rate: 1.0
-threshold: 0.8
-validation_method: executed_ground_truth_sql_against_metric_views

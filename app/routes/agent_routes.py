@@ -292,7 +292,8 @@ def _run_agent_pipeline(run_id: str, domain: str, steps: list):
 
         # Build agent components
         tool_executor = ToolExecutor(accel_config, services, llm_client=llm)
-        prompt_loader = PromptLoader(services["workspace"], accel_config.framework_root)
+        prompt_loader = PromptLoader(services["workspace"], accel_config.framework_root,
+                                      agent_skills_version=getattr(accel_config, 'agent_skills_version', 'v1'))
         agent = AgentLoop(llm, tool_executor, accel_config)
 
         # Determine which steps to run

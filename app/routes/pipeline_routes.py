@@ -338,7 +338,8 @@ def _sync_version_registry(run_mode, config, services, pipeline_run, run, log):
 
 def _run_pipeline_background(run_id: str, domain: str, steps: list, run_mode: str,
                               version_override, user_token: str = "",
-                              resume_from: dict = None, version_mode: str = "auto"):
+                              resume_from: dict = None, version_mode: str = "auto",
+                              agent_skills_version: str = None):
     """Background thread: loads config, runs pipeline, updates _runs state.
 
     Args:
@@ -625,6 +626,9 @@ def _run_pipeline_background(run_id: str, domain: str, steps: list, run_mode: st
         # The App no longer overrides catalog.source/target — both paths
         # (App + Genie Agent Code) read the same yaml values.
         config.run_mode = run_mode
+        # Override agent_skills_version if explicitly provided by the UI
+        if agent_skills_version:
+            config.agent_skills_version = agent_skills_version
         if run_mode == 'versioned':
             resolver = VersionResolver(services["workspace"], services["sql"],
                                        services["lakeview"], services["genie"])
@@ -736,10 +740,12 @@ def _run_pipeline_background(run_id: str, domain: str, steps: list, run_mode: st
                 f'Warehouse ID: {warehouse_id[:8]}...',
                 f'Clean start: {"yes" if clean_start else "no"}',
             ]
+            skills_ver = getattr(config, 'agent_skills_version', 'v1')
             config_phases[-1]['findings'] = [
                 f"Catalog: {catalog_str}",
                 f"Warehouse: {warehouse_id}",
                 f"Run mode: {run_mode_str}",
+                f"Agent skills: {skills_ver}",
                 f"Steps: {', '.join(steps_list)}",
                 f"Config loaded in {config_duration}s",
             ]
@@ -843,6 +849,7 @@ def start_run():
 
     version_override = data.get('version_override')  # int or None
     version_mode = data.get('version_mode', 'auto')  # "auto", "retry", or "fresh"
+    agent_skills_version = data.get('agent_skills_version')  # str or None (falls back to config)
 
     run_id = str(uuid.uuid4())
     steps = data.get('steps')  # None means all enabled steps
@@ -882,13 +889,13 @@ def start_run():
     thread = threading.Thread(
         target=_run_pipeline_background,
         args=(run_id, domain, steps, run_mode, version_override, user_token),
-        kwargs={'version_mode': version_mode},
+        kwargs={'version_mode': version_mode, 'agent_skills_version': agent_skills_version},
         daemon=True
     )
     thread.start()
 
-    logger.info(f"Pipeline started: run_id={run_id}, domain={domain}, mode={run_mode}, version_mode={version_mode}")
-    return jsonify({'run_id': run_id, 'status': 'started', 'run_mode': run_mode, 'version_mode': version_mode}), 202
+    logger.info(f"Pipeline started: run_id={run_id}, domain={domain}, mode={run_mode}, version_mode={version_mode}, agent_skills={agent_skills_version or 'config-default'}")
+    return jsonify({'run_id': run_id, 'status': 'started', 'run_mode': run_mode, 'version_mode': version_mode, 'agent_skills_version': agent_skills_version}), 202
 
 
 @pipeline_bp.route('/status/<run_id>')
