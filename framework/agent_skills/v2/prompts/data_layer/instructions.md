@@ -1008,6 +1008,13 @@ the bounded checkpoint-only recovery defined above; it must atomically persist a
 reconstructed record before proceeding. Failed, stale, duplicate, conflicting, changed, or
 unrecoverable evidence HALTS before creating the synthetic specification.
 
+For backward compatibility only, `schema_reconciliation.output_folder` may be absent/null when the
+artifact was loaded from the exact canonical sibling path
+`{OUTPUT_FOLDER}/schema_reconciliation.yaml` and every run, target, suffix, table-spec,
+assumptions, inventory, digest, and fresh readback gate passes. A present value must equal
+`OUTPUT_FOLDER` exactly; a conflict still halts. Newly written reconciliation artifacts always
+include the field.
+
 Create `{OUTPUT_FOLDER}/synthetic_data_spec.yaml` from: `erd_parsed.yaml` + `semantic_model.yaml` + KPI context + volume config.
 
 ### Column Authority Rule (CRITICAL)

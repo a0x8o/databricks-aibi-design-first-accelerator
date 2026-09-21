@@ -510,6 +510,20 @@ class ContractTemplateTests(unittest.TestCase):
         self.assertIn("schema_assumptions_sha256", self.ddl_template)
         self.assertIn("schema_assumptions_sha256", self.data_template)
 
+    def test_legacy_reconciliation_may_omit_output_folder_but_not_conflict(self):
+        self.assertNotIn(
+            '"reconciliation.output_folder": (RECONCILIATION.get("output_folder"), OUTPUT_FOLDER)',
+            self.data_template,
+        )
+        self.assertIn(
+            'reconciliation_output_folder = RECONCILIATION.get("output_folder")',
+            self.data_template,
+        )
+        self.assertIn(
+            "reconciliation_output_folder is not None and reconciliation_output_folder != OUTPUT_FOLDER",
+            self.data_template,
+        )
+
     def test_ddl_runtime_revalidates_erd_projection_before_catalog_mutation(self):
         validation_call = "_synchronize_erd_projection(erd_document, spec)"
         first_mutation = 'spark.sql(f"CREATE SCHEMA IF NOT EXISTS'
