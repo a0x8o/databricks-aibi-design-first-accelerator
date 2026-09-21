@@ -140,7 +140,7 @@ Authority is scoped to the fact being resolved. No artifact is authoritative for
 | Business definitions, KPI formulas, terminology, and requested dimensions | KPI specification | Business intent only; never physical-column authority |
 | Approved Metric View feature policy and fallback behavior | Resolved `metric_view_capabilities.yaml` contract | Reproducible accelerator policy for the run; official documentation informs contract refresh, not live runtime reinterpretation |
 | Genie release thresholds and benchmark outcome semantics | Approved `genie_quality` source contract | Step 0 authenticates it and freezes the only executable effective snapshot in `run_context.validation`; downstream defaults or reinterpretation are forbidden |
-| Governed datatype-only completion policy | Approved `datatype_resolution_policy.yaml` contract | Step 0 authenticates and freezes it; only the attested Data Layer helper/runtime may apply it in eligible greenfield-synthetic scope |
+| Governed datatype-only completion policy | Digest-attested ERD helper and DDL template, release-parity-tested against `datatype_resolution_policy.yaml` | Only the attested Data Layer helper/runtime may apply it in eligible greenfield-synthetic scope; the descriptive contract need not be present in an existing run context |
 | API/YAML request and serialization structure | Approved versioned platform references and deterministic runtime templates | Structure authority only; never proof of persisted asset content |
 | Extracted source design | resolved `erd_parsed.yaml` plus `schema_assumptions.yaml` | Visible values are `OBSERVED`; policy-resolved values are `INFERRED_POLICY`; raw/resolved hashes and provenance must authenticate |
 | Expected generated physical schema | `table_spec.yaml` | Planned greenfield tables, columns, and types; never proof of deployed reality |
@@ -170,7 +170,10 @@ before required-key, exact-key-set, hash, or identity checks run.
 1. Resolve each fact using its row above; do not apply one generic artifact priority to every fact.
 2. Intent describes what should exist. Catalog or API readback describes what does exist.
 3. If expected and deployed state differ, deployed readback remains the factual observation, but the owning validation gate MUST fail. A downstream stage MUST NOT silently adapt to the drift.
-4. If the applicable authority is missing, HALT and report the owning stage; do not substitute a lower-authority artifact.
+4. If applicable authority is missing after its defined creation point, or is missing when a
+   consumer/resume path authenticates it, HALT and report the owning stage; do not substitute a
+   lower-authority artifact. Absence of a producer phase's own output before its first execution is
+   expected and MUST NOT be classified as missing input authority.
 5. Later stages consume validated upstream authority; they do not reinterpret or repair it locally.
 6. Fields duplicated between `run_context.yaml` and `step_handoff.yaml` MUST match or the master resolver halts with `HANDOFF_AUTHORITY_ERROR`. The handoff owns only values actually present in it. Downstream consumers never modify it; the designated Metric View producer may idempotently update only `metric_view_fqns[]` under its documented planning contract.
 7. A mismatch between an expected generated datatype and catalog readback is owned only by Data Layer GATE 4.2. The observed catalog type remains factual, but no downstream stage may cast around it or rewrite `table_spec.yaml`. Automatic mutation is limited to one compiler-driven recreation of an exact empty current-version generated target; every other case halts without mutation.
@@ -460,12 +463,15 @@ path from domain/version components.
    `output_folder` to equal the frozen run-context value and validate every shared field
    under G-3 before using any downstream identity.
 5. Read `deploy_root` from the parity-checked handoff and require it to equal the frozen
-   run-context runtime value. `templates_dir`, when needed only to resolve an approved
-   source artifact, is the single suffix `{deploy_root}/framework/templates`.
+   run-context runtime value whenever either artifact supplies it. For a legacy Data Layer
+   bootstrap only, if both omit it, continue with the frozen absolute helper/template path-and-hash
+   tuples and do not reconstruct a root. All other stages require the value. `templates_dir`, when
+   needed only to resolve an approved source artifact, is the single suffix
+   `{deploy_root}/framework/templates`.
 
-Any missing, ambiguous, or conflicting path/identity authority halts and returns to
-`MASTER_RESOLVER`. Downstream stages never repair `run_context.yaml`, non-producer handoff
-fields, or the selected path.
+Any missing required authority after applying that explicit legacy Data Layer exception, or any
+ambiguous/conflicting path or identity authority, halts and returns to `MASTER_RESOLVER`.
+Downstream stages never repair `run_context.yaml`, non-producer handoff fields, or the selected path.
 
 ### Prohibited path patterns
 

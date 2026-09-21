@@ -275,9 +275,12 @@ only after the sweep classifies an owner/error. Shared runbooks load only for th
 or cleanup failure event, never during a normal successful pipeline.
 
 Also freeze exact path/hash or approved identity for the state contract, workspace I/O,
-`metric_view_capabilities.yaml`, `genie_quality_contract.yaml`,
-`datatype_resolution_policy.yaml`, and every helper/template,
-especially `templates.gate_checks`. No stage may search for a same-named replacement.
+`metric_view_capabilities.yaml`, `genie_quality_contract.yaml`, and every executable
+helper/template, especially `templates.gate_checks`, `templates.erd_validation_utils`, and
+`templates.ddl_notebook`. `datatype_resolution_policy.yaml` is a release-governance description
+whose values are parity-tested against the latter two executable artifacts; it is not a mandatory
+runtime input and its absence from an already frozen `run_context.inputs` MUST NOT block a run.
+No stage may search for a same-named executable replacement.
 
 ### 0.6 Build the Immutable Run Context
 
@@ -322,7 +325,7 @@ inputs:
   genie_space_configuration: <path>
   metric_view_capabilities: <path>
   genie_quality_contract: <path>
-  datatype_resolution_policy: <path>
+  datatype_resolution_policy: {path: <exact path>, sha256: <raw digest>, policy_id: GREENFIELD_SYNTHETIC_DATATYPE_RESOLUTION_V1, contract_version: 1, status: APPROVED}
   stage_prompts: {}
   stage_validations: {}
   stage_guardrails: {}
@@ -338,6 +341,12 @@ target: {catalog: <name>, schema: <name>}
 assets: {}
 runtime: {}
 ```
+
+Newly resolved runs SHOULD include the complete `datatype_resolution_policy` tuple above for
+release traceability. It is compatibility metadata, not executable stage authority: older or
+already-frozen contexts that omit it remain valid because the frozen, digest-attested ERD helper
+and DDL template carry the executable policy. A downstream stage MUST authenticate this tuple when
+present and MUST NOT fail solely because it is absent.
 
 After Step 0, only `current_step`, `status`, `phases_completed`, `findings`, `completed_at`, and
 `error` may change normally. `retry_attempt` changes only in locked failed-run reopen. Resolved

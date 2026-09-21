@@ -90,6 +90,114 @@ def _canonical_sha256(value):
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def _merge_resolution_provenance(previous_rows, current_rows):
+    """Merge runtime decisions without discarding parse-time provenance.
+
+    The DDL notebook is a compatibility backstop.  It must not replace a
+    parse-phase assumptions artifact just because the ERD is already valid;
+    when it does repair a datatype, however, retain the earlier decision for
+    the same column as provenance rather than silently losing it.
+    """
+    merged = []
+    positions = {}
+    for row in previous_rows if isinstance(previous_rows, list) else []:
+        if not isinstance(row, dict):
+            continue
+        key = (row.get("table"), row.get("column"))
+        if key in positions:
+            continue
+        positions[key] = len(merged)
+        merged.append(dict(row))
+
+    for row in current_rows:
+        if not isinstance(row, dict):
+            continue
+        key = (row.get("table"), row.get("column"))
+        runtime_row = dict(row)
+        runtime_row["resolution_stage"] = "DDL_RUNTIME_BACKSTOP"
+        if key not in positions:
+            positions[key] = len(merged)
+            merged.append(runtime_row)
+            continue
+
+        prior = merged[positions[key]]
+        if prior == runtime_row:
+            continue
+        history = prior.get("provenance_history", [])
+        if not isinstance(history, list):
+            history = []
+        prior_snapshot = dict(prior)
+        prior_snapshot.pop("provenance_history", None)
+        history.append(prior_snapshot)
+        runtime_row["provenance_history"] = history
+        merged[positions[key]] = runtime_row
+    return merged
+
+
+def _runtime_assumptions(existing, datatype_resolutions):
+    """Build assumptions only after the runtime actually repaired datatypes."""
+    prior = existing if isinstance(existing, dict) else {}
+    assumptions = dict(prior)
+    assumptions.update({
+        "artifact_type": "schema_assumptions",
+        "contract_version": 1,
+        "policy_id": DATATYPE_RESOLUTION_POLICY_ID,
+        "scope": "GREENFIELD_SYNTHETIC_GENERATED_TARGET_ONLY",
+        "run_id": run_id,
+        "asset_suffix": ASSET_SUFFIX,
+        "catalog": CATALOG,
+        "schema": SCHEMA,
+        "eligible": datatype_resolution_eligible,
+        "status": "PASS",
+        "erd_parsed_path": ERD_PARSED_PATH,
+        "erd_input_sha256": erd_parsed_input_sha256,
+        "erd_output_sha256": _raw_sha256(ERD_PARSED_PATH),
+        "unresolved_datatypes": [],
+        "runtime_backstop_applied": True,
+    })
+    merged = _merge_resolution_provenance(
+        prior.get("resolutions", []), datatype_resolutions
+    )
+    assumptions["resolution_count"] = len(merged)
+    assumptions["resolutions"] = merged
+    return assumptions
+
+
+def _authenticate_existing_assumptions(assumptions):
+    """Authenticate parse-time assumptions before consuming a strict ERD."""
+    if not isinstance(assumptions, dict):
+        raise RuntimeError(
+            "SCHEMA_CONTRACT_ERROR: schema_assumptions.yaml must be a mapping"
+        )
+    required = {
+        "run_id": run_id,
+        "catalog": CATALOG,
+        "schema": SCHEMA,
+        "asset_suffix": ASSET_SUFFIX,
+        "policy_id": DATATYPE_RESOLUTION_POLICY_ID,
+        "status": "PASS",
+    }
+    for field, expected in required.items():
+        if assumptions.get(field) != expected:
+            raise RuntimeError(
+                f"SCHEMA_CONTRACT_ERROR: schema_assumptions.yaml {field}="
+                f"{assumptions.get(field)!r}, expected {expected!r}"
+            )
+    unresolved = assumptions.get("unresolved_datatypes")
+    if unresolved != []:
+        raise RuntimeError(
+            "SCHEMA_CONTRACT_ERROR: schema_assumptions.yaml has unresolved datatypes"
+        )
+    expected_erd_hash = assumptions.get("erd_output_sha256")
+    if not isinstance(expected_erd_hash, str) or expected_erd_hash != _raw_sha256(
+        ERD_PARSED_PATH
+    ):
+        raise RuntimeError(
+            "SCHEMA_CONTRACT_ERROR: schema_assumptions.yaml erd_output_sha256 "
+            "does not authenticate the current erd_parsed.yaml"
+        )
+
+
 def _quote_identifier(value):
     if not isinstance(value, str) or not value or "`" in value:
         raise RuntimeError(f"Unsafe or empty SQL identifier: {value!r}")
@@ -504,25 +612,26 @@ try:
                     "ERD_EXTRACTION_ERROR: datatype resolution did not converge"
                 )
 
-    assumptions = {
-        "artifact_type": "schema_assumptions",
-        "contract_version": 1,
-        "policy_id": DATATYPE_RESOLUTION_POLICY_ID,
-        "scope": "GREENFIELD_SYNTHETIC_GENERATED_TARGET_ONLY",
-        "run_id": run_id,
-        "asset_suffix": ASSET_SUFFIX,
-        "catalog": CATALOG,
-        "schema": SCHEMA,
-        "eligible": datatype_resolution_eligible,
-        "status": "PASS",
-        "erd_parsed_path": ERD_PARSED_PATH,
-        "erd_input_sha256": erd_parsed_input_sha256,
-        "erd_output_sha256": _raw_sha256(ERD_PARSED_PATH),
-        "resolution_count": len(datatype_resolutions),
-        "resolutions": datatype_resolutions,
-        "unresolved_datatypes": [],
-    }
-    _atomic_write_yaml(SCHEMA_ASSUMPTIONS_PATH, assumptions)
+    # schema_assumptions.yaml is normally produced by parse_erd.  Preserve
+    # its exact bytes on the strict-valid path; the runtime backstop may
+    # update it only when it actually repairs a datatype defect.
+    if datatype_resolutions:
+        existing_assumptions = (
+            _load_yaml(SCHEMA_ASSUMPTIONS_PATH)
+            if os.path.exists(SCHEMA_ASSUMPTIONS_PATH) else None
+        )
+        assumptions = _runtime_assumptions(
+            existing_assumptions, datatype_resolutions
+        )
+        _atomic_write_yaml(SCHEMA_ASSUMPTIONS_PATH, assumptions)
+    else:
+        if not os.path.exists(SCHEMA_ASSUMPTIONS_PATH):
+            raise RuntimeError(
+                "SCHEMA_CONTRACT_ERROR: schema_assumptions.yaml is required "
+                "for a strict-valid ERD"
+            )
+        existing_assumptions = _load_yaml(SCHEMA_ASSUMPTIONS_PATH)
+        _authenticate_existing_assumptions(existing_assumptions)
 
     projection_updates = _synchronize_erd_projection(erd_document, spec)
     if projection_updates:
@@ -547,10 +656,14 @@ try:
         "erd_parsed_input_sha256": erd_parsed_input_sha256,
         "erd_parsed_output_sha256": _raw_sha256(ERD_PARSED_PATH),
         "schema_assumptions_path": SCHEMA_ASSUMPTIONS_PATH,
-        "schema_assumptions_sha256": _raw_sha256(SCHEMA_ASSUMPTIONS_PATH),
+        "schema_assumptions_sha256": (
+            _raw_sha256(SCHEMA_ASSUMPTIONS_PATH)
+            if os.path.exists(SCHEMA_ASSUMPTIONS_PATH) else None
+        ),
         "datatype_resolution_policy_id": DATATYPE_RESOLUTION_POLICY_ID,
         "datatype_resolution_eligible": datatype_resolution_eligible,
         "datatype_resolutions": datatype_resolutions,
+        "parse_checkpoint_refresh_required": bool(datatype_resolutions),
         "table_spec_path": SPEC_PATH,
         "table_spec_input_sha256": table_spec_input_sha256,
         "table_spec_output_sha256": _raw_sha256(SPEC_PATH),
@@ -594,6 +707,7 @@ except RuntimeError as exc:
         "datatype_resolution_policy_id": DATATYPE_RESOLUTION_POLICY_ID,
         "datatype_resolution_eligible": datatype_resolution_eligible,
         "datatype_resolutions": datatype_resolutions,
+        "parse_checkpoint_refresh_required": bool(datatype_resolutions),
         "table_spec_path": SPEC_PATH,
         "table_spec_input_sha256": table_spec_input_sha256,
         "table_spec_output_sha256": _raw_sha256(SPEC_PATH),

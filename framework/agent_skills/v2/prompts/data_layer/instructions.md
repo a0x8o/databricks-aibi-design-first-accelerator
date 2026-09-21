@@ -117,9 +117,11 @@ Skip entirely for current-run `run_context.data_source.type: live_schema` (brown
 
 ## State & Checkpoint Contract
 
-Uses the fingerprinted checkpoint contract in `{AGENT_SKILLS_DIR}/prompts/shared/state_contract.md`. Before each reusable phase,
-authenticate the run, recompute the producer/frozen-run and mandatory dependency/output hashes, and
-apply the phase-specific check below. Skip only a current `VALID` record when every check passes.
+Uses the fingerprinted checkpoint contract in `{AGENT_SKILLS_DIR}/prompts/shared/state_contract.md`. Before executing a fresh or
+stale reusable phase, authenticate the run and recompute only the producer/frozen-run and mandatory
+input/dependency hashes; the phase's own outputs do not exist yet and are never pre-write authority.
+For a skip/resume candidate, also recompute its output hashes and apply the phase-specific check below.
+Skip only a current `VALID` record when every check passes.
 Otherwise mark that phase and all graph dependents `STALE`, persist the invalidation, and return
 execution to the earliest stale phase. `load_config` is stateless: always re-read it and never add a
 reusable `phases_completed` record.
@@ -127,7 +129,7 @@ reusable `phases_completed` record.
 | Phase | Artifact | Additional phase-specific skip check after the fingerprint gate |
 |-------|----------|-----------|
 | load_config | accelerator request + frozen run contracts | Never reusable; re-read to detect request drift while execution uses current-run `run_context.yaml`/`step_handoff.yaml` |
-| parse_erd | `erd_parsed.yaml` + `schema_assumptions.yaml` | current-run artifacts are structurally valid and mutually authenticated; tables are non-empty; stored ERD-image digest equals the current input fingerprint; assumptions policy/run/target/suffix and raw/resolved hashes match; zero unresolved datatypes; current digest-attested strict validation returns `PASS`. A prior-version cache hit is not itself a phase skip. |
+| parse_erd | `erd_parsed.yaml` + `schema_assumptions.yaml` | **Post-production skip verification only—not a pre-write prerequisite.** For an already completed candidate, current-run artifacts are structurally valid and mutually authenticated; tables are non-empty; stored ERD-image digest equals the current input fingerprint; assumptions policy/run/target/suffix and raw/resolved hashes match; zero unresolved datatypes; current digest-attested strict validation returns `PASS`. A fresh parse creates both outputs before this check. A prior-version cache hit is not itself a phase skip. |
 | build_semantic_model | semantic_model.yaml | structurally valid and bound to the current parsed-ERD output fingerprint |
 | generate_ddl | Exact expected tables in catalog | catalog readback resolves every exact current-run expected table identity in the frozen target namespace; no schema-success claim is made yet |
 | reconcile_schema | schema_reconciliation.yaml | current-run artifact authenticates `table_spec.yaml`; policy is `DEPLOYED_DATATYPE_REPAIR_V1`; status is `PASS`; expected/current DESCRIBE fingerprints match; zero unresolved mismatches |
@@ -180,12 +182,20 @@ Permission, transport, and genuine I/O failures retain that operational classifi
 Then:
 
 1. Read `accelerator.yaml` only as requested configuration and drift evidence; it does not change this run.
-2. Read `{OUTPUT_FOLDER}/step_handoff.yaml`; validate its own `output_folder` and all shared resolved catalog/schema/version/run values against the already loaded `run_context.yaml`, including exact `step_handoff.deploy_root == run_context.runtime.deploy_root`, then consume those values verbatim.
+2. Read `{OUTPUT_FOLDER}/step_handoff.yaml`; validate its own `output_folder` and all shared resolved catalog/schema/version/run values against the already loaded `run_context.yaml`, then consume those values verbatim. When either side supplies `deploy_root`, require both values to be non-empty and exactly equal. For backward-compatible run contexts where both omit `deploy_root`, continue using the already frozen absolute helper/template path-and-hash tuples; missing `deploy_root` alone is not `DATA_LAYER_INPUT_AUTHORITY_ERROR`.
 3. If the handoff is missing, malformed, or conflicts, HALT with `DATA_LAYER_INPUT_AUTHORITY_ERROR`; do not repeat Step 0 resolution locally or switch runs.
 4. Read the ERD image at the exact frozen `run_context` data-source path (the PNG/JPG is authoritative observed source-design input; after deployment, catalog readback is runtime truth).
-5. Load the exact frozen `run_context.templates.ddl_notebook` and `run_context.templates.dbldatagen_notebook`, bind the exact `run_context.templates.erd_validation_utils.path` + `.sha256` tuple for the attested GATE 2.1b loader, and authenticate `run_context.inputs.datatype_resolution_policy` as `GREENFIELD_SYNTHETIC_DATATYPE_RESOLUTION_V1`. The contract values embedded in the attested helper/template MUST match this frozen contract.
+5. Load the exact frozen `run_context.templates.ddl_notebook` and `run_context.templates.dbldatagen_notebook`, and bind the exact `run_context.templates.erd_validation_utils.path` + `.sha256` tuple for the attested GATE 2.1b loader. The ERD validation helper and DDL notebook template carry policy `GREENFIELD_SYNTHETIC_DATATYPE_RESOLUTION_V1`; release tests prove their parity with `contracts/datatype_resolution_policy.yaml`. A `run_context.inputs.datatype_resolution_policy` entry is optional compatibility metadata: authenticate it when present, but its absence MUST NOT raise `DATA_LAYER_INPUT_AUTHORITY_ERROR` or block artifact creation.
 6. Use frozen `run_context.data_source.greenfield.volume`, `run_context.llm`, `run_context.validation`, and `run_context.quality_gates` for execution-affecting policy.
 7. Load the KPI/use-case specification from the exact frozen `run_context.inputs.kpi_spec` path (influences realistic values and coverage, NEVER alters schema).
+
+Complete this input-authority preflight **before** invoking the vision model. The preflight concerns
+only externally supplied/frozen inputs and completed resume candidates; it MUST NOT require
+`erd_parsed.yaml`, `schema_assumptions.yaml`, or a `parse_erd` checkpoint on a fresh phase. Once this
+preflight passes and a fresh vision parse starts, the normal result is to validate/resolve in memory
+and create those artifacts. Do not halt after the vision call merely because those producer outputs
+did not exist beforehand. Any true missing frozen input must be detected and reported before the
+expensive model call.
 
 ---
 
@@ -369,16 +379,25 @@ if (
         "ERD_VALIDATION_HELPER_CONTRACT_ERROR: notebook helper reference is not the frozen run_context tuple"
     )
 
-# G-12: bind the frozen path to the canonical templates directory obtained
-# from the already authenticated handoff, never from dirname chains or cwd.
-deploy_root = step_handoff.get("deploy_root")
-if not deploy_root:
-    raise RuntimeError("DATA_LAYER_INPUT_AUTHORITY_ERROR: step_handoff.yaml is missing deploy_root")
-templates_dir = os.path.normpath(f"{deploy_root}/framework/templates")
-if os.path.dirname(os.path.normpath(ERD_VALIDATION_UTILS_PATH)) != templates_dir:
+# G-12: when deploy_root is frozen, bind the helper to its canonical template
+# directory. Older contexts may omit deploy_root on both sides; the exact
+# absolute path + raw SHA-256 tuple remains sufficient authority in that case.
+handoff_deploy_root = step_handoff.get("deploy_root")
+context_deploy_root = run_context.get("runtime", {}).get("deploy_root")
+if bool(handoff_deploy_root) != bool(context_deploy_root):
     raise RuntimeError(
-        "ERD_VALIDATION_HELPER_CONTRACT_ERROR: frozen utility path is outside canonical templates_dir"
+        "DATA_LAYER_INPUT_AUTHORITY_ERROR: deploy_root is present on only one authority artifact"
     )
+if handoff_deploy_root and handoff_deploy_root != context_deploy_root:
+    raise RuntimeError("DATA_LAYER_INPUT_AUTHORITY_ERROR: deploy_root authority mismatch")
+if not os.path.isabs(os.path.normpath(ERD_VALIDATION_UTILS_PATH)):
+    raise RuntimeError("ERD_VALIDATION_HELPER_CONTRACT_ERROR: utility path must be absolute")
+if handoff_deploy_root:
+    templates_dir = os.path.normpath(f"{handoff_deploy_root}/framework/templates")
+    if os.path.dirname(os.path.normpath(ERD_VALIDATION_UTILS_PATH)) != templates_dir:
+        raise RuntimeError(
+            "ERD_VALIDATION_HELPER_CONTRACT_ERROR: frozen utility path is outside canonical templates_dir"
+        )
 if not re.fullmatch(r"[0-9a-f]{64}", ERD_VALIDATION_UTILS_SHA256):
     raise RuntimeError(
         "ERD_VALIDATION_HELPER_CONTRACT_ERROR: utility digest must be lowercase SHA-256"
@@ -529,11 +548,15 @@ components, strict-majority same-table semantic peers, strict-majority cross-tab
 release-pinned semantic numeric defaults, and non-truncating `STRING`. It preserves visible decimal
 precision when valid, enforces `1 <= p <= 38` and `0 <= s <= p`, and is total for datatype defects.
 
-Always atomically write `{OUTPUT_FOLDER}/schema_assumptions.yaml`, even when there are zero
-resolutions. Bind it to run/target/suffix, policy `GREENFIELD_SYNTHETIC_DATATYPE_RESOLUTION_V1`, raw
-and resolved ERD hashes, ordered resolution rows, evidence, confidence, and `observed: false` for
-every inferred value. Then write the resolved `erd_parsed.yaml`. Missing tables/columns, duplicate
-identity, source/live authority, synthetic-disabled runs, or a broken resolver contract still HALT.
+After the resolved document passes validation entirely in memory, persist `erd_parsed.yaml` and
+`schema_assumptions.yaml` with individually atomic replace operations, even when there are zero
+resolutions. Bind the assumptions artifact to run/target/suffix, policy
+`GREENFIELD_SYNTHETIC_DATATYPE_RESOLUTION_V1`, raw and resolved ERD hashes, ordered resolution rows,
+evidence, confidence, and `observed: false` for every inferred value. Re-read and mutually
+authenticate both persisted artifacts before marking `parse_erd` valid; if the second write or
+authentication fails, neither artifact may be consumed downstream and the phase remains stale.
+Missing tables/columns, duplicate identity, source/live authority, synthetic-disabled runs, or a
+broken resolver contract still HALT.
 
 The attested functions are the only implementations of this gate. Do not define a local repair
 helper. Databricks default expansion is platform canonicalization; all other fallback values are

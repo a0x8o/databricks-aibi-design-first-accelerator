@@ -558,9 +558,9 @@ its individual claims retain the authorities assigned by G-3:
 
 | Phase | Artifact | Verification |
 |-------|----------|-------------|
-| parse_erd | `erd_parsed.yaml` + `schema_assumptions.yaml` | both exist; tables array non-empty; current digest-attested strict datatype validation PASS; assumptions policy/run/target/suffix and raw/resolved ERD hashes authenticate; zero unresolved datatypes; image-hash identity and structural validity alone are insufficient |
+| parse_erd | `erd_parsed.yaml` + `schema_assumptions.yaml` | post-production/resume check only: both exist; tables array non-empty; current digest-attested strict datatype validation PASS; assumptions policy/run/target/suffix and raw/resolved ERD hashes authenticate; zero unresolved datatypes. A fresh phase creates both outputs together and MUST NOT require either before its initial write |
 | build_semantic_model | semantic_model.yaml | file exists |
-| generate_ddl | `schema_assumptions.yaml` + `ddl_preflight.yaml` + tables in catalog | current-run preflight is `PASS`, authenticates assumptions digest, raw/resolved ERD and table-spec hashes, records policy resolutions and exact ERD-derived type regenerations, proves resolver idempotence, and precedes catalog mutation; after run_context/handoff parity, exact table identities from the resulting `table_spec.yaml` plus verbatim `step_handoff.asset_suffix` resolve by current catalog readback; this phase proves identity/existence only and does not claim deployed datatype reconciliation |
+| generate_ddl | authenticated parse assumptions dependency + `ddl_preflight.yaml` + tables in catalog | current-run preflight is `PASS`, authenticates assumptions digest, raw/resolved ERD and table-spec hashes, records any exceptional runtime-backstop resolutions and exact ERD-derived type regenerations, proves resolver idempotence, and precedes catalog mutation. A strict-valid ERD preserves the parse-owned assumptions bytes. If the runtime backstop mutates ERD/assumptions, the owning orchestrator refreshes the `parse_erd` output fingerprints/checkpoint before this phase becomes valid; after run_context/handoff parity, exact table identities from the resulting `table_spec.yaml` plus verbatim `step_handoff.asset_suffix` resolve by current catalog readback; this phase proves identity/existence only and does not claim deployed datatype reconciliation |
 | reconcile_schema | `{OUTPUT_FOLDER}/schema_reconciliation.yaml` | current run/target/suffix; `producer_phase: reconcile_schema`; policy is `DEPLOYED_DATATYPE_REPAIR_V1`; `status: PASS`; exact ordered deployed name/type readback matches `table_spec.yaml`; expected/observed schema hashes match; zero unresolved mismatches |
 | generate_synthetic_data | Row count > 0 plus authenticated reconciliation dependency | the immediate `reconcile_schema` phase remains reusable, its standalone artifact authenticates against a fresh exact name/type readback, and `SELECT COUNT(*) > 0` for each exact expected table |
 | validate_data | data_layer_validation.yaml | current run/version; `overall_status: PASS`; authenticates both standalone assumptions and reconciliation artifact paths/hashes and embeds the same policy/status/hash/unresolved payloads without contradiction; zero unresolved datatypes or schema mismatches |
@@ -632,13 +632,19 @@ not pictured here records it as a direct input fingerprint and invalidates from 
 
 ### Datatype Resolution Policy Fingerprints
 
-The exact raw bytes at `run_context.inputs.datatype_resolution_policy`, the frozen ERD validation
-helper, and the frozen DDL template are mandatory direct inputs to `parse_erd` and `generate_ddl`.
-The contract policy ID must be `GREENFIELD_SYNTHETIC_DATATYPE_RESOLUTION_V1`, and release tests must
-prove its platform defaults and semantic scale map equal both implementations. Record the contract
-as `RAW_BYTES` and `schema_assumptions.yaml` as a phase output fingerprint. Any path/hash, policy ID,
-embedded-value, raw/resolved ERD hash, or helper/runtime parity mismatch invalidates `parse_erd` and
-all transitive dependents. A cached ERD without authenticated assumptions evidence is never reusable.
+The frozen ERD validation helper is a mandatory direct input to `parse_erd`; the frozen DDL template
+is a mandatory direct input to `generate_ddl`. Both carry policy
+`GREENFIELD_SYNTHETIC_DATATYPE_RESOLUTION_V1`, and release tests prove their platform defaults and
+semantic scale map equal `contracts/datatype_resolution_policy.yaml`. The contract file is
+release-governance evidence, not a mandatory `run_context.inputs` member. If an optional frozen
+reference is present, authenticate it; if absent, continue with the already authenticated executable
+artifacts. Never classify that absence as `DATA_LAYER_INPUT_AUTHORITY_ERROR`.
+
+Record `schema_assumptions.yaml` as a `parse_erd` output fingerprint. Policy-ID, raw/resolved ERD
+hash, or helper/runtime parity mismatch invalidates `parse_erd` and all transitive dependents. On a
+fresh parse, `schema_assumptions.yaml` and resolved `erd_parsed.yaml` are outputs created together;
+neither may be required to exist before that first write. Existing artifacts become authority only
+for resume/cache verification after their producing phase completes.
 
 ### Genie Quality Policy Fingerprints
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import copy
+import hashlib
 import importlib.util
 from pathlib import Path
 import tempfile
@@ -52,6 +53,7 @@ def _load_ddl_projection_functions():
             "_strict_majority",
             "_peer_scale",
             "_fallback_from_column_name",
+            "_merge_resolution_provenance",
             "_resolve_greenfield_synthetic_datatypes",
             "_datatype_resolution_is_eligible",
             "_synchronize_erd_projection",
@@ -319,6 +321,30 @@ class DeploymentGateTests(unittest.TestCase):
 
 
 class DDLProjectionRuntimeTests(unittest.TestCase):
+    def test_runtime_provenance_merge_keeps_parse_decision_history(self):
+        previous = [{
+            "table": "fact_claim_detail",
+            "column": "allowed_amt",
+            "resolved_datatype": "decimal(28,2)",
+            "resolution_source": "PARSE_TIME_EVIDENCE",
+        }]
+        current = [{
+            "table": "fact_claim_detail",
+            "column": "allowed_amt",
+            "resolved_datatype": "decimal(28,4)",
+            "resolution_source": "SEMANTIC_DECIMAL_POLICY",
+        }]
+
+        merged = ddl_projection["_merge_resolution_provenance"](previous, current)
+
+        self.assertEqual(len(merged), 1)
+        self.assertEqual(merged[0]["resolved_datatype"], "decimal(28,4)")
+        self.assertEqual(merged[0]["resolution_stage"], "DDL_RUNTIME_BACKSTOP")
+        self.assertEqual(
+            merged[0]["provenance_history"][0]["resolution_source"],
+            "PARSE_TIME_EVIDENCE",
+        )
+
     def test_runtime_resolution_scope_is_greenfield_synthetic_only(self):
         eligible = {
             "data_source": {
@@ -594,6 +620,90 @@ class ContractTemplateTests(unittest.TestCase):
             self.assertEqual(assumptions["unresolved_datatypes"], [])
             self.assertEqual(preflight["status"], "PASS")
             self.assertFalse(preflight["catalog_mutation_started"])
+            self.assertTrue(preflight["parse_checkpoint_refresh_required"])
+
+    def test_strict_valid_erd_preserves_existing_assumptions_bytes(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir)
+            spec = {
+                "catalog": "test_catalog",
+                "schema": "test_schema",
+                "asset_suffix": "_v1",
+                "tables": [{
+                    "name": "fact_claim_detail",
+                    "columns": [{"name": "amount_0", "type": "decimal(28,4)"}],
+                }],
+            }
+            erd = {"tables": [{
+                "name": "fact_claim_detail",
+                "observed": {"columns": [{
+                    "name": "amount_0", "datatype": "decimal(28,4)"
+                }]},
+            }]}
+            run_context = {
+                "run_id": "run-strict",
+                "output_folder": str(output),
+                "target": {"catalog": "test_catalog", "schema": "test_schema"},
+                "version": {"asset_suffix": "_v1"},
+                "data_source": {
+                    "type": "erd",
+                    "greenfield": {"enabled": True, "synthetic_data": True},
+                },
+            }
+            handoff = {
+                "run_id": "run-strict",
+                "catalog": "test_catalog",
+                "schema": "test_schema",
+                "asset_suffix": "_v1",
+                "output_folder": str(output),
+            }
+            for name, value in (
+                ("table_spec.yaml", spec),
+                ("erd_parsed.yaml", erd),
+                ("run_context.yaml", run_context),
+                ("step_handoff.yaml", handoff),
+            ):
+                (output / name).write_text(
+                    yaml.safe_dump(value, sort_keys=False), encoding="utf-8"
+                )
+            assumptions_bytes = (
+                "artifact_type: schema_assumptions\n"
+                "contract_version: 1\n"
+                "policy_id: GREENFIELD_SYNTHETIC_DATATYPE_RESOLUTION_V1\n"
+                "run_id: run-strict\n"
+                "asset_suffix: _v1\n"
+                "catalog: test_catalog\n"
+                "schema: test_schema\n"
+                "status: PASS\n"
+                "unresolved_datatypes: []\n"
+                "resolution_count: 0\n"
+                "resolutions: []\n"
+                "erd_output_sha256: PLACEHOLDER\n"
+                "producer_phase: parse_erd\n"
+            ).replace(
+                "PLACEHOLDER",
+                hashlib.sha256((output / "erd_parsed.yaml").read_bytes()).hexdigest(),
+            ).encode("utf-8")
+            (output / "schema_assumptions.yaml").write_bytes(assumptions_bytes)
+
+            prefix = self.ddl_template.split(
+                'spark.sql(f"CREATE SCHEMA IF NOT EXISTS', 1
+            )[0]
+            rendered = (
+                prefix.replace("{{OUTPUT_FOLDER}}", str(output))
+                .replace("{{TARGET_CATALOG}}", "test_catalog")
+                .replace("{{TARGET_SCHEMA}}", "test_schema")
+                .replace("{{DOMAIN_NAME}}", "test_domain")
+            )
+            exec(compile(rendered, "ddl_strict_valid_integration", "exec"), {})
+
+            self.assertEqual(
+                (output / "schema_assumptions.yaml").read_bytes(), assumptions_bytes
+            )
+            preflight = yaml.safe_load(
+                (output / "ddl_preflight.yaml").read_text(encoding="utf-8")
+            )
+            self.assertFalse(preflight["parse_checkpoint_refresh_required"])
 
     def test_state_graph_has_explicit_reconcile_schema_phase(self):
         expected_graph = (
@@ -615,6 +725,43 @@ class ContractTemplateTests(unittest.TestCase):
 
         self.assertNotIn("SOURCE_CATALOG", self.data_template)
         self.assertNotIn("SOURCE_SCHEMA", self.data_template)
+
+
+class AuthorityBootstrapPromptTests(unittest.TestCase):
+    """Keep the bootstrap contract compatible with fresh and legacy runs."""
+
+    @classmethod
+    def setUpClass(cls):
+        prompts = PROJECT_ROOT / "agent_skills/v2/prompts"
+        cls.master_prompt = (prompts / "00_master_prompt.md").read_text(encoding="utf-8")
+        cls.data_instructions = (prompts / "data_layer/instructions.md").read_text(encoding="utf-8")
+        cls.data_validation = (prompts / "data_layer/validation.md").read_text(encoding="utf-8")
+        cls.global_guardrails = (prompts / "shared/global_guardrails.md").read_text(encoding="utf-8")
+
+    def test_fresh_parse_does_not_require_its_own_outputs_before_write(self):
+        self.assertIn("A fresh parse creates both outputs before this check", self.data_instructions)
+        self.assertIn("Neither output is a required\ninput before that first persistence", self.data_validation)
+        self.assertIn("fresh phase", self.data_instructions)
+
+    def test_legacy_datatype_policy_metadata_is_optional(self):
+        expected = "run_context.inputs.datatype_resolution_policy"
+        self.assertIn(expected, self.data_instructions)
+        self.assertIn("absence MUST NOT raise `DATA_LAYER_INPUT_AUTHORITY_ERROR`", self.data_instructions)
+        self.assertIn("not a mandatory\nruntime input", self.master_prompt)
+
+    def test_deploy_root_omission_is_backward_compatible_but_mismatch_is_not(self):
+        self.assertIn("both omit `deploy_root`", self.data_instructions)
+        self.assertIn("deploy_root is present on only one authority artifact", self.data_instructions)
+        self.assertIn("deploy_root authority mismatch", self.data_instructions)
+        self.assertNotIn("step_handoff.yaml is missing deploy_root", self.data_instructions)
+
+    def test_missing_authority_rule_has_a_producer_creation_exception(self):
+        self.assertIn("after its defined creation point", self.global_guardrails)
+        self.assertIn("producer phase's own output before its first execution", self.global_guardrails)
+
+    def test_output_hashes_are_not_prewrite_inputs_for_fresh_phases(self):
+        self.assertIn("phase's own outputs do not exist yet and are never pre-write authority", self.data_instructions)
+        self.assertIn("For a skip/resume candidate, also recompute its output hashes", self.data_instructions)
 
 
 if __name__ == "__main__":

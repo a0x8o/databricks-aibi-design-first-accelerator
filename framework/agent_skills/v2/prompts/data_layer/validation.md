@@ -23,6 +23,11 @@ candidate. A cached candidate that fails becomes a cache miss; invalidate `parse
 dependents and perform a fresh parse. Cache/resume PASS additionally requires a current authenticated
 `schema_assumptions.yaml`, even when its resolution count is zero.
 
+For a fresh parse, validate and resolve the vision response completely in memory, then create the
+resolved `erd_parsed.yaml` and its matching `schema_assumptions.yaml`. Neither output is a required
+input before that first persistence. After persistence, re-read and mutually authenticate both
+before the phase can become `VALID` or any downstream consumer may run.
+
 ### GATE 4.0: Expected Schema Contract (MANDATORY before DDL execution)
 `table_spec.yaml` must be an exact physical projection of the resolved `erd_parsed.yaml`. Before notebook
 deployment or execution, invoke the digest-attested `validate_table_spec_projection(erd_tables,
@@ -40,6 +45,13 @@ idempotence, and then regenerates only table-spec type fields from the resolved 
 old/new value, raw/resolved ERD hashes, assumptions digest, and both table-spec hashes; require a
 second exact projection PASS. This never authorizes adopting catalog drift as intent. Structural
 differences remain hard failures.
+
+When the ERD is already strict-valid, the DDL runtime MUST authenticate the existing parse-owned
+`schema_assumptions.yaml` and preserve its exact bytes; it must not replace parse evidence with an
+empty runtime artifact. If the exceptional runtime backstop changes the ERD or assumptions, treat
+that action as bounded `parse_erd` recovery: refresh the owning parse output fingerprints and
+checkpoint before `generate_ddl` may become `VALID`. A downstream phase never leaves a mutated
+parse artifact paired with its old fingerprint.
 
 ### GATE 4.1: Table Count Verification
 `SHOW TABLES IN {catalog}.{schema} LIKE '*{ASSET_SUFFIX}'` must return expected count, using the exact frozen `step_handoff.yaml.asset_suffix`. HALT if fewer.
