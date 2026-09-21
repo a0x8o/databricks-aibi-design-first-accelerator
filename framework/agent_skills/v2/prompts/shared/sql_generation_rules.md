@@ -57,7 +57,7 @@ INCORRECT:
 Metadata authority is lifecycle- and concern-specific:
 
 - Before deployment, `table_spec.yaml` defines the expected physical schema only after it has been validated as an exact projection of `erd_parsed.yaml`.
-- After DDL deployment and before synthetic-data SQL, catalog readback using `DESCRIBE TABLE` defines the exact object names, column names, and datatypes that executable SQL may reference. The deployed schema must first reconcile to `table_spec.yaml`, and authenticated `{OUTPUT_FOLDER}/schema_reconciliation.yaml` evidence must show the current run/target/suffix, policy `DEPLOYED_DATATYPE_REPAIR_V1`, `status: PASS`, matching expected/observed schema hashes, and zero unresolved mismatches. A fresh exact name/type readback must still agree with that evidence.
+- Before DDL, authenticated `{OUTPUT_FOLDER}/schema_assumptions.yaml` defines any governed datatype-only inference already incorporated into the resolved ERD; SQL stages consume it and never infer locally. After DDL deployment and before synthetic-data SQL, catalog readback using `DESCRIBE TABLE` defines the exact object names, column names, and datatypes that executable SQL may reference. The deployed schema must first reconcile to `table_spec.yaml`, and authenticated `{OUTPUT_FOLDER}/schema_reconciliation.yaml` evidence must show the current run/target/suffix, policy `DEPLOYED_DATATYPE_REPAIR_V1`, `status: PASS`, matching expected/observed schema hashes, and zero unresolved mismatches. A fresh exact name/type readback must still agree with that evidence.
 - After `validate_data`, all downstream executable SQL additionally requires matching current-run `data_layer_validation.yaml` evidence with `overall_status: PASS`. Its reconciliation artifact path/hash and embedded reconciliation payload must authenticate the same standalone evidence; final validation never substitutes for the pre-generation reconciliation boundary.
 - `semantic_model.yaml` defines intended grains and relationships; it does not prove a deployed join is safe.
 - Once `data_layer_validation.yaml` exists, SQL may use only relationships whose matching relationship-level entry has `validation_status: PASS`.
@@ -69,7 +69,9 @@ Metadata authority is lifecycle- and concern-specific:
 13. Use only catalogs, schemas, tables, views, columns, and functions provided
     in the applicable authoritative metadata above.
 
-14. Never invent a column, table, schema, function, relationship, or datatype.
+14. Never invent a column, table, schema, function, relationship, or datatype in a SQL stage. A
+    datatype resolved upstream by the authenticated greenfield-synthetic policy is consumed as
+    validated schema intent; it is not recomputed or reinterpreted here.
 
 15. Use fully qualified object names when they are supplied:
     catalog.schema.object

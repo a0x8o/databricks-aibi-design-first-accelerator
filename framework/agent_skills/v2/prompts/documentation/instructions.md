@@ -256,7 +256,10 @@ Potential artifacts include:
 
 ```text
 erd_parsed.yaml
+schema_assumptions.yaml
 table_spec.yaml
+ddl_preflight.yaml
+schema_reconciliation.yaml
 semantic_model.yaml
 synthetic_data_spec.yaml
 data_layer_validation.yaml
@@ -399,7 +402,7 @@ There is no single artifact authority order for every field. Apply authority acc
 |---|---|---|
 | Enabled stages, requested asset names, model selection | `accelerator.yaml` | `run_context.yaml` for resolved/executed run configuration; verified readback for deployed state |
 | KPI definition and expected business meaning | KPI specification | Never overwritten by deployment evidence |
-| Expected schema, roles, grain, and relationships | `erd_parsed.yaml`, `table_spec.yaml`, `semantic_model.yaml` | catalog/API readback and executed data-layer validation |
+| Expected schema, roles, grain, and relationships | resolved `erd_parsed.yaml`, authenticated `schema_assumptions.yaml`, `table_spec.yaml`, `semantic_model.yaml` | catalog/API readback and executed data-layer validation |
 | Metric mapping and planned semantics | `{OUTPUT_FOLDER}/metric_views/kpi_metric_mapping.yaml`, `metric_view_plan.yaml`, and `metric_view_design.yaml` in the same directory | verified `{OUTPUT_FOLDER}/metric_views/metric_view_validation.yaml` and Metric View readback |
 | Metric View feature decision | `{OUTPUT_FOLDER}/metric_views/resolved_metric_view_capabilities.yaml` and its recorded version/hash | verified generation and readback result |
 | Dashboard design | dashboard design artifacts | dashboard API readback or terminal cross-validation |
@@ -676,16 +679,23 @@ Summarize:
 - FK validation;
 - cardinality validation;
 - semantic constraint validation.
+- governed datatype-resolution status and every inferred datatype, including confidence and basis;
 - deployed schema reconciliation status, including any bounded empty-table datatype repair.
 
 Source these facts from:
 
 ```text
+schema_assumptions.yaml
+schema_reconciliation.yaml
 data_layer_validation.yaml
 ```
 
-Authenticate this artifact to the frozen current run before using it. For greenfield runs, do not
+Authenticate all three artifacts to the frozen current run before using them. Never describe an
+`observed: false` datatype resolution as visible in the ERD; label it `INFERRED_POLICY` and show its
+raw value, resolved value, resolution source, evidence, and confidence. For greenfield runs, do not
 describe datatype reconciliation as successful unless
+`schema_assumptions.policy_id: GREENFIELD_SYNTHETIC_DATATYPE_RESOLUTION_V1`,
+`schema_assumptions.unresolved_datatypes: []`,
 `schema_reconciliation.policy_id: DEPLOYED_DATATYPE_REPAIR_V1`,
 `schema_reconciliation.status: PASS`, and
 `schema_reconciliation.unresolved_mismatches: []` are all present exactly and its table identities

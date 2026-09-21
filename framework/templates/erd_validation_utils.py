@@ -7,9 +7,10 @@
 #
 # PURPOSE:
 # Vision models may truncate data type definitions when processing ERD images.
-# Precision, scale, and length are schema intent, so this utility never guesses
-# missing values. It rejects incomplete or invalid types before erd_parsed.yaml
-# is written and routes the caller back to authoritative ERD evidence.
+# Precision, scale, and length are schema intent. Strict validation remains the
+# default. A separate, explicitly invoked resolver can repair datatype-only
+# defects for greenfield synthetic targets and returns structured provenance for
+# schema_assumptions.yaml. It is never used for source/live schema authority.
 #
 # USAGE:
 # Call validate_and_fix_datatypes() on the parsed tables list AFTER vision model
@@ -99,23 +100,23 @@ def validate_datatype(dtype: Any) -> str | None:
         return None
 
     decimal_match = re.fullmatch(
-        r'(decimal|numeric)\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)',
+        r'(decimal|dec|numeric)(?:\s*\(\s*(\d+)(?:\s*,\s*(\d+))?\s*\))?',
         lower,
     )
     if decimal_match:
-        precision = int(decimal_match.group(2))
-        scale = int(decimal_match.group(3))
+        # Databricks documents DECIMAL as DECIMAL[(p[,s])], with defaults
+        # p=10 and s=0. Expanding those defaults is canonicalization, not
+        # application inference.
+        precision = int(decimal_match.group(2) or 10)
+        scale = int(decimal_match.group(3) or 0)
         if not 1 <= precision <= 38:
             return f"decimal precision {precision} is outside 1..38"
         if not 0 <= scale <= precision:
             return f"decimal scale {scale} is outside 0..{precision}"
         return None
 
-    if re.match(r'^(decimal|numeric)\b', lower):
-        return (
-            f"decimal/numeric value {value!r} must include complete precision "
-            "and scale as (p,s)"
-        )
+    if re.match(r'^(decimal|dec|numeric)\b', lower):
+        return f"decimal/numeric value {value!r} is malformed or truncated"
 
     length_match = re.fullmatch(r'(varchar|char|nvarchar)\s*\(\s*(\d+)\s*\)', lower)
     if length_match:
@@ -130,7 +131,7 @@ def validate_datatype(dtype: Any) -> str | None:
 
 
 def canonicalize_datatype(dtype: Any) -> str:
-    """Canonicalize representation only; never infer a datatype component."""
+    """Canonicalize representation and documented Databricks defaults."""
     error = validate_datatype(dtype)
     if error:
         raise ValueError(error)
@@ -138,13 +139,251 @@ def canonicalize_datatype(dtype: Any) -> str:
     value = _SIMPLE_TYPE_ALIASES.get(value, value)
     if value in _SIMPLE_TYPES or value in _SIMPLE_TYPE_ALIASES.values():
         return value
-    decimal_match = re.fullmatch(r'(decimal|numeric)\((\d+),(\d+)\)', value)
+    decimal_match = re.fullmatch(
+        r'(decimal|dec|numeric)(?:\((\d+)(?:,(\d+))?\))?', value
+    )
     if decimal_match:
-        return f"decimal({int(decimal_match.group(2))},{int(decimal_match.group(3))})"
+        precision = int(decimal_match.group(2) or 10)
+        scale = int(decimal_match.group(3) or 0)
+        return f"decimal({precision},{scale})"
     length_match = re.fullmatch(r'(varchar|char|nvarchar)\((\d+)\)', value)
     if length_match:
         return f"{length_match.group(1)}({int(length_match.group(2))})"
     raise ValueError(f"unsupported or malformed datatype {dtype!r}")
+
+
+# =============================================================================
+# SECTION 2A: Governed Resolution for Greenfield Synthetic Targets
+# =============================================================================
+
+DATATYPE_RESOLUTION_POLICY_ID = "GREENFIELD_SYNTHETIC_DATATYPE_RESOLUTION_V1"
+
+_SEMANTIC_TOKENS = {
+    "MONETARY": {
+        "amt", "amount", "allowed", "balance", "billed", "charge", "coinsurance",
+        "copay", "cost", "deduct", "expense", "fee", "net", "paid", "payment",
+        "premium", "price", "revenue",
+    },
+    "RATIO": {"factor", "pct", "percent", "percentage", "rate", "ratio"},
+    "MEASUREMENT": {
+        "dose", "dosage", "duration", "height", "measurement", "qty", "quantity",
+        "volume", "weight",
+    },
+    "COUNT": {"count", "cnt", "nbr", "num", "number", "rank", "seq", "sequence"},
+}
+_DECIMAL_DEFAULTS = {
+    "MONETARY": (38, 4),
+    "RATIO": (38, 6),
+    "MEASUREMENT": (38, 4),
+    "COUNT": (38, 0),
+    "GENERIC": (38, 18),
+}
+_TYPE_SYNONYMS = {
+    "bit": "boolean",
+    "bool": "boolean",
+    "byte": "tinyint",
+    "datetime": "timestamp",
+    "datetime2": "timestamp",
+    "int16": "smallint",
+    "int32": "int",
+    "int64": "bigint",
+    "json": "string",
+    "real": "float",
+    "short": "smallint",
+    "text": "string",
+    "uuid": "string",
+    "xml": "string",
+}
+
+
+def _semantic_family(column_name: Any) -> str:
+    tokens = set(re.findall(r"[a-z0-9]+", str(column_name or "").lower()))
+    for family in ("MONETARY", "RATIO", "MEASUREMENT", "COUNT"):
+        if tokens & _SEMANTIC_TOKENS[family]:
+            return family
+    return "GENERIC"
+
+
+def _strict_decimal_parts(value: Any) -> tuple[int, int] | None:
+    if not isinstance(value, str):
+        return None
+    match = re.fullmatch(
+        r"\s*(?:decimal|dec|numeric)\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)\s*",
+        value,
+        re.IGNORECASE,
+    )
+    if not match:
+        return None
+    precision, scale = int(match.group(1)), int(match.group(2))
+    if 1 <= precision <= 38 and 0 <= scale <= precision:
+        return precision, scale
+    return None
+
+
+def _strict_majority(values: list[int]) -> int | None:
+    if not values:
+        return None
+    counts = {value: values.count(value) for value in set(values)}
+    scale, count = sorted(counts.items(), key=lambda item: (-item[1], item[0]))[0]
+    return scale if count * 2 > len(values) else None
+
+
+def _peer_scale(
+    tables: list[dict], table_name: str, column_name: str, family: str
+) -> tuple[int | None, str | None, list[str]]:
+    same_table = []
+    global_values = []
+    for table in tables:
+        for column in table.get("observed", {}).get("columns", []):
+            if table.get("name") == table_name and column.get("name") == column_name:
+                continue
+            if _semantic_family(column.get("name")) != family:
+                continue
+            parts = _strict_decimal_parts(column.get("datatype"))
+            if parts is None:
+                continue
+            global_values.append(parts[1])
+            if table.get("name") == table_name:
+                same_table.append(parts[1])
+    scale = _strict_majority(same_table)
+    if scale is not None:
+        return scale, "SAME_TABLE_SEMANTIC_PEER_MODE", [f"peer_scales={same_table!r}"]
+    scale = _strict_majority(global_values)
+    if scale is not None:
+        return scale, "GLOBAL_SEMANTIC_PEER_MODE", [f"peer_scales={global_values!r}"]
+    return None, None, []
+
+
+def _fallback_from_column_name(column_name: Any) -> tuple[str, str, list[str]]:
+    name = str(column_name or "").lower()
+    tokens = set(re.findall(r"[a-z0-9]+", name))
+    family = _semantic_family(name)
+    if family != "GENERIC":
+        precision, scale = _DECIMAL_DEFAULTS[family]
+        return f"decimal({precision},{scale})", "SEMANTIC_NUMERIC_POLICY", [f"family={family}"]
+    if tokens & {"date", "dob"} or name.endswith("_dt"):
+        return "date", "SEMANTIC_DATE_POLICY", ["date-like column name"]
+    if tokens & {"timestamp", "datetime", "dttm"} or name.endswith(("_ts", "_at")):
+        return "timestamp", "SEMANTIC_TIMESTAMP_POLICY", ["timestamp-like column name"]
+    if name.startswith(("is_", "has_")) or tokens & {"bool", "boolean", "flag", "ind", "indicator"}:
+        return "boolean", "SEMANTIC_BOOLEAN_POLICY", ["boolean-like column name"]
+    return "string", "SAFE_STRING_FALLBACK", ["no reliable numeric or temporal semantic evidence"]
+
+
+def resolve_greenfield_synthetic_datatypes(
+    tables: list[dict],
+) -> tuple[list[dict], list[dict]]:
+    """Make datatype defects total for generated synthetic schemas.
+
+    The caller owns the scope check. This function must be called only after
+    authoritative reparse attempts are exhausted and only for a generated
+    greenfield target with synthetic data enabled. It never changes table or
+    column identity. Resolution priority is exact syntax, recoverable syntax,
+    semantic peer evidence, release-pinned semantic defaults, then STRING.
+    """
+    if not isinstance(tables, list) or not tables:
+        raise ValueError("structural ERD defect: non-empty tables list is required")
+    decisions = []
+    for table in tables:
+        if not isinstance(table, dict):
+            raise ValueError("structural ERD defect: table entry is not a mapping")
+        table_name = table.get("name", "unknown")
+        observed = table.get("observed")
+        columns = observed.get("columns") if isinstance(observed, dict) else None
+        if not isinstance(columns, list) or not columns:
+            raise ValueError(f"structural ERD defect: {table_name} has no observed columns")
+        for column in columns:
+            if not isinstance(column, dict):
+                raise ValueError(
+                    f"structural ERD defect: {table_name} contains a non-mapping column"
+                )
+            column_name = column.get("name", "unknown")
+            raw = column.get("datatype")
+            raw_text = raw.strip() if isinstance(raw, str) else ""
+            try:
+                resolved = canonicalize_datatype(raw_text)
+                compact = re.sub(r"\s+", "", raw_text).lower()
+                if re.fullmatch(r"(?:decimal|dec|numeric)(?:\(\d+\))?", compact):
+                    decisions.append({
+                        "table": table_name,
+                        "column": column_name,
+                        "raw_datatype": raw,
+                        "resolved_datatype": resolved,
+                        "resolution_source": "DATABRICKS_DEFAULT_EXPANSION",
+                        "confidence": "HIGH",
+                        "semantic_family": _semantic_family(column_name),
+                        "inference": False,
+                        "observed": True,
+                        "evidence": ["documented DECIMAL default precision=10 and scale=0"],
+                    })
+                column["datatype"] = resolved
+                continue
+            except ValueError:
+                pass
+
+            compact = re.sub(r"\s+", "", raw_text).lower()
+            family = _semantic_family(column_name)
+            source = None
+            evidence = []
+            confidence = "MEDIUM"
+
+            if re.match(r"^(decimal|dec|numeric|number)\b", compact):
+                numbers = [int(value) for value in re.findall(r"\d+", compact)]
+                observed_precision = numbers[0] if numbers else None
+                observed_scale = numbers[1] if len(numbers) > 1 else None
+                if observed_scale is not None:
+                    scale = min(max(observed_scale, 0), 37)
+                    precision = min(max(observed_precision or 38, scale + 1), 38)
+                    source = "DECIMAL_SYNTAX_RECOVERY"
+                    evidence = [
+                        f"visible_precision={observed_precision}",
+                        f"visible_scale={observed_scale}",
+                    ]
+                    confidence = "HIGH"
+                else:
+                    scale, source, evidence = _peer_scale(
+                        tables, table_name, column_name, family
+                    )
+                    if scale is None:
+                        _, scale = _DECIMAL_DEFAULTS[family]
+                        source = "SEMANTIC_DECIMAL_POLICY"
+                        evidence = [f"family={family}"]
+                    precision = (
+                        observed_precision
+                        if observed_precision and observed_precision > 0
+                        else _DECIMAL_DEFAULTS[family][0]
+                    )
+                    precision = min(max(precision, scale + (1 if scale else 0)), 38)
+                    scale = min(scale, precision)
+                resolved = f"decimal({precision},{scale})"
+            elif re.match(r"^(varchar|char|nvarchar)\b", compact):
+                resolved = "string"
+                source = "NON_TRUNCATING_STRING_FALLBACK"
+                evidence = ["character length was unavailable or invalid"]
+                confidence = "HIGH"
+            elif compact in _TYPE_SYNONYMS:
+                resolved = _TYPE_SYNONYMS[compact]
+                source = "DATABRICKS_TYPE_SYNONYM"
+                evidence = [f"source_type={raw_text!r}"]
+                confidence = "HIGH"
+            else:
+                resolved, source, evidence = _fallback_from_column_name(column_name)
+                confidence = "LOW"
+
+            column["datatype"] = resolved
+            decisions.append({
+                "table": table_name,
+                "column": column_name,
+                "raw_datatype": raw,
+                "resolved_datatype": resolved,
+                "resolution_source": source,
+                "confidence": confidence,
+                "semantic_family": family,
+                "inference": True,
+                "observed": False,
+                "evidence": evidence,
+            })
+    return tables, decisions
 
 
 def validate_table_spec_projection(erd_tables: list[dict], table_spec: dict) -> dict:

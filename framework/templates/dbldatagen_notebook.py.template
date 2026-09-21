@@ -112,10 +112,12 @@ SCHEMA = "{{TARGET_SCHEMA}}"
 ASSET_SUFFIX = "{{ASSET_SUFFIX}}"
 VERSION_SUFFIX = ASSET_SUFFIX  # internal compatibility alias; never independently derived
 TABLE_SPEC_PATH = f"{OUTPUT_FOLDER}/table_spec.yaml"
+SCHEMA_ASSUMPTIONS_PATH = f"{OUTPUT_FOLDER}/schema_assumptions.yaml"
 RECONCILIATION_PATH = f"{OUTPUT_FOLDER}/schema_reconciliation.yaml"
 RUN_CONTEXT_PATH = f"{OUTPUT_FOLDER}/run_context.yaml"
 HANDOFF_PATH = f"{OUTPUT_FOLDER}/step_handoff.yaml"
 POLICY_ID = "DEPLOYED_DATATYPE_REPAIR_V1"
+DATATYPE_RESOLUTION_POLICY_ID = "GREENFIELD_SYNTHETIC_DATATYPE_RESOLUTION_V1"
 
 
 class _UniqueKeyLoader(yaml.SafeLoader):
@@ -189,10 +191,12 @@ def _canonicalize_datatype(value):
     compact = _TYPE_ALIASES.get(compact, compact)
     if compact in _SIMPLE_TYPES:
         return compact
-    decimal_match = re.fullmatch(r"(decimal|numeric)\((\d+),(\d+)\)", compact)
+    decimal_match = re.fullmatch(
+        r"(decimal|dec|numeric)(?:\((\d+)(?:,(\d+))?\))?", compact
+    )
     if decimal_match:
-        precision = int(decimal_match.group(2))
-        scale = int(decimal_match.group(3))
+        precision = int(decimal_match.group(2) or 10)
+        scale = int(decimal_match.group(3) or 0)
         if not 1 <= precision <= 38 or not 0 <= scale <= precision:
             raise RuntimeError(f"Invalid decimal bounds: {value}")
         return f"decimal({precision},{scale})"
@@ -240,6 +244,7 @@ for _name, _value in {
         raise RuntimeError(f"Unresolved required template value: {_name}")
 
 TABLE_SPEC = _load_yaml(TABLE_SPEC_PATH)
+SCHEMA_ASSUMPTIONS = _load_yaml(SCHEMA_ASSUMPTIONS_PATH)
 RECONCILIATION = _load_yaml(RECONCILIATION_PATH)
 RUN_CONTEXT = _load_yaml(RUN_CONTEXT_PATH)
 STEP_HANDOFF = _load_yaml(HANDOFF_PATH)
@@ -281,6 +286,33 @@ parity_checks = {
     "reconciliation.table_spec_sha256": (
         RECONCILIATION.get("table_spec_sha256"), _raw_sha256(TABLE_SPEC_PATH)
     ),
+    "assumptions.run_id": (SCHEMA_ASSUMPTIONS.get("run_id"), RUN_ID),
+    "assumptions.asset_suffix": (
+        SCHEMA_ASSUMPTIONS.get("asset_suffix"), ASSET_SUFFIX
+    ),
+    "assumptions.catalog": (SCHEMA_ASSUMPTIONS.get("catalog"), CATALOG),
+    "assumptions.schema": (SCHEMA_ASSUMPTIONS.get("schema"), SCHEMA),
+    "assumptions.artifact_type": (
+        SCHEMA_ASSUMPTIONS.get("artifact_type"), "schema_assumptions"
+    ),
+    "assumptions.contract_version": (
+        SCHEMA_ASSUMPTIONS.get("contract_version"), 1
+    ),
+    "assumptions.policy_id": (
+        SCHEMA_ASSUMPTIONS.get("policy_id"), DATATYPE_RESOLUTION_POLICY_ID
+    ),
+    "assumptions.status": (SCHEMA_ASSUMPTIONS.get("status"), "PASS"),
+    "reconciliation.schema_assumptions_path": (
+        RECONCILIATION.get("schema_assumptions_path"), SCHEMA_ASSUMPTIONS_PATH
+    ),
+    "reconciliation.schema_assumptions_sha256": (
+        RECONCILIATION.get("schema_assumptions_sha256"),
+        _raw_sha256(SCHEMA_ASSUMPTIONS_PATH),
+    ),
+    "reconciliation.datatype_resolution_policy_id": (
+        RECONCILIATION.get("datatype_resolution_policy_id"),
+        DATATYPE_RESOLUTION_POLICY_ID,
+    ),
 }
 for field, (actual, expected) in parity_checks.items():
     if actual != expected:
@@ -289,6 +321,12 @@ for field, (actual, expected) in parity_checks.items():
         )
 if RECONCILIATION.get("unresolved_mismatches") != []:
     raise RuntimeError("SCHEMA_RECONCILIATION_AUTHORITY_ERROR: unresolved schema mismatches remain")
+if SCHEMA_ASSUMPTIONS.get("unresolved_datatypes") != []:
+    raise RuntimeError("SCHEMA_RECONCILIATION_AUTHORITY_ERROR: unresolved datatypes remain")
+if SCHEMA_ASSUMPTIONS.get("resolution_count") != len(
+    SCHEMA_ASSUMPTIONS.get("resolutions", [])
+):
+    raise RuntimeError("SCHEMA_RECONCILIATION_AUTHORITY_ERROR: assumptions count mismatch")
 
 TABLE_SPEC_TABLES = TABLE_SPEC.get("tables")
 if not isinstance(TABLE_SPEC_TABLES, list) or not TABLE_SPEC_TABLES:

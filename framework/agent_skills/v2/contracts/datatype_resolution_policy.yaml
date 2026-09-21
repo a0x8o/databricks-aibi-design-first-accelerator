@@ -1,0 +1,97 @@
+# Governed datatype completion for ERD-driven greenfield synthetic targets.
+# Platform defaults are Databricks behavior. Semantic scales are accelerator
+# policy and must never be represented as universal Databricks defaults.
+schema_version: "1.0"
+
+contract:
+  name: datatype_resolution_policy
+  contract_version: "2026.09.1"
+  policy_id: GREENFIELD_SYNTHETIC_DATATYPE_RESOLUTION_V1
+  status: APPROVED
+  owner: aibi_design_first_accelerator
+
+scope:
+  required_conditions:
+    data_source_type: [erd, erd_and_live_schema]
+    greenfield_enabled: true
+    synthetic_data_enabled: true
+    target_ownership: CURRENT_VERSION_GENERATED_TARGET
+  excluded:
+    - SOURCE_OR_LIVE_SCHEMA
+    - RETAINED_DATA
+    - CATALOG_DRIFT_AS_INTENT
+    - MISSING_TABLE_OR_COLUMN_IDENTITY
+    - DUPLICATE_TABLE_OR_COLUMN_IDENTITY
+
+evidence_order:
+  - EXACT_VALID_DATABRICKS_SYNTAX
+  - TARGETED_HIGH_RESOLUTION_REPARSE_MAX_2
+  - RECOVERABLE_VISIBLE_COMPONENTS
+  - SAME_TABLE_SEMANTIC_PEER_STRICT_MAJORITY
+  - CROSS_TABLE_SEMANTIC_PEER_STRICT_MAJORITY
+  - RELEASE_PINNED_SEMANTIC_POLICY
+  - NON_TRUNCATING_STRING_FALLBACK
+
+platform_authority:
+  vendor: Databricks
+  documentation:
+    decimal_type: "https://docs.databricks.com/aws/en/sql/language-manual/data-types/decimal-type"
+    string_type: "https://docs.databricks.com/aws/en/sql/language-manual/data-types/string-type"
+    sql_data_types: "https://docs.databricks.com/aws/en/sql/language-manual/sql-ref-datatypes"
+  documentation_usage: RELEASE_REFRESH_ONLY
+  runtime_live_documentation_override: FORBIDDEN
+  decimal:
+    accepted_forms: [DECIMAL, "DECIMAL(p)", "DECIMAL(p,s)"]
+    default_precision: 10
+    default_scale: 0
+    minimum_precision: 1
+    maximum_precision: 38
+    minimum_scale: 0
+    maximum_scale_rule: SCALE_LE_PRECISION
+  string:
+    unknown_character_length_fallback: STRING
+    rationale: NON_TRUNCATING_NATIVE_CHARACTER_TYPE
+
+semantic_decimal_defaults:
+  MONETARY: {precision: 38, scale: 4}
+  RATIO: {precision: 38, scale: 6}
+  MEASUREMENT: {precision: 38, scale: 4}
+  COUNT: {precision: 38, scale: 0}
+  GENERIC: {precision: 38, scale: 18}
+
+unknown_type_fallbacks:
+  date_like: DATE
+  timestamp_like: TIMESTAMP
+  boolean_like: BOOLEAN
+  numeric_semantic_family: SEMANTIC_DECIMAL_DEFAULT
+  otherwise: STRING
+
+provenance:
+  artifact: schema_assumptions.yaml
+  always_write: true
+  required_fields:
+    - policy_id
+    - scope
+    - run_id
+    - asset_suffix
+    - catalog
+    - schema
+    - erd_input_sha256
+    - erd_output_sha256
+    - resolution_count
+    - resolutions
+    - unresolved_datatypes
+  resolution_fields:
+    - table
+    - column
+    - raw_datatype
+    - resolved_datatype
+    - resolution_source
+    - confidence
+    - semantic_family
+    - inference
+    - observed
+    - evidence
+  required_terminal_state:
+    status: PASS
+    unresolved_datatypes: []

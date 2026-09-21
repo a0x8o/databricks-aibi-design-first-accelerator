@@ -275,7 +275,8 @@ only after the sweep classifies an owner/error. Shared runbooks load only for th
 or cleanup failure event, never during a normal successful pipeline.
 
 Also freeze exact path/hash or approved identity for the state contract, workspace I/O,
-`metric_view_capabilities.yaml`, `genie_quality_contract.yaml`, and every helper/template,
+`metric_view_capabilities.yaml`, `genie_quality_contract.yaml`,
+`datatype_resolution_policy.yaml`, and every helper/template,
 especially `templates.gate_checks`. No stage may search for a same-named replacement.
 
 ### 0.6 Build the Immutable Run Context
@@ -321,6 +322,7 @@ inputs:
   genie_space_configuration: <path>
   metric_view_capabilities: <path>
   genie_quality_contract: <path>
+  datatype_resolution_policy: <path>
   stage_prompts: {}
   stage_validations: {}
   stage_guardrails: {}

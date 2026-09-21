@@ -5,7 +5,7 @@
 ## Prohibited Actions
 
 1. DO NOT skip ERD parsing by using a cached/assumed schema
-2. DO NOT modify column names, types, or constraints from the ERD
+2. DO NOT modify column names or constraints from the ERD; datatype-only resolution is permitted solely by `GREENFIELD_SYNTHETIC_DATATYPE_RESOLUTION_V1` in its eligible scope and must be disclosed in `schema_assumptions.yaml`
 3. DO NOT create tables outside the configured catalog.schema
 4. DO NOT use `DROP TABLE` on source tables
 5. DO NOT proceed past a GATE without verifying the condition
@@ -15,7 +15,7 @@
 9. DO NOT invent new tables not in the ERD
 10. DO NOT add columns beyond what the ERD specifies
 11. DO NOT skip the vision model step if an ERD image is provided
-12. DO NOT assume column types from names — always verify with the parsed ERD
+12. DO NOT assume column types from names ad hoc — exact ERD evidence and semantic-peer evidence take precedence; column-name semantics may be used only by the pinned greenfield-synthetic resolver and must be labeled `INFERRED_POLICY`
 13. DO NOT skip schema reconciliation (GATE 4.2)
 14. DO NOT use unquoted numeric values for STRING/VARCHAR columns in synthetic_data_spec.yaml
 15. DO NOT generate data without calling `validate_domain_cols()` first (DETERMINISM GATE)
@@ -33,11 +33,13 @@
 27. DO NOT silently accept schema drift after DDL — `DESCRIBE TABLE` must match `table_spec.yaml`; never skip an expected column or generate an unexpected deployed column with defaults
 28. DO NOT treat a relationship in `semantic_model.yaml` as validated — downstream use requires its matching relationship-level `data_layer_validation.yaml` entry to be `PASS`
 29. DO NOT recompute catalog, schema, asset/version suffixes, output folder, or paths from `accelerator.yaml`; use the current-run resolved configuration/handoff and halt on conflict
-30. DO NOT infer, default, or repair a missing datatype component, including decimal precision/scale or character length; incomplete ERD extraction must halt and be reparsed from authoritative evidence
+30. DO NOT make unrecorded datatype repairs. Perform up to two authoritative reparses first. Only an ERD-driven target with `greenfield.enabled: true` and `greenfield.synthetic_data: true` may use `GREENFIELD_SYNTHETIC_DATATYPE_RESOLUTION_V1`; source/live schemas, retained data, and structural loss remain hard stops
 31. DO NOT generate or insert synthetic data unless the current-run `reconcile_schema` phase is VALID, `{OUTPUT_FOLDER}/schema_reconciliation.yaml` authenticates with `status: PASS` and zero unresolved mismatches, and a fresh exact name/type readback still matches `table_spec.yaml`
 32. DO NOT treat final `data_layer_validation.yaml` as a substitute for the pre-generation reconciliation artifact; final validation must authenticate and preserve the same reconciliation evidence
-33. DO NOT accept or copy a prior-version `erd_parsed.yaml` using only image-hash equality and non-empty tables; the exact current digest-attested datatype validator must return `PASS`, otherwise treat it as a cache miss and invalidate `parse_erd` plus all dependents
-34. DO NOT deploy or execute the DDL notebook until programmatic GATE 4.0 proves that `table_spec.yaml` is an exact complete-datatype projection of the validated `erd_parsed.yaml`
+33. DO NOT accept or copy a prior-version `erd_parsed.yaml` using only image-hash equality and non-empty tables; require the current digest-attested validator plus an authenticated `schema_assumptions.yaml` (including zero-resolution runs), otherwise treat it as a cache miss and invalidate `parse_erd` plus all dependents
+34. DO NOT deploy or execute the DDL notebook until programmatic GATE 4.0 authenticates `schema_assumptions.yaml` and proves that `table_spec.yaml` is an exact projection of the resolved `erd_parsed.yaml`
+35. DO NOT treat governed pre-DDL resolution as permission to widen, cast, or adopt a catalog datatype; catalog state is never inference evidence. Record policy decisions in `schema_assumptions.yaml`, derived type replacements in `ddl_preflight.yaml`, and rerun exact projection validation
+36. DO NOT retry a failed DDL notebook unless authenticated `ddl_preflight.yaml` proves the failure occurred before any catalog mutation and selects the exact bounded ERD-reparse or table-spec-regeneration route
 
 ---
 

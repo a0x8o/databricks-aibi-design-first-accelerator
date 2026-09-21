@@ -5,7 +5,9 @@
 ## Anti-Patterns
 
 ### AP-DL-1: Vision Model Truncation
-Vision model returns partial table (e.g., 5 of 12 columns). GATE 2.1b catches this by checking for NULL types. Fix: re-invoke with targeted crop.
+Vision model returns a partial table (for example, 5 of 12 columns). Re-invoke with a targeted crop.
+Missing table/column identity is structural loss and MUST NOT be synthesized by the datatype resolver;
+halt if the complete inventory cannot be recovered.
 
 ### AP-DL-2: Mixed-Type YAML Lists
 `synthetic_data_spec.yaml` has `[99213, "99214", 99215]` — YAML parses unquoted numbers as integers. Fix: quote ALL string column values.
@@ -14,9 +16,18 @@ Vision model returns partial table (e.g., 5 of 12 columns). GATE 2.1b catches th
 `dbldatagen` raises DATATYPE_MISMATCH for BooleanType with values/weights, and ValueError for TimestampType with date-only begin/end. Fix: `_safe_withColumn` patch in template handles both.
 
 ### AP-DL-6: Truncated Data Types from Vision Model (decimal(28)
-**Pattern:** The vision model returns an incomplete value such as `decimal(28`, `decimal(28)`, `decimal(28,)`, or `varchar(`.
+**Pattern:** The vision model returns an incomplete value such as `decimal(28`, `decimal(28,)`, or `varchar(`. Note that `decimal` and `decimal(28)` are valid Databricks syntax and canonicalize to `decimal(10,0)` and `decimal(28,0)`.
 **Root cause:** Precision, scale, or length was not legible, the model truncated the ERD text, or a new output/asset version reused an older invalid `erd_parsed.yaml` based only on matching image hash and non-empty tables.
-**Fix:** Never close the parenthesis or supply a default scale/length. Reject any invalid cached candidate as a cache miss, invalidate `parse_erd` and all dependents, and perform a fresh parse. Re-invoke the vision model with a targeted high-resolution crop and preserve the authoritative value. Run programmatic GATE 4.0 before notebook deployment. If it remains unresolved after the allowed retries, HALT with `ERD_EXTRACTION_ERROR`.
+**Fix:** Reject an invalid cached candidate as a cache miss, invalidate `parse_erd` and dependents,
+and perform up to two targeted high-resolution reparses. If the defect remains datatype-only and the
+run is ERD-driven with `greenfield.enabled: true` and `greenfield.synthetic_data: true`, invoke the
+attested `GREENFIELD_SYNTHETIC_DATATYPE_RESOLUTION_V1` resolver. It preserves visible components,
+prefers strict-majority semantic peers, applies release-pinned scale policies (monetary 4, rate/ratio
+6, measurement 4, count 0, generic decimal 18), and uses `STRING` when character width or type
+family cannot be recovered safely. Atomically persist `schema_assumptions.yaml`, the resolved ERD,
+and raw/resolved hashes; rerun strict validation and GATE 4.0. This is an accelerator policy, not a
+claimed Databricks default. HALT only for structural loss, ineligible source/live or
+synthetic-disabled scope, broken provenance, or a non-convergent resolver.
 
 ### AP-DL-5: LLM Generates DDL Notebook From Scratch Instead of Using Template
 **Pattern:** DDL notebook has syntax bugs (wrong SHOW TABLES wildcard, SQL comment style in Python notebook, missing commas in column defs) that vary between runs.

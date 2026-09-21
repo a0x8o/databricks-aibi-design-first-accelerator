@@ -140,12 +140,13 @@ Authority is scoped to the fact being resolved. No artifact is authoritative for
 | Business definitions, KPI formulas, terminology, and requested dimensions | KPI specification | Business intent only; never physical-column authority |
 | Approved Metric View feature policy and fallback behavior | Resolved `metric_view_capabilities.yaml` contract | Reproducible accelerator policy for the run; official documentation informs contract refresh, not live runtime reinterpretation |
 | Genie release thresholds and benchmark outcome semantics | Approved `genie_quality` source contract | Step 0 authenticates it and freezes the only executable effective snapshot in `run_context.validation`; downstream defaults or reinterpretation are forbidden |
+| Governed datatype-only completion policy | Approved `datatype_resolution_policy.yaml` contract | Step 0 authenticates and freezes it; only the attested Data Layer helper/runtime may apply it in eligible greenfield-synthetic scope |
 | API/YAML request and serialization structure | Approved versioned platform references and deterministic runtime templates | Structure authority only; never proof of persisted asset content |
-| Extracted source design | `erd_parsed.yaml` | ERD extraction and design context only |
+| Extracted source design | resolved `erd_parsed.yaml` plus `schema_assumptions.yaml` | Visible values are `OBSERVED`; policy-resolved values are `INFERRED_POLICY`; raw/resolved hashes and provenance must authenticate |
 | Expected generated physical schema | `table_spec.yaml` | Planned greenfield tables, columns, and types; never proof of deployed reality |
 | Deployed physical tables, columns, types, and existence | Current catalog inspection through `DESCRIBE TABLE`, `information_schema`, or an approved catalog API | Final authority for what physically exists |
 | Relationship, classification, and grain intent | `semantic_model.yaml` | Intended semantic model |
-| Validated deployed schema, relationships, and grain | standalone `schema_reconciliation.yaml` plus `data_layer_validation.yaml`, backed by catalog and data checks | Standalone reconciliation must authenticate with policy `DEPLOYED_DATATYPE_REPAIR_V1`, `status: PASS`, and zero unresolved mismatches before data generation; final validation must have `overall_status: PASS`, authenticate and embed the same reconciliation evidence, and record applicable relationship checks PASS; otherwise halt the dependent stage |
+| Validated deployed schema, relationships, and grain | standalone `schema_assumptions.yaml`, `schema_reconciliation.yaml`, plus `data_layer_validation.yaml`, backed by catalog and data checks | Assumptions must authenticate with policy `GREENFIELD_SYNTHETIC_DATATYPE_RESOLUTION_V1` and zero unresolved datatypes; reconciliation must authenticate with policy `DEPLOYED_DATATYPE_REPAIR_V1`, `status: PASS`, and zero unresolved mismatches before data generation; final validation must authenticate/embed both and record applicable relationship checks PASS; otherwise halt the dependent stage |
 | Resolved target names, FQNs, paths, and runtime identifiers | `step_handoff.yaml` | Consume verbatim; never re-derive downstream |
 | Desired Metric View architecture and definitions | `metric_view_plan.yaml`, `metric_view_design.yaml`, and `metric_view_spec.yaml` | Desired state only |
 | Deployed Metric View semantic surface | Current Metric View `DESCRIBE`/query plus approved catalog or API readback | Final authority for deployed measures, dimensions, and aliases |
@@ -178,9 +179,12 @@ before required-key, exact-key-set, hash, or identity checks run.
     `status: PASS`, and a fresh exact deployed name/type readback still matches
     `table_spec.yaml`. Missing, failed, stale, or contradictory reconciliation evidence is a hard
     stop before the first write.
-7b. Precision, scale, length, and datatype are schema intent. Never default or infer a missing
-    component (including decimal scale); route incomplete extraction back to the owning Data Layer
-    parsing gate.
+7b. Precision, scale, length, and datatype are schema intent. Route incomplete extraction back to
+    the owning Data Layer parsing gate for two evidence retries. The only inference exception is
+    `GREENFIELD_SYNTHETIC_DATATYPE_RESOLUTION_V1`, limited to ERD-driven generated targets with both
+    `greenfield.enabled` and `greenfield.synthetic_data` true. Persist raw/resolved ERD hashes and
+    every decision in `schema_assumptions.yaml`; label inferred values `INFERRED_POLICY`. Never apply
+    this exception to source/live schemas, retained data, structural identity, or catalog drift.
 8. Dashboard and Genie creation require the current-run Metric View producer stage to be enabled
    and validated. If `create_metric_views` is disabled, both dependent creation stages must also be
    disabled; an explicit FQN in frozen configuration is identity intent, not current-run validation.
@@ -192,7 +196,7 @@ before required-key, exact-key-set, hash, or identity checks run.
 
 **Column-name enforcement:**
 
-- Before deployment, `erd_parsed.yaml` supplies design context and `table_spec.yaml` defines the expected generated schema.
+- Before deployment, resolved `erd_parsed.yaml` plus authenticated `schema_assumptions.yaml` supply design context and `table_spec.yaml` defines the expected generated schema.
 - After deployment, catalog inspection is physical truth. `data_layer_validation.yaml` records whether deployed reality matches the expected schema.
 - Metric View consumers use current Metric View readback for deployed aliases; desired YAML definitions do not override readback.
 - `describe_metric_view()` in the helpers template returns deployed columns.

@@ -489,6 +489,7 @@ RESUME_CONTEXT:
   stale_phases: []
   artifacts_written:
     - erd_parsed.yaml
+    - schema_assumptions.yaml
     - semantic_model.yaml
     - data_layer_validation.yaml
     - {OUTPUT_FOLDER}/metric_views/schema_profile.yaml
@@ -557,12 +558,12 @@ its individual claims retain the authorities assigned by G-3:
 
 | Phase | Artifact | Verification |
 |-------|----------|-------------|
-| parse_erd | erd_parsed.yaml | file exists + tables array non-empty + current digest-attested full datatype validation PASS; image-hash cache identity and structural validity alone are insufficient |
+| parse_erd | `erd_parsed.yaml` + `schema_assumptions.yaml` | both exist; tables array non-empty; current digest-attested strict datatype validation PASS; assumptions policy/run/target/suffix and raw/resolved ERD hashes authenticate; zero unresolved datatypes; image-hash identity and structural validity alone are insufficient |
 | build_semantic_model | semantic_model.yaml | file exists |
-| generate_ddl | Tables in catalog | after run_context/handoff parity, exact table identities from `table_spec.yaml` plus verbatim `step_handoff.asset_suffix` in the handoff target namespace resolve by current catalog readback; this phase proves identity/existence only and does not claim datatype reconciliation |
+| generate_ddl | `schema_assumptions.yaml` + `ddl_preflight.yaml` + tables in catalog | current-run preflight is `PASS`, authenticates assumptions digest, raw/resolved ERD and table-spec hashes, records policy resolutions and exact ERD-derived type regenerations, proves resolver idempotence, and precedes catalog mutation; after run_context/handoff parity, exact table identities from the resulting `table_spec.yaml` plus verbatim `step_handoff.asset_suffix` resolve by current catalog readback; this phase proves identity/existence only and does not claim deployed datatype reconciliation |
 | reconcile_schema | `{OUTPUT_FOLDER}/schema_reconciliation.yaml` | current run/target/suffix; `producer_phase: reconcile_schema`; policy is `DEPLOYED_DATATYPE_REPAIR_V1`; `status: PASS`; exact ordered deployed name/type readback matches `table_spec.yaml`; expected/observed schema hashes match; zero unresolved mismatches |
 | generate_synthetic_data | Row count > 0 plus authenticated reconciliation dependency | the immediate `reconcile_schema` phase remains reusable, its standalone artifact authenticates against a fresh exact name/type readback, and `SELECT COUNT(*) > 0` for each exact expected table |
-| validate_data | data_layer_validation.yaml | current run/version; `overall_status: PASS`; authenticates the standalone reconciliation artifact path/hash and embeds the same policy/status/schema hashes/attempts/unresolved payload without contradiction; zero unresolved schema mismatches |
+| validate_data | data_layer_validation.yaml | current run/version; `overall_status: PASS`; authenticates both standalone assumptions and reconciliation artifact paths/hashes and embeds the same policy/status/hash/unresolved payloads without contradiction; zero unresolved datatypes or schema mismatches |
 | profile_schema | `{OUTPUT_FOLDER}/metric_views/schema_profile.yaml` | file exists |
 | map_kpis | kpi_metric_mapping.yaml | file exists |
 | plan_metric_views | `{OUTPUT_FOLDER}/metric_views/metric_view_plan.yaml` | strategy-aware plan/handoff authentication below passes; ≥ 1 Metric View planned; capability tuple matches |
@@ -628,6 +629,16 @@ An ERD, KPI specification, live-schema discovery, capability contract, frozen he
 other external input is attached to the first phase that consumes it. Its digest change invalidates
 that phase and cascades through this graph. A phase that consumes an additional upstream artifact
 not pictured here records it as a direct input fingerprint and invalidates from that phase.
+
+### Datatype Resolution Policy Fingerprints
+
+The exact raw bytes at `run_context.inputs.datatype_resolution_policy`, the frozen ERD validation
+helper, and the frozen DDL template are mandatory direct inputs to `parse_erd` and `generate_ddl`.
+The contract policy ID must be `GREENFIELD_SYNTHETIC_DATATYPE_RESOLUTION_V1`, and release tests must
+prove its platform defaults and semantic scale map equal both implementations. Record the contract
+as `RAW_BYTES` and `schema_assumptions.yaml` as a phase output fingerprint. Any path/hash, policy ID,
+embedded-value, raw/resolved ERD hash, or helper/runtime parity mismatch invalidates `parse_erd` and
+all transitive dependents. A cached ERD without authenticated assumptions evidence is never reusable.
 
 ### Genie Quality Policy Fingerprints
 
@@ -871,6 +882,7 @@ phases_completed:
       - {id: erd_image, kind: RAW_BYTES, locator: "/Workspace/.../erd.png", sha256: "<lowercase 64-hex>"}
     output_fingerprints:
       - {id: erd_parsed, kind: CANONICAL_JSON, locator: "/Workspace/.../erd_parsed.yaml", sha256: "<lowercase 64-hex>"}
+      - {id: schema_assumptions, kind: CANONICAL_JSON, locator: "/Workspace/.../schema_assumptions.yaml", sha256: "<lowercase 64-hex>"}
 findings:
   - "8 tables created from ERD"
   - "All FK relationships validated"
@@ -1059,7 +1071,7 @@ adapt, skip, or retry with alternative approaches.
 |------|-------------|----------|
 | `execute_sql` | DDL/DML creates schemas, tables, views | SELECT/SHOW/DESCRIBE are non-critical (read-only) |
 | `execute_python` | Generates YAML artifacts and configs needed downstream | — |
-| `execute_notebook` | ETL/data generation notebooks produce required data | — |
+| `execute_notebook` | ETL/data generation notebooks produce required data | Only the authenticated pre-mutation DDL-preflight route defined below |
 | `create_notebook` | Can't create = can't execute = missing output | — |
 | `write_file` | Produces artifacts that later phases depend on | — |
 | `create_dashboard` | Step's primary deliverable | — |
@@ -1072,6 +1084,20 @@ adapt, skip, or retry with alternative approaches.
 - `INTERNAL_ERROR` (server-side failure)
 
 ### On Critical Failure
+
+**Narrow pre-mutation DDL-preflight exception:** datatype-only defects should be resolved before
+execution by the parse gate and the notebook's defense-in-depth resolver. Before applying the
+terminal steps below, inspect `{OUTPUT_FOLDER}/schema_assumptions.yaml` and
+`{OUTPUT_FOLDER}/ddl_preflight.yaml` only when the DDL notebook error begins with exactly
+`ERD_EXTRACTION_ERROR:` or `SCHEMA_CONTRACT_ERROR:`. Targeted routing is permitted only when both
+artifacts authenticate the current run/target/suffix, assumptions policy, raw/resolved ERD hashes,
+and table-spec hashes; preflight has `status: FAIL`, the same `failure_code`, and
+`catalog_mutation_started: false`. An eligible datatype-only extraction error permits the remaining
+bounded evidence reparses followed by the pinned resolver; a structural extraction error does not.
+`SCHEMA_CONTRACT_ERROR` permits one deterministic table-spec regeneration from the resolved ERD.
+Redeploy and execute only after assumptions authentication and GATE 4.0 PASS. Missing, malformed,
+stale, contradictory, ineligible, exhausted, or post-mutation evidence falls through to terminal
+critical-failure rules.
 
 1. **DO NOT** call the next phase's tools
 2. **DO NOT** attempt alternative approaches to work around the failure
@@ -1136,11 +1162,11 @@ points** for this state contract:
 
 | Step | GATE ID | Artifact Check | Maps to Phase |
 |------|---------|----------------|---------------|
-| 01 | `erd_parsed_exists` | file_exists(erd_parsed.yaml) | parse_erd |
+| 01 | `erd_parsed_exists` | `erd_parsed.yaml` and authenticated `schema_assumptions.yaml` exist; strict datatype validation passes; zero unresolved datatypes | parse_erd |
 | 01 | `ddl_notebook_executed` | exact expected table identities resolve in the frozen target namespace | generate_ddl |
 | 01 | `schema_reconciled` | authenticated `{OUTPUT_FOLDER}/schema_reconciliation.yaml` has current-run policy `DEPLOYED_DATATYPE_REPAIR_V1`, `status: PASS`, exact fresh schema equality, and zero unresolved mismatches | reconcile_schema |
 | 01 | `synthetic_data_populated` | immediate `reconcile_schema` dependency remains valid and COUNT(*) > 0 per exact expected table | generate_synthetic_data |
-| 01 | `validation_passed` | current-run data_layer_validation.yaml has `overall_status: PASS` and authenticates the same standalone reconciliation artifact | validate_data |
+| 01 | `validation_passed` | current-run data_layer_validation.yaml has `overall_status: PASS` and authenticates the same standalone assumptions and reconciliation artifacts | validate_data |
 | 02 | `schema_profiled` | `{OUTPUT_FOLDER}/metric_views/schema_profile.yaml` exists | profile_schema |
 | 02 | `profile_cross_checked` | All profile columns verified against catalog via DESCRIBE TABLE (GATE 2.2) | profile_schema |
 | 02 | `kpi_mapped` | kpi_metric_mapping.yaml exists | map_kpis |

@@ -5,21 +5,41 @@
 ## Gates
 
 ### GATE 2.1b: Data Type Validation (MANDATORY post-parse)
-After parsing ERD, verify every column has a concrete, complete datatype. DECIMAL/NUMERIC requires authoritative `(precision,scale)` with `1 <= precision <= 38` and `0 <= scale <= precision`; CHAR/VARCHAR requires an authoritative positive length. Never infer or default a missing datatype component. For NULL, UNKNOWN, truncated, unbalanced, or incomplete types, re-invoke the vision model with a targeted crop. HALT with `ERD_EXTRACTION_ERROR` if still unresolved after 2 retries.
+After parsing the ERD, verify every column has a Databricks-valid datatype. `DECIMAL`, `DECIMAL(p)`,
+and `DECIMAL(p,s)` are complete platform syntax and canonicalize using documented defaults `p=10`,
+`s=0`; enforce `1 <= p <= 38` and `0 <= s <= p`. For NULL, UNKNOWN, truncated, unbalanced, or
+unsupported types, re-invoke the vision model with a targeted crop up to two times. If a datatype-only
+defect remains and the run is ERD-driven with both `greenfield.enabled` and
+`greenfield.synthetic_data` true, invoke `GREENFIELD_SYNTHETIC_DATATYPE_RESOLUTION_V1`, persist every
+decision in `schema_assumptions.yaml`, and rerun strict validation. This resolver is total for
+datatype defects: recover visible components, prefer strict-majority semantic peers, apply the
+release-pinned semantic policy, then use non-truncating `STRING`. Source/live, retained-data, and
+structural defects remain `ERD_EXTRACTION_ERROR` hard stops.
 
 This gate applies equally to a fresh vision response, a prior-version ERD cache candidate, and a
 resume candidate. Matching ERD image hash, parseable YAML, non-empty tables, or an old phase status
 cannot pass this gate. Run the current digest-attested validator before accepting or writing the
 candidate. A cached candidate that fails becomes a cache miss; invalidate `parse_erd` and all
-dependents and perform a fresh parse.
+dependents and perform a fresh parse. Cache/resume PASS additionally requires a current authenticated
+`schema_assumptions.yaml`, even when its resolution count is zero.
 
 ### GATE 4.0: Expected Schema Contract (MANDATORY before DDL execution)
-`table_spec.yaml` must be an exact physical projection of `erd_parsed.yaml`. Before notebook
+`table_spec.yaml` must be an exact physical projection of the resolved `erd_parsed.yaml`. Before notebook
 deployment or execution, invoke the digest-attested `validate_table_spec_projection(erd_tables,
 table_spec)` function and require `PASS`. Normalize and compare every ordered table, column, and
-datatype; reject duplicates and incomplete parameterized types. An invalid ERD datatype routes to
-bounded targeted reparse as `ERD_EXTRACTION_ERROR`; a table-spec copy/projection difference routes
-to regeneration as `SCHEMA_CONTRACT_ERROR`. Neither failure may reach `execute_notebook`.
+datatype; reject duplicates and malformed parameterized types. Authenticate the assumptions artifact's
+run/target/suffix, policy ID, raw/resolved ERD hashes, and ordered rows first. An eligible invalid ERD
+datatype routes through bounded targeted reparse and governed resolution; a table-spec projection
+difference routes to regeneration as `SCHEMA_CONTRACT_ERROR`. Neither rejected artifact may reach
+`execute_notebook`.
+
+Defense in depth inside the DDL runtime occurs before the first Spark SQL statement and writes
+`ddl_preflight.yaml`. For an eligible datatype-only defect, the runtime independently applies the
+same pinned resolver, atomically writes the resolved ERD and `schema_assumptions.yaml`, proves
+idempotence, and then regenerates only table-spec type fields from the resolved ERD. Record every
+old/new value, raw/resolved ERD hashes, assumptions digest, and both table-spec hashes; require a
+second exact projection PASS. This never authorizes adopting catalog drift as intent. Structural
+differences remain hard failures.
 
 ### GATE 4.1: Table Count Verification
 `SHOW TABLES IN {catalog}.{schema} LIKE '*{ASSET_SUFFIX}'` must return expected count, using the exact frozen `step_handoff.yaml.asset_suffix`. HALT if fewer.
@@ -40,7 +60,11 @@ For any real deployed datatype mismatch, the Data Layer is the sole repair owner
 4. the repair uses the pinned DDL compiler and unchanged `table_spec.yaml`; and
 5. no earlier datatype repair attempt was made for that table in this run.
 
-The only allowed automatic action is: record the mismatch, drop the exact empty table, rerun its compiler-generated CREATE statement, rerun `DESCRIBE TABLE`, and require exact canonical schema equality. `ALTER COLUMN`, casts, `TRY_CAST`, CTAS, overwrite, mutation of `erd_parsed.yaml`/`table_spec.yaml`, and adoption of the observed type are prohibited repair mechanisms.
+The only allowed **post-deployment drift** action is: record the mismatch, drop the exact empty table,
+rerun its compiler-generated CREATE statement, rerun `DESCRIBE TABLE`, and require exact canonical
+schema equality. `ALTER COLUMN`, casts, `TRY_CAST`, CTAS, overwrite, post-freeze mutation of
+`erd_parsed.yaml`/`table_spec.yaml`, and adoption of the observed type are prohibited drift-repair
+mechanisms. This does not prohibit the authenticated pre-DDL datatype-resolution phase above.
 
 If ownership is ambiguous, the table is non-empty, row count cannot be proven, the object is source/live/unversioned, the operation lacks permission, or post-repair readback still differs, write failure evidence and HALT with `DATATYPE_MISMATCH_UNSAFE_TO_REPAIR`. Do not delete or coerce data. Missing/unexpected/renamed-column mismatches use the same empty-current-version-table eligibility gate and otherwise halt with `SCHEMA_CONTRACT_ERROR`.
 
@@ -58,7 +82,7 @@ All values for VARCHAR/STRING columns MUST be quoted strings in `synthetic_data_
 ALL tables must have rows > 0 after synthetic data generation. HALT with `SYNTHETIC_GENERATION_ERROR` if any table is empty.
 
 ### GATE 7.1: Data Layer Validation
-`data_layer_validation.yaml` must exist with `overall_status: PASS`; its recorded path/raw digest must authenticate the current `schema_reconciliation.yaml`; the embedded reconciliation payload must match and have policy `DEPLOYED_DATATYPE_REPAIR_V1`, status `PASS`, and zero unresolved mismatches. Every relationship in `semantic_model.yaml` must have exactly one relationship-level validation entry with `validation_status: PASS`. HALT otherwise. `semantic_model.yaml` is relationship intent; this relationship-level result is the authority for downstream use of the deployed relationship.
+`data_layer_validation.yaml` must exist with `overall_status: PASS`; its recorded path/raw digest must authenticate the current `schema_reconciliation.yaml` and `schema_assumptions.yaml`; the embedded reconciliation payload must match and have policy `DEPLOYED_DATATYPE_REPAIR_V1`, status `PASS`, and zero unresolved mismatches; the assumptions payload must have policy `GREENFIELD_SYNTHETIC_DATATYPE_RESOLUTION_V1`, matching raw/resolved ERD hashes, and zero unresolved datatypes. Every relationship in `semantic_model.yaml` must have exactly one relationship-level validation entry with `validation_status: PASS`. HALT otherwise. `semantic_model.yaml` is relationship intent; this relationship-level result is the authority for downstream use of the deployed relationship.
 
 ---
 

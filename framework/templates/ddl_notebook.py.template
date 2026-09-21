@@ -2,11 +2,13 @@
 # DBTITLE 1,DDL Compiler and Schema Reconciliation — {{DOMAIN_NAME}}
 #
 # Deterministic runtime:
-#   table_spec.yaml -> strict datatype validation -> CREATE TABLE IF NOT EXISTS
+#   ERD/table spec -> governed greenfield datatype resolution -> strict validation
+#   -> CREATE TABLE IF NOT EXISTS
 #   -> exact deployed name/type reconciliation -> schema_reconciliation.yaml
 #
-# No datatype component is inferred. Synthetic data may run only after the
-# persisted reconciliation artifact is PASS and current readback still matches.
+# Inference is allowed only for datatype-only defects in a greenfield synthetic
+# target, is persisted in schema_assumptions.yaml, and never uses catalog drift
+# as intent. Synthetic data may run only after exact reconciliation passes.
 
 # COMMAND ----------
 
@@ -24,9 +26,12 @@ SPEC_PATH = f"{OUTPUT_FOLDER}/table_spec.yaml"
 ERD_PARSED_PATH = f"{OUTPUT_FOLDER}/erd_parsed.yaml"
 RUN_CONTEXT_PATH = f"{OUTPUT_FOLDER}/run_context.yaml"
 HANDOFF_PATH = f"{OUTPUT_FOLDER}/step_handoff.yaml"
+DDL_PREFLIGHT_PATH = f"{OUTPUT_FOLDER}/ddl_preflight.yaml"
+SCHEMA_ASSUMPTIONS_PATH = f"{OUTPUT_FOLDER}/schema_assumptions.yaml"
 RECONCILIATION_PATH = f"{OUTPUT_FOLDER}/schema_reconciliation.yaml"
 MANIFEST_PATH = f"{OUTPUT_FOLDER}/ddl_manifest.json"
 POLICY_ID = "DEPLOYED_DATATYPE_REPAIR_V1"
+DATATYPE_RESOLUTION_POLICY_ID = "GREENFIELD_SYNTHETIC_DATATYPE_RESOLUTION_V1"
 
 
 class _UniqueKeyLoader(yaml.SafeLoader):
@@ -103,7 +108,7 @@ _SIMPLE_TYPES = {
 
 
 def canonicalize_datatype(value):
-    """Normalize case/whitespace and explicitly approved aliases only."""
+    """Normalize syntax and expand documented Databricks DECIMAL defaults."""
     if not isinstance(value, str) or not value.strip():
         raise ValueError("datatype is empty")
     compact = re.sub(r"\s+", "", value).lower()
@@ -111,19 +116,19 @@ def canonicalize_datatype(value):
     if compact in _SIMPLE_TYPES:
         return compact
 
-    decimal_match = re.fullmatch(r"(decimal|numeric)\((\d+),(\d+)\)", compact)
+    decimal_match = re.fullmatch(
+        r"(decimal|dec|numeric)(?:\((\d+)(?:,(\d+))?\))?", compact
+    )
     if decimal_match:
-        precision = int(decimal_match.group(2))
-        scale = int(decimal_match.group(3))
+        precision = int(decimal_match.group(2) or 10)
+        scale = int(decimal_match.group(3) or 0)
         if not 1 <= precision <= 38:
             raise ValueError(f"decimal precision {precision} is outside 1..38")
         if not 0 <= scale <= precision:
             raise ValueError(f"decimal scale {scale} is outside 0..{precision}")
         return f"decimal({precision},{scale})"
-    if re.match(r"^(decimal|numeric)\b", compact):
-        raise ValueError(
-            f"decimal/numeric value {value!r} must include complete precision and scale as (p,s)"
-        )
+    if re.match(r"^(decimal|dec|numeric)\b", compact):
+        raise ValueError(f"decimal/numeric value {value!r} is malformed or truncated")
 
     length_match = re.fullmatch(r"(varchar|char|nvarchar)\((\d+)\)", compact)
     if length_match:
@@ -136,8 +141,215 @@ def canonicalize_datatype(value):
     raise ValueError(f"unsupported or malformed datatype {value!r}")
 
 
-def _validate_erd_projection(erd_document, table_spec):
-    """Defense-in-depth GATE 4.0 before the first catalog mutation."""
+_SEMANTIC_TOKENS = {
+    "MONETARY": {
+        "amt", "amount", "allowed", "balance", "billed", "charge", "coinsurance",
+        "copay", "cost", "deduct", "expense", "fee", "net", "paid", "payment",
+        "premium", "price", "revenue",
+    },
+    "RATIO": {"factor", "pct", "percent", "percentage", "rate", "ratio"},
+    "MEASUREMENT": {
+        "dose", "dosage", "duration", "height", "measurement", "qty", "quantity",
+        "volume", "weight",
+    },
+    "COUNT": {"count", "cnt", "nbr", "num", "number", "rank", "seq", "sequence"},
+}
+_DECIMAL_DEFAULTS = {
+    "MONETARY": (38, 4),
+    "RATIO": (38, 6),
+    "MEASUREMENT": (38, 4),
+    "COUNT": (38, 0),
+    "GENERIC": (38, 18),
+}
+_TYPE_SYNONYMS = {
+    "bit": "boolean", "bool": "boolean", "byte": "tinyint",
+    "datetime": "timestamp", "datetime2": "timestamp", "int16": "smallint",
+    "int32": "int", "int64": "bigint", "json": "string", "real": "float",
+    "short": "smallint", "text": "string", "uuid": "string", "xml": "string",
+}
+
+
+def _semantic_family(column_name):
+    tokens = set(re.findall(r"[a-z0-9]+", str(column_name or "").lower()))
+    for family in ("MONETARY", "RATIO", "MEASUREMENT", "COUNT"):
+        if tokens & _SEMANTIC_TOKENS[family]:
+            return family
+    return "GENERIC"
+
+
+def _strict_decimal_parts(value):
+    if not isinstance(value, str):
+        return None
+    match = re.fullmatch(
+        r"\s*(?:decimal|dec|numeric)\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)\s*",
+        value,
+        re.IGNORECASE,
+    )
+    if not match:
+        return None
+    precision, scale = int(match.group(1)), int(match.group(2))
+    if 1 <= precision <= 38 and 0 <= scale <= precision:
+        return precision, scale
+    return None
+
+
+def _strict_majority(values):
+    if not values:
+        return None
+    counts = {value: values.count(value) for value in set(values)}
+    scale, count = sorted(counts.items(), key=lambda item: (-item[1], item[0]))[0]
+    return scale if count * 2 > len(values) else None
+
+
+def _peer_scale(tables, table_name, column_name, family):
+    same_table = []
+    global_values = []
+    for table in tables:
+        for column in table.get("observed", {}).get("columns", []):
+            if table.get("name") == table_name and column.get("name") == column_name:
+                continue
+            if _semantic_family(column.get("name")) != family:
+                continue
+            parts = _strict_decimal_parts(column.get("datatype"))
+            if parts is None:
+                continue
+            global_values.append(parts[1])
+            if table.get("name") == table_name:
+                same_table.append(parts[1])
+    scale = _strict_majority(same_table)
+    if scale is not None:
+        return scale, "SAME_TABLE_SEMANTIC_PEER_MODE", [f"peer_scales={same_table!r}"]
+    scale = _strict_majority(global_values)
+    if scale is not None:
+        return scale, "GLOBAL_SEMANTIC_PEER_MODE", [f"peer_scales={global_values!r}"]
+    return None, None, []
+
+
+def _fallback_from_column_name(column_name):
+    name = str(column_name or "").lower()
+    tokens = set(re.findall(r"[a-z0-9]+", name))
+    family = _semantic_family(name)
+    if family != "GENERIC":
+        precision, scale = _DECIMAL_DEFAULTS[family]
+        return f"decimal({precision},{scale})", "SEMANTIC_NUMERIC_POLICY", [f"family={family}"]
+    if tokens & {"date", "dob"} or name.endswith("_dt"):
+        return "date", "SEMANTIC_DATE_POLICY", ["date-like column name"]
+    if tokens & {"timestamp", "datetime", "dttm"} or name.endswith(("_ts", "_at")):
+        return "timestamp", "SEMANTIC_TIMESTAMP_POLICY", ["timestamp-like column name"]
+    if name.startswith(("is_", "has_")) or tokens & {"bool", "boolean", "flag", "ind", "indicator"}:
+        return "boolean", "SEMANTIC_BOOLEAN_POLICY", ["boolean-like column name"]
+    return "string", "SAFE_STRING_FALLBACK", ["no reliable numeric or temporal semantic evidence"]
+
+
+def _resolve_greenfield_synthetic_datatypes(erd_document):
+    """Resolve datatype-only defects and return ordered provenance rows."""
+    tables = erd_document.get("tables")
+    if not isinstance(tables, list) or not tables:
+        raise RuntimeError("ERD_EXTRACTION_ERROR: erd_parsed.yaml has no tables")
+    decisions = []
+    for table in tables:
+        if not isinstance(table, dict):
+            raise RuntimeError(
+                "ERD_EXTRACTION_ERROR: erd_parsed.yaml contains a non-mapping table"
+            )
+        table_name = table.get("name", "unknown")
+        observed = table.get("observed")
+        columns = observed.get("columns") if isinstance(observed, dict) else None
+        if not isinstance(columns, list) or not columns:
+            raise RuntimeError(
+                f"ERD_EXTRACTION_ERROR: {table_name} has no observed columns"
+            )
+        for column in columns:
+            if not isinstance(column, dict):
+                raise RuntimeError(
+                    f"ERD_EXTRACTION_ERROR: {table_name} contains a non-mapping column"
+                )
+            column_name = column.get("name", "unknown")
+            raw = column.get("datatype")
+            raw_text = raw.strip() if isinstance(raw, str) else ""
+            try:
+                resolved = canonicalize_datatype(raw_text)
+                compact = re.sub(r"\s+", "", raw_text).lower()
+                if re.fullmatch(r"(?:decimal|dec|numeric)(?:\(\d+\))?", compact):
+                    decisions.append({
+                        "table": table_name, "column": column_name,
+                        "raw_datatype": raw, "resolved_datatype": resolved,
+                        "resolution_source": "DATABRICKS_DEFAULT_EXPANSION",
+                        "confidence": "HIGH", "semantic_family": _semantic_family(column_name),
+                        "inference": False, "observed": True,
+                        "evidence": ["documented DECIMAL default precision=10 and scale=0"],
+                    })
+                column["datatype"] = resolved
+                continue
+            except ValueError:
+                pass
+
+            compact = re.sub(r"\s+", "", raw_text).lower()
+            family = _semantic_family(column_name)
+            confidence = "MEDIUM"
+            if re.match(r"^(decimal|dec|numeric|number)\b", compact):
+                numbers = [int(value) for value in re.findall(r"\d+", compact)]
+                observed_precision = numbers[0] if numbers else None
+                observed_scale = numbers[1] if len(numbers) > 1 else None
+                if observed_scale is not None:
+                    scale = min(max(observed_scale, 0), 37)
+                    precision = min(max(observed_precision or 38, scale + 1), 38)
+                    source = "DECIMAL_SYNTAX_RECOVERY"
+                    evidence = [f"visible_precision={observed_precision}", f"visible_scale={observed_scale}"]
+                    confidence = "HIGH"
+                else:
+                    scale, source, evidence = _peer_scale(
+                        tables, table_name, column_name, family
+                    )
+                    if scale is None:
+                        _, scale = _DECIMAL_DEFAULTS[family]
+                        source = "SEMANTIC_DECIMAL_POLICY"
+                        evidence = [f"family={family}"]
+                    precision = observed_precision if observed_precision and observed_precision > 0 else _DECIMAL_DEFAULTS[family][0]
+                    precision = min(max(precision, scale + (1 if scale else 0)), 38)
+                    scale = min(scale, precision)
+                resolved = f"decimal({precision},{scale})"
+            elif re.match(r"^(varchar|char|nvarchar)\b", compact):
+                resolved = "string"
+                source = "NON_TRUNCATING_STRING_FALLBACK"
+                evidence = ["character length was unavailable or invalid"]
+                confidence = "HIGH"
+            elif compact in _TYPE_SYNONYMS:
+                resolved = _TYPE_SYNONYMS[compact]
+                source = "DATABRICKS_TYPE_SYNONYM"
+                evidence = [f"source_type={raw_text!r}"]
+                confidence = "HIGH"
+            else:
+                resolved, source, evidence = _fallback_from_column_name(column_name)
+                confidence = "LOW"
+            column["datatype"] = resolved
+            decisions.append({
+                "table": table_name, "column": column_name,
+                "raw_datatype": raw, "resolved_datatype": resolved,
+                "resolution_source": source, "confidence": confidence,
+                "semantic_family": family, "inference": True, "observed": False,
+                "evidence": evidence,
+            })
+    return decisions
+
+
+def _datatype_resolution_is_eligible(run_context_document):
+    data_source_value = run_context_document.get("data_source", {})
+    greenfield_value = data_source_value.get("greenfield", {})
+    return (
+        data_source_value.get("type") in {"erd", "erd_and_live_schema"}
+        and greenfield_value.get("enabled") is True
+        and greenfield_value.get("synthetic_data") is True
+    )
+
+
+def _synchronize_erd_projection(erd_document, table_spec):
+    """Regenerate derived type fields from the resolved ERD contract.
+
+    Governed datatype resolution, when eligible, occurs before this function.
+    Every replacement here is the exact complete value in the resolved ERD.
+    Structural drift remains a hard failure.
+    """
     erd_tables = erd_document.get("tables")
     spec_tables = table_spec.get("tables")
     if not isinstance(erd_tables, list) or not erd_tables:
@@ -157,6 +369,7 @@ def _validate_erd_projection(erd_document, table_spec):
             f"ERD={erd_names!r}, table_spec={spec_names!r}"
         )
 
+    updates = []
     for erd_table, spec_table in zip(erd_tables, spec_tables):
         table_name = erd_table.get("name")
         erd_columns = erd_table.get("observed", {}).get("columns")
@@ -184,28 +397,40 @@ def _validate_erd_projection(erd_document, table_spec):
                 f"SCHEMA_CONTRACT_ERROR: {table_name} column inventory/order mismatch: "
                 f"ERD={erd_column_names!r}, table_spec={spec_column_names!r}"
             )
-        for erd_column, spec_column in zip(erd_columns, spec_columns):
+        canonical_erd_types = []
+        for erd_column in erd_columns:
             column_name = erd_column.get("name")
             erd_type = erd_column.get("datatype")
-            spec_type = spec_column.get("type")
             try:
-                canonical_erd_type = canonicalize_datatype(erd_type)
+                canonical_erd_types.append(canonicalize_datatype(erd_type))
             except ValueError as exc:
                 raise RuntimeError(
                     f"ERD_EXTRACTION_ERROR: {table_name}.{column_name}: {exc}; "
                     "reject any cached parse and perform targeted authoritative reparse"
                 ) from exc
+
+        for erd_column, spec_column, canonical_erd_type in zip(
+            erd_columns, spec_columns, canonical_erd_types
+        ):
+            column_name = erd_column.get("name")
+            erd_type = erd_column.get("datatype")
+            spec_type = spec_column.get("type")
             try:
                 canonical_spec_type = canonicalize_datatype(spec_type)
-            except ValueError as exc:
-                raise RuntimeError(
-                    f"SCHEMA_CONTRACT_ERROR: {table_name}.{column_name}: {exc}"
-                ) from exc
+                reason = "DATATYPE_MISMATCH"
+            except ValueError:
+                canonical_spec_type = None
+                reason = "INCOMPLETE_OR_INVALID_DERIVED_DATATYPE"
             if canonical_erd_type != canonical_spec_type:
-                raise RuntimeError(
-                    f"SCHEMA_CONTRACT_ERROR: {table_name}.{column_name}: "
-                    f"ERD datatype {erd_type!r} != table-spec datatype {spec_type!r}"
-                )
+                updates.append({
+                    "table": table_name,
+                    "column": column_name,
+                    "previous_table_spec_datatype": spec_type,
+                    "authoritative_erd_datatype": erd_type,
+                    "reason": reason,
+                })
+                spec_column["type"] = erd_type
+    return updates
 
 
 for _name, _value in {
@@ -234,7 +459,8 @@ if legacy_version_suffix is not None and legacy_version_suffix != ASSET_SUFFIX:
 
 context_target = run_context.get("target", {})
 context_version = run_context.get("version", {})
-greenfield = run_context.get("data_source", {}).get("greenfield", {})
+data_source = run_context.get("data_source", {})
+greenfield = data_source.get("greenfield", {})
 run_id = run_context.get("run_id")
 if not isinstance(run_id, str) or not run_id:
     raise RuntimeError("run_context.yaml is missing run_id")
@@ -257,6 +483,126 @@ for field, (actual, expected) in parity_checks.items():
         raise RuntimeError(f"DDL_INPUT_AUTHORITY_ERROR: {field}={actual!r}, expected {expected!r}")
 if greenfield.get("enabled") is not True:
     raise RuntimeError("DDL_INPUT_AUTHORITY_ERROR: generated DDL requires greenfield.enabled=true")
+
+# GATE 4.0 is enforced inside the deterministic runtime so an agent cannot
+# accidentally skip it. Datatype-only defects may be resolved only for an
+# ERD-driven greenfield synthetic target. The resolved ERD and every decision
+# are persisted before the exact table-spec projection is regenerated.
+table_spec_input_sha256 = _raw_sha256(SPEC_PATH)
+erd_parsed_input_sha256 = _raw_sha256(ERD_PARSED_PATH)
+datatype_resolution_eligible = _datatype_resolution_is_eligible(run_context)
+datatype_resolutions = []
+try:
+    if datatype_resolution_eligible:
+        datatype_resolutions = _resolve_greenfield_synthetic_datatypes(erd_document)
+        if datatype_resolutions:
+            _atomic_write_yaml(ERD_PARSED_PATH, erd_document)
+            erd_document = _load_yaml(ERD_PARSED_PATH)
+            convergence_resolutions = _resolve_greenfield_synthetic_datatypes(erd_document)
+            if convergence_resolutions:
+                raise RuntimeError(
+                    "ERD_EXTRACTION_ERROR: datatype resolution did not converge"
+                )
+
+    assumptions = {
+        "artifact_type": "schema_assumptions",
+        "contract_version": 1,
+        "policy_id": DATATYPE_RESOLUTION_POLICY_ID,
+        "scope": "GREENFIELD_SYNTHETIC_GENERATED_TARGET_ONLY",
+        "run_id": run_id,
+        "asset_suffix": ASSET_SUFFIX,
+        "catalog": CATALOG,
+        "schema": SCHEMA,
+        "eligible": datatype_resolution_eligible,
+        "status": "PASS",
+        "erd_parsed_path": ERD_PARSED_PATH,
+        "erd_input_sha256": erd_parsed_input_sha256,
+        "erd_output_sha256": _raw_sha256(ERD_PARSED_PATH),
+        "resolution_count": len(datatype_resolutions),
+        "resolutions": datatype_resolutions,
+        "unresolved_datatypes": [],
+    }
+    _atomic_write_yaml(SCHEMA_ASSUMPTIONS_PATH, assumptions)
+
+    projection_updates = _synchronize_erd_projection(erd_document, spec)
+    if projection_updates:
+        _atomic_write_yaml(SPEC_PATH, spec)
+        spec = _load_yaml(SPEC_PATH)
+        remaining_updates = _synchronize_erd_projection(erd_document, spec)
+        if remaining_updates:
+            raise RuntimeError(
+                "SCHEMA_CONTRACT_ERROR: deterministic table-spec regeneration did not converge"
+            )
+    preflight = {
+        "artifact_type": "ddl_preflight",
+        "contract_version": 1,
+        "run_id": run_id,
+        "asset_suffix": ASSET_SUFFIX,
+        "catalog": CATALOG,
+        "schema": SCHEMA,
+        "status": "PASS",
+        "failure_code": None,
+        "catalog_mutation_started": False,
+        "erd_parsed_path": ERD_PARSED_PATH,
+        "erd_parsed_input_sha256": erd_parsed_input_sha256,
+        "erd_parsed_output_sha256": _raw_sha256(ERD_PARSED_PATH),
+        "schema_assumptions_path": SCHEMA_ASSUMPTIONS_PATH,
+        "schema_assumptions_sha256": _raw_sha256(SCHEMA_ASSUMPTIONS_PATH),
+        "datatype_resolution_policy_id": DATATYPE_RESOLUTION_POLICY_ID,
+        "datatype_resolution_eligible": datatype_resolution_eligible,
+        "datatype_resolutions": datatype_resolutions,
+        "table_spec_path": SPEC_PATH,
+        "table_spec_input_sha256": table_spec_input_sha256,
+        "table_spec_output_sha256": _raw_sha256(SPEC_PATH),
+        "action": (
+            "RESOLVED_ERD_DATATYPES_AND_REGENERATED_TABLE_SPEC"
+            if datatype_resolutions and projection_updates
+            else "RESOLVED_ERD_DATATYPES"
+            if datatype_resolutions
+            else "REGENERATED_TABLE_SPEC_TYPES_FROM_VALIDATED_ERD"
+            if projection_updates
+            else "NO_CHANGE"
+        ),
+        "type_regenerations": projection_updates,
+    }
+    _atomic_write_yaml(DDL_PREFLIGHT_PATH, preflight)
+except RuntimeError as exc:
+    message = str(exc)
+    failure_code = (
+        "ERD_EXTRACTION_ERROR"
+        if message.startswith("ERD_EXTRACTION_ERROR:")
+        else "SCHEMA_CONTRACT_ERROR"
+    )
+    preflight = {
+        "artifact_type": "ddl_preflight",
+        "contract_version": 1,
+        "run_id": run_id,
+        "asset_suffix": ASSET_SUFFIX,
+        "catalog": CATALOG,
+        "schema": SCHEMA,
+        "status": "FAIL",
+        "failure_code": failure_code,
+        "catalog_mutation_started": False,
+        "erd_parsed_path": ERD_PARSED_PATH,
+        "erd_parsed_input_sha256": erd_parsed_input_sha256,
+        "erd_parsed_output_sha256": _raw_sha256(ERD_PARSED_PATH),
+        "schema_assumptions_path": SCHEMA_ASSUMPTIONS_PATH,
+        "schema_assumptions_sha256": (
+            _raw_sha256(SCHEMA_ASSUMPTIONS_PATH)
+            if os.path.exists(SCHEMA_ASSUMPTIONS_PATH) else None
+        ),
+        "datatype_resolution_policy_id": DATATYPE_RESOLUTION_POLICY_ID,
+        "datatype_resolution_eligible": datatype_resolution_eligible,
+        "datatype_resolutions": datatype_resolutions,
+        "table_spec_path": SPEC_PATH,
+        "table_spec_input_sha256": table_spec_input_sha256,
+        "table_spec_output_sha256": _raw_sha256(SPEC_PATH),
+        "action": "HALT_PRE_MUTATION",
+        "type_regenerations": [],
+        "error": message,
+    }
+    _atomic_write_yaml(DDL_PREFLIGHT_PATH, preflight)
+    raise
 
 TABLES = spec.get("tables")
 if not isinstance(TABLES, list) or not TABLES:
@@ -287,12 +633,14 @@ for table in TABLES:
         except ValueError as exc:
             raise RuntimeError(
                 f"SCHEMA_CONTRACT_ERROR: {table_name}.{column_name}: received "
-                f"{datatype!r}: {exc}; return to authoritative ERD evidence instead of guessing"
+                f"{datatype!r}: {exc}; governed preflight resolution did not produce a valid type"
             ) from exc
 
-_validate_erd_projection(erd_document, spec)
 spark.sql(f"CREATE SCHEMA IF NOT EXISTS {_quote_identifier(CATALOG)}.{_quote_identifier(SCHEMA)}")
-print(f"Gates 1-2 and 4.0 PASSED: {len(TABLES)} tables with exact complete ERD projection")
+print(
+    f"Gates 1-2 and 4.0 PASSED: {len(TABLES)} tables; "
+    f"table-spec type regenerations={len(projection_updates)}"
+)
 
 # COMMAND ----------
 
@@ -481,6 +829,10 @@ reconciliation = {
     "producer_step": "create_data_layer",
     "producer_phase": "reconcile_schema",
     "policy_id": POLICY_ID,
+    "schema_assumptions_path": SCHEMA_ASSUMPTIONS_PATH,
+    "schema_assumptions_sha256": _raw_sha256(SCHEMA_ASSUMPTIONS_PATH),
+    "datatype_resolution_policy_id": DATATYPE_RESOLUTION_POLICY_ID,
+    "datatype_resolution_count": len(datatype_resolutions),
     "status": status,
     "failure_code": failure_code,
     "table_spec_path": SPEC_PATH,
@@ -531,6 +883,14 @@ manifest = {
     "readback_hash": reconciliation["observed_schema_sha256"],
     "schema_reconciliation_path": RECONCILIATION_PATH,
     "schema_reconciliation_sha256": reconciliation_hash,
+    "ddl_preflight_path": DDL_PREFLIGHT_PATH,
+    "ddl_preflight_sha256": _raw_sha256(DDL_PREFLIGHT_PATH),
+    "schema_assumptions_path": SCHEMA_ASSUMPTIONS_PATH,
+    "schema_assumptions_sha256": _raw_sha256(SCHEMA_ASSUMPTIONS_PATH),
+    "datatype_resolution_policy_id": DATATYPE_RESOLUTION_POLICY_ID,
+    "datatype_resolution_count": len(datatype_resolutions),
+    "table_spec_projection_action": preflight["action"],
+    "table_spec_type_regenerations": len(preflight["type_regenerations"]),
     "state_comparison": "match",
     "catalog": CATALOG,
     "schema": SCHEMA,

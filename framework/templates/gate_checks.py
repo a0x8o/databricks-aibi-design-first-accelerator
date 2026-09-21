@@ -1203,8 +1203,9 @@ _DDL_SIMPLE_TYPES = {
 def canonicalize_databricks_type(value: str) -> str:
     """Canonicalize syntax without changing precision, scale, or length.
 
-    Only case, insignificant whitespace, and the explicitly listed simple-type
-    aliases are normalized. Incomplete parameterized types are rejected.
+    Case, insignificant whitespace, explicitly listed aliases, and Databricks'
+    documented DECIMAL defaults (p=10, s=0) are normalized. Malformed or
+    truncated parameterized types are rejected.
     """
     if not isinstance(value, str) or not value.strip():
         raise ValueError("datatype is empty")
@@ -1213,17 +1214,19 @@ def canonicalize_databricks_type(value: str) -> str:
     if compact in _DDL_SIMPLE_TYPES:
         return compact
 
-    decimal_match = re.fullmatch(r"(decimal|numeric)\((\d+),(\d+)\)", compact)
+    decimal_match = re.fullmatch(
+        r"(decimal|dec|numeric)(?:\((\d+)(?:,(\d+))?\))?", compact
+    )
     if decimal_match:
-        precision = int(decimal_match.group(2))
-        scale = int(decimal_match.group(3))
+        precision = int(decimal_match.group(2) or 10)
+        scale = int(decimal_match.group(3) or 0)
         if not 1 <= precision <= 38:
             raise ValueError(f"decimal precision {precision} is outside 1..38")
         if not 0 <= scale <= precision:
             raise ValueError(f"decimal scale {scale} is outside 0..{precision}")
         return f"decimal({precision},{scale})"
-    if re.match(r"^(decimal|numeric)\b", compact):
-        raise ValueError("decimal/numeric must include complete precision and scale as (p,s)")
+    if re.match(r"^(decimal|dec|numeric)\b", compact):
+        raise ValueError("decimal/numeric is malformed or truncated")
 
     length_match = re.fullmatch(r"(varchar|char|nvarchar)\((\d+)\)", compact)
     if length_match:
