@@ -412,7 +412,7 @@ capabilities:
 
 artifact_requirements:
   resolved_copy:
-    source: {AGENT_SKILLS_DIR}/contracts/metric_view_capabilities.yaml
+    source: "{AGENT_SKILLS_DIR}/contracts/metric_view_capabilities.yaml"
     destination: "{OUTPUT_FOLDER}/metric_views/resolved_metric_view_capabilities.yaml"
     copy_mode: EXACT_BYTES
   hash:

@@ -14,9 +14,9 @@ Vision model returns partial table (e.g., 5 of 12 columns). GATE 2.1b catches th
 `dbldatagen` raises DATATYPE_MISMATCH for BooleanType with values/weights, and ValueError for TimestampType with date-only begin/end. Fix: `_safe_withColumn` patch in template handles both.
 
 ### AP-DL-6: Truncated Data Types from Vision Model (decimal(28)
-**Pattern:** `AssertionError: Unbalanced datatype: decimal(28` at DDL execution. The vision model truncates `decimal(28,4)` to `decimal(28` when parsing ERD images.
-**Root cause:** Two-layer defense existed but had a gap. Layer 1 (ERD validation utility) catches truncated types before `erd_parsed.yaml` is written, but the LLM sometimes skips calling it or re-derives types from memory. Layer 2 (DDL template Gate 2) only validated the base type name (`DECIMAL` is valid), never checked balanced parentheses.
-**Fix:** Added Gate 2b to DDL template: deterministic type-balancing repair that detects unbalanced parentheses, missing decimal scales, and truncated types BEFORE SQL compilation. Repairs `decimal(28` → `decimal(28,2)`, `varchar(255` → `varchar(255)`, etc. This catches the error even if the ERD validation was skipped.
+**Pattern:** The vision model returns an incomplete value such as `decimal(28`, `decimal(28)`, `decimal(28,)`, or `varchar(`.
+**Root cause:** Precision, scale, or length was not legible or the model truncated the ERD text.
+**Fix:** Never close the parenthesis or supply a default scale/length. The strict ERD utility and DDL compiler reject incomplete parameterized types. Re-invoke the vision model with a targeted high-resolution crop and preserve the authoritative value. If it remains unresolved after the allowed retries, HALT with `ERD_EXTRACTION_ERROR`.
 
 ### AP-DL-5: LLM Generates DDL Notebook From Scratch Instead of Using Template
 **Pattern:** DDL notebook has syntax bugs (wrong SHOW TABLES wildcard, SQL comment style in Python notebook, missing commas in column defs) that vary between runs.
@@ -54,6 +54,12 @@ If `after_rows > before_rows`, fanout is occurring.
   - `template=` patterns produce variable-length strings that exceed the declared max
   - FK replacement inserts parent key values that are longer than the child column allows
 **Authority handling:** Record the declared width, failing value, and affected relationship. Do not mutate `table_spec.yaml` to make generation pass. HALT with `SCHEMA_CONTRACT_ERROR` and repair the generated value/domain logic. GATE 4.2's deployed-schema repair policy does not apply because the deployed datatype already matches the intended datatype; this is a data-value generation defect, not deployed schema drift.
+
+### AP-DL-9: Populated Current-Version Schema Drift
+**Pattern:** `schema_reconciliation.yaml` reports `DATATYPE_MISMATCH_UNSAFE_TO_REPAIR`, the expected and observed precision/scale differ, and `row_count_before > 0`.
+**Root cause:** `CREATE TABLE IF NOT EXISTS` reused a populated table created under an older schema, or an earlier executor bypassed the `reconcile_schema` boundary. Compare the table's Delta history with the current run phase timestamps and authenticate the frozen template/helper hashes to distinguish them.
+**Required action:** Preserve the table and HALT with no mutation. Do not `ALTER`, cast, overwrite, change `table_spec.yaml`, or mark the gate PASS. For disposable synthetic assets, use a fresh asset version after correcting the runtime, or perform explicitly approved exact-inventory cleanup outside the automatic pipeline. For retained data, use an operator-owned migration outside this accelerator.
+**Prevention:** `generate_ddl → reconcile_schema → generate_synthetic_data` is mandatory. The dbldatagen runtime authenticates the persisted PASS artifact and a fresh name/type readback before its first append.
 
 # Validated Learnings (from production runs)
 

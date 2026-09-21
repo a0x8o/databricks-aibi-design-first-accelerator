@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -1192,17 +1193,60 @@ def gate1_structural_dashboard(design: dict) -> GateResult:
 # GATE 2: METADATA VALIDATION
 # -----------------------------------------------------------------------------
 
+_DDL_SIMPLE_TYPE_ALIASES = {"integer": "int", "long": "bigint"}
+_DDL_SIMPLE_TYPES = {
+    "bigint", "int", "smallint", "tinyint", "float", "double", "string",
+    "boolean", "date", "timestamp", "timestamp_ntz", "binary",
+}
+
+
+def canonicalize_databricks_type(value: str) -> str:
+    """Canonicalize syntax without changing precision, scale, or length.
+
+    Only case, insignificant whitespace, and the explicitly listed simple-type
+    aliases are normalized. Incomplete parameterized types are rejected.
+    """
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("datatype is empty")
+    compact = re.sub(r"\s+", "", value).lower()
+    compact = _DDL_SIMPLE_TYPE_ALIASES.get(compact, compact)
+    if compact in _DDL_SIMPLE_TYPES:
+        return compact
+
+    decimal_match = re.fullmatch(r"(decimal|numeric)\((\d+),(\d+)\)", compact)
+    if decimal_match:
+        precision = int(decimal_match.group(2))
+        scale = int(decimal_match.group(3))
+        if not 1 <= precision <= 38:
+            raise ValueError(f"decimal precision {precision} is outside 1..38")
+        if not 0 <= scale <= precision:
+            raise ValueError(f"decimal scale {scale} is outside 0..{precision}")
+        return f"decimal({precision},{scale})"
+    if re.match(r"^(decimal|numeric)\b", compact):
+        raise ValueError("decimal/numeric must include complete precision and scale as (p,s)")
+
+    length_match = re.fullmatch(r"(varchar|char|nvarchar)\((\d+)\)", compact)
+    if length_match:
+        length = int(length_match.group(2))
+        if length < 1:
+            raise ValueError("character length must be positive")
+        return f"{length_match.group(1)}({length})"
+    if re.match(r"^(varchar|char|nvarchar)\b", compact):
+        raise ValueError("varchar/char/nvarchar must include a complete positive length")
+    raise ValueError(f"unsupported or malformed datatype '{value}'")
+
 def gate2_metadata_ddl(spec: dict, spark) -> GateResult:
-    """Gate 2 for DDL: verify column types are valid Spark SQL types."""
-    VALID_TYPES = {"BIGINT", "INT", "INTEGER", "SMALLINT", "TINYINT", "FLOAT", "DOUBLE",
-                   "DECIMAL", "STRING", "VARCHAR", "CHAR", "BOOLEAN", "DATE",
-                   "TIMESTAMP", "TIMESTAMP_NTZ", "BINARY"}
+    """Gate 2 for DDL: verify complete datatype grammar and bounds."""
     issues = []
     for t in spec.get("tables", []):
         for col in t.get("columns", []):
-            base_type = col.get("type", "").split("(")[0].upper().strip()
-            if base_type not in VALID_TYPES:
-                issues.append(f"Invalid type '{col.get('type')}' for column {col.get('name')} in table {t.get('name')}")
+            try:
+                canonicalize_databricks_type(col.get("type", ""))
+            except ValueError as exc:
+                issues.append(
+                    f"Invalid type '{col.get('type')}' for column {col.get('name')} "
+                    f"in table {t.get('name')}: {exc}"
+                )
     if issues:
         return GateResult("G2_DDL", "FAIL", issues=issues)
     return GateResult("G2_DDL", "PASS")
@@ -1429,6 +1473,56 @@ def gate3_semantic_metric_view(spec: dict) -> GateResult:
 # GATE 4: DEPLOYMENT VALIDATION
 # -----------------------------------------------------------------------------
 
+def gate4_deployment_ddl(
+    spec: dict,
+    deployed_schemas: dict[str, list[dict]],
+    asset_suffix: str,
+) -> GateResult:
+    """Require exact expected table identity, column order, and canonical datatype equality."""
+    issues = []
+    expected_names = [f"{table['name']}{asset_suffix}" for table in spec.get("tables", [])]
+    observed_names = sorted(deployed_schemas)
+    if sorted(expected_names) != observed_names:
+        issues.append(
+            f"Exact deployed table inventory mismatch: expected {sorted(expected_names)}, "
+            f"observed {observed_names}"
+        )
+
+    for table in spec.get("tables", []):
+        deployed_name = f"{table['name']}{asset_suffix}"
+        observed = deployed_schemas.get(deployed_name)
+        if observed is None:
+            continue
+        expected = table.get("columns", [])
+        expected_names_for_table = [column.get("name") for column in expected]
+        observed_names_for_table = [column.get("column") for column in observed]
+        if expected_names_for_table != observed_names_for_table:
+            issues.append(
+                f"{deployed_name}: column inventory/order mismatch; "
+                f"expected {expected_names_for_table}, observed {observed_names_for_table}"
+            )
+            continue
+        for expected_column, observed_column in zip(expected, observed):
+            try:
+                expected_type = canonicalize_databricks_type(expected_column.get("type", ""))
+                observed_type = canonicalize_databricks_type(observed_column.get("datatype", ""))
+            except ValueError as exc:
+                issues.append(f"{deployed_name}.{expected_column.get('name')}: {exc}")
+                continue
+            if expected_type != observed_type:
+                issues.append(
+                    f"{deployed_name}.{expected_column.get('name')}: expected "
+                    f"{expected_column.get('type')}, observed {observed_column.get('datatype')}"
+                )
+
+    if issues:
+        return GateResult("G4_DDL", "FAIL", issues=issues)
+    return GateResult(
+        "G4_DDL",
+        "PASS",
+        details={"tables": len(expected_names), "schemas_reconciled": len(expected_names)},
+    )
+
 def gate4_deployment_metric_view(
     spec: dict,
     deployed_views: list[str],
@@ -1486,6 +1580,43 @@ def gate4_deployment_genie(
 # -----------------------------------------------------------------------------
 # CONVENIENCE: Run all four gates for a given artifact type
 # -----------------------------------------------------------------------------
+
+def run_four_gate_ddl(
+    spec: dict,
+    deployed_schemas: dict[str, list[dict]] | None = None,
+    asset_suffix: str = "",
+) -> dict:
+    """Run deterministic structural, datatype, and deployed-schema gates for DDL."""
+    results = {
+        "gate1": gate1_structural_ddl(spec),
+    }
+    results["gate2"] = (
+        gate2_metadata_ddl(spec, None)
+        if results["gate1"].passed
+        else GateResult("G2_DDL", "FAIL", issues=["Gate 1 failed — skipping"])
+    )
+    # Table DDL has no independent semantic gate; expected-schema provenance is
+    # enforced by the data-layer contract before this helper is called.
+    results["gate3"] = (
+        GateResult("G3_DDL", "PASS", details={"authority": "table_spec"})
+        if results["gate2"].passed
+        else GateResult("G3_DDL", "FAIL", issues=["Gate 2 failed — skipping"])
+    )
+    results["gate4"] = (
+        gate4_deployment_ddl(spec, deployed_schemas, asset_suffix)
+        if results["gate3"].passed and deployed_schemas is not None
+        else GateResult("G4_DDL", "FAIL", issues=["Deployed schema readback is required"])
+    )
+    failed = [name for name, result in results.items() if not result.passed]
+    if failed:
+        raise GateCheckError(
+            "FOUR_GATE_DDL",
+            "DDL four-gate validation failed: "
+            + "; ".join(
+                f"{name}={' | '.join(results[name].issues[:3])}" for name in failed
+            ),
+        )
+    return results
 
 def run_four_gate_metric_views(
     spec: dict,

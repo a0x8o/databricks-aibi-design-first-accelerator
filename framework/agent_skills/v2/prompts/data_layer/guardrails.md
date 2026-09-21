@@ -33,6 +33,9 @@
 27. DO NOT silently accept schema drift after DDL — `DESCRIBE TABLE` must match `table_spec.yaml`; never skip an expected column or generate an unexpected deployed column with defaults
 28. DO NOT treat a relationship in `semantic_model.yaml` as validated — downstream use requires its matching relationship-level `data_layer_validation.yaml` entry to be `PASS`
 29. DO NOT recompute catalog, schema, asset/version suffixes, output folder, or paths from `accelerator.yaml`; use the current-run resolved configuration/handoff and halt on conflict
+30. DO NOT infer, default, or repair a missing datatype component, including decimal precision/scale or character length; incomplete ERD extraction must halt and be reparsed from authoritative evidence
+31. DO NOT generate or insert synthetic data unless the current-run `reconcile_schema` phase is VALID, `{OUTPUT_FOLDER}/schema_reconciliation.yaml` authenticates with `status: PASS` and zero unresolved mismatches, and a fresh exact name/type readback still matches `table_spec.yaml`
+32. DO NOT treat final `data_layer_validation.yaml` as a substitute for the pre-generation reconciliation artifact; final validation must authenticate and preserve the same reconciliation evidence
 
 ---
 

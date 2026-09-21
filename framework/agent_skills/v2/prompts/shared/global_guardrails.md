@@ -145,7 +145,7 @@ Authority is scoped to the fact being resolved. No artifact is authoritative for
 | Expected generated physical schema | `table_spec.yaml` | Planned greenfield tables, columns, and types; never proof of deployed reality |
 | Deployed physical tables, columns, types, and existence | Current catalog inspection through `DESCRIBE TABLE`, `information_schema`, or an approved catalog API | Final authority for what physically exists |
 | Relationship, classification, and grain intent | `semantic_model.yaml` | Intended semantic model |
-| Validated deployed schema, relationships, and grain | `data_layer_validation.yaml`, backed by catalog and data checks | Must have `overall_status: PASS`, `schema_reconciliation.policy_id: DEPLOYED_DATATYPE_REPAIR_V1`, `schema_reconciliation.status: PASS`, zero unresolved schema mismatches, and applicable relationship checks PASS; otherwise halt the dependent stage |
+| Validated deployed schema, relationships, and grain | standalone `schema_reconciliation.yaml` plus `data_layer_validation.yaml`, backed by catalog and data checks | Standalone reconciliation must authenticate with policy `DEPLOYED_DATATYPE_REPAIR_V1`, `status: PASS`, and zero unresolved mismatches before data generation; final validation must have `overall_status: PASS`, authenticate and embed the same reconciliation evidence, and record applicable relationship checks PASS; otherwise halt the dependent stage |
 | Resolved target names, FQNs, paths, and runtime identifiers | `step_handoff.yaml` | Consume verbatim; never re-derive downstream |
 | Desired Metric View architecture and definitions | `metric_view_plan.yaml`, `metric_view_design.yaml`, and `metric_view_spec.yaml` | Desired state only |
 | Deployed Metric View semantic surface | Current Metric View `DESCRIBE`/query plus approved catalog or API readback | Final authority for deployed measures, dimensions, and aliases |
@@ -173,6 +173,14 @@ before required-key, exact-key-set, hash, or identity checks run.
 5. Later stages consume validated upstream authority; they do not reinterpret or repair it locally.
 6. Fields duplicated between `run_context.yaml` and `step_handoff.yaml` MUST match or the master resolver halts with `HANDOFF_AUTHORITY_ERROR`. The handoff owns only values actually present in it. Downstream consumers never modify it; the designated Metric View producer may idempotently update only `metric_view_fqns[]` under its documented planning contract.
 7. A mismatch between an expected generated datatype and catalog readback is owned only by Data Layer GATE 4.2. The observed catalog type remains factual, but no downstream stage may cast around it or rewrite `table_spec.yaml`. Automatic mutation is limited to one compiler-driven recreation of an exact empty current-version generated target; every other case halts without mutation.
+7a. Synthetic data MUST NOT be generated or inserted until the current-run `reconcile_schema`
+    phase is reusable, `{OUTPUT_FOLDER}/schema_reconciliation.yaml` authenticates with
+    `status: PASS`, and a fresh exact deployed name/type readback still matches
+    `table_spec.yaml`. Missing, failed, stale, or contradictory reconciliation evidence is a hard
+    stop before the first write.
+7b. Precision, scale, length, and datatype are schema intent. Never default or infer a missing
+    component (including decimal scale); route incomplete extraction back to the owning Data Layer
+    parsing gate.
 8. Dashboard and Genie creation require the current-run Metric View producer stage to be enabled
    and validated. If `create_metric_views` is disabled, both dependent creation stages must also be
    disabled; an explicit FQN in frozen configuration is identity intent, not current-run validation.

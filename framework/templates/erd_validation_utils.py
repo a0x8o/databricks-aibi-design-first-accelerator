@@ -1,31 +1,26 @@
 # =============================================================================
-# ERD Validation Utilities — Deterministic Data Type Correction
+# ERD Validation Utilities — Deterministic Data Type Validation
 # =============================================================================
 #
-# This module provides programmatic validation and auto-correction of data types
+# This module provides deterministic validation and safe normalization of data types
 # extracted by the vision model during ERD image parsing (Step 2).
 #
 # PURPOSE:
-# Vision models frequently truncate data type definitions when processing ERD
-# images (e.g., "decimal(28" instead of "decimal(28,2)"). This produces invalid
-# DDL that fails at CREATE TABLE time. This utility catches and fixes ALL such
-# truncation errors BEFORE erd_parsed.yaml is written.
+# Vision models may truncate data type definitions when processing ERD images.
+# Precision, scale, and length are schema intent, so this utility never guesses
+# missing values. It rejects incomplete or invalid types before erd_parsed.yaml
+# is written and routes the caller back to authoritative ERD evidence.
 #
 # USAGE:
 # Call validate_and_fix_datatypes() on the parsed tables list AFTER vision model
 # returns and BEFORE writing erd_parsed.yaml:
 #
-#   tables, fixes = validate_and_fix_datatypes(parsed_tables)
-#   # tables is now guaranteed to have complete data types
-#   # fixes lists what was corrected (for audit/logging)
+#   tables, normalizations = validate_and_fix_datatypes(parsed_tables)
+#   # Only whitespace is normalized; semantic type components are never inferred.
 #
 # GUARANTEE:
-# After this function runs, every column datatype will be:
-# - Non-empty
-# - Have balanced parentheses
-# - Have complete precision/scale for decimal/numeric types
-# - Have complete length for varchar/char types
-# - Be a valid Databricks SQL data type
+# A PASS guarantees that every column datatype is complete and valid. An
+# incomplete datatype remains unchanged and is returned as a validation error.
 # =============================================================================
 
 import re
@@ -37,28 +32,22 @@ from typing import Any
 # =============================================================================
 
 def validate_and_fix_datatypes(tables: list[dict]) -> tuple[list[dict], list[str]]:
-    """Validate and auto-fix all column datatypes for completeness.
+    """Apply only semantics-preserving whitespace normalization.
 
-    This is the DETERMINISTIC GATE that prevents incomplete types from
-    reaching DDL generation. The vision model may truncate; this function
-    guarantees completeness.
+    The public function name is retained for compatibility with existing
+    authenticated callers. It MUST NOT invent a datatype, precision, scale,
+    length, or parenthesis. Completeness is enforced by
+    :func:`validate_schema_for_ddl`.
 
     Args:
         tables: List of table dicts from ERD parsing. Expected structure:
             [{"name": "table_name", "observed": {"columns": [{"name": "col", "datatype": "..."}]}}]
 
     Returns:
-        Tuple of (fixed_tables, fixes_applied).
-        - fixed_tables: Same list with corrected datatypes in-place
-        - fixes_applied: List of human-readable fix descriptions for logging
-
-    Guarantees after execution:
-        - No unclosed parentheses in any datatype
-        - All decimal/numeric types have (precision,scale)
-        - All varchar/char types have (length)
-        - No empty datatypes (defaults to 'string')
+        Tuple of (tables, safe_normalizations). Only leading/trailing
+        whitespace is removed.
     """
-    fixes = []
+    normalizations = []
 
     for table in tables:
         table_name = table.get('name', 'unknown')
@@ -67,135 +56,73 @@ def validate_and_fix_datatypes(tables: list[dict]) -> tuple[list[dict], list[str
         for col in columns:
             col_name = col.get('name', 'unknown')
             dtype = col.get('datatype', '').strip()
-            original = dtype
-
-            # Fix 1: Empty datatype
-            if not dtype:
-                col['datatype'] = 'string'
-                fixes.append(f"{table_name}.{col_name}: <empty> → 'string'")
-                continue
-
-            # Fix 2: Unclosed parenthesis — the #1 vision model truncation error
-            if '(' in dtype and ')' not in dtype:
-                dtype = _fix_unclosed_parenthesis(dtype, table_name, col_name)
+            original = col.get('datatype', '')
+            if isinstance(original, str) and original != dtype:
                 col['datatype'] = dtype
-                if dtype != original:
-                    fixes.append(f"{table_name}.{col_name}: '{original}' → '{dtype}'")
-                continue
-
-            # Fix 3: Decimal/numeric with precision but no scale — e.g., decimal(28)
-            dtype = _fix_decimal_missing_scale(dtype, table_name, col_name)
-            if dtype != original:
-                col['datatype'] = dtype
-                fixes.append(f"{table_name}.{col_name}: '{original}' → '{dtype}' (added scale)")
-                continue
-
-            # Fix 4: Mismatched parentheses count
-            if dtype.count('(') != dtype.count(')'):
-                fixed = _balance_parentheses(dtype)
-                if fixed != dtype:
-                    col['datatype'] = fixed
-                    fixes.append(f"{table_name}.{col_name}: '{dtype}' → '{fixed}' (balanced parens)")
+                normalizations.append(
+                    f"{table_name}.{col_name}: trimmed surrounding datatype whitespace"
+                )
 
     # Report
-    if fixes:
-        print(f"⚠️  ERD Data Type Validation: {len(fixes)} fix(es) applied:")
-        for f in fixes[:20]:  # Cap output for large schemas
-            print(f"    • {f}")
-        if len(fixes) > 20:
-            print(f"    ... and {len(fixes) - 20} more")
+    if normalizations:
+        print(f"ERD Data Type Validation: {len(normalizations)} safe normalization(s):")
+        for item in normalizations[:20]:
+            print(f"    • {item}")
+        if len(normalizations) > 20:
+            print(f"    ... and {len(normalizations) - 20} more")
     else:
-        print("✓ ERD Data Type Validation: all types complete and valid")
+        print("✓ ERD Data Type Validation: no datatype normalization required")
 
-    return tables, fixes
+    return tables, normalizations
 
 
 # =============================================================================
-# SECTION 2: Type-Specific Fix Functions
+# SECTION 2: Strict Type Validation
 # =============================================================================
 
-def _fix_unclosed_parenthesis(dtype: str, table_name: str, col_name: str) -> str:
-    """Fix a data type with an unclosed parenthesis.
-
-    Applies domain-aware defaults:
-    - decimal/numeric: assumes scale=2 for precision>10 (financial), scale=0 otherwise
-    - varchar/char: closes with the partial length or defaults to 255
-    - other: simply closes the parenthesis
-    """
-    lower = dtype.lower()
-
-    # Decimal/Numeric: decimal(28 → decimal(28,2)
-    match = re.match(r'(decimal|numeric)\((\d+),?\s*$', lower)
-    if match:
-        type_name = match.group(1)
-        precision = int(match.group(2))
-        # Financial heuristic: precision > 10 likely needs scale=2
-        scale = 2 if precision > 10 else 0
-        return f"{type_name}({precision},{scale})"
-
-    # Decimal with partial scale: decimal(28,  → decimal(28,2)
-    match = re.match(r'(decimal|numeric)\((\d+),\s*$', lower)
-    if match:
-        type_name = match.group(1)
-        precision = int(match.group(2))
-        return f"{type_name}({precision},2)"
-
-    # Varchar/Char: varchar(100 → varchar(100), varchar( → varchar(255)
-    match = re.match(r'(n?varchar|char)\((\d*)$', lower)
-    if match:
-        type_name = match.group(1)
-        length = match.group(2) or '255'
-        return f"{type_name}({length})"
-
-    # Generic: just close the parenthesis
-    return dtype + ')'
+_SIMPLE_TYPES = {
+    'bigint', 'int', 'integer', 'smallint', 'tinyint', 'long',
+    'double', 'float', 'boolean', 'string', 'binary',
+    'date', 'timestamp', 'timestamp_ntz',
+}
 
 
-def _fix_decimal_missing_scale(dtype: str, table_name: str, col_name: str) -> str:
-    """Fix decimal(N) → decimal(N,S) when scale is likely needed.
+def validate_datatype(dtype: Any) -> str | None:
+    """Return an error for an incomplete/unsupported Databricks SQL datatype."""
+    if not isinstance(dtype, str) or not dtype.strip():
+        return "empty datatype; authoritative ERD evidence is required"
 
-    Heuristic: precision > 4 and column name suggests monetary value → scale=2
-    Otherwise leaves decimal(N) as-is (it's valid SQL, just unusual).
-    """
-    match = re.match(r'^(decimal|numeric)\((\d+)\)$', dtype, re.IGNORECASE)
-    if not match:
-        return dtype
+    value = dtype.strip()
+    lower = value.lower()
+    if lower in _SIMPLE_TYPES:
+        return None
 
-    type_name = match.group(1)
-    precision = int(match.group(2))
+    decimal_match = re.fullmatch(
+        r'(decimal|numeric)\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)',
+        lower,
+    )
+    if decimal_match:
+        precision = int(decimal_match.group(2))
+        scale = int(decimal_match.group(3))
+        if not 1 <= precision <= 38:
+            return f"decimal precision {precision} is outside 1..38"
+        if not 0 <= scale <= precision:
+            return f"decimal scale {scale} is outside 0..{precision}"
+        return None
 
-    # Heuristic: likely financial if precision > 4
-    # Column name patterns that suggest monetary: amount, paid, cost, charge, price, rate
-    monetary_patterns = ('amount', 'paid', 'cost', 'charge', 'price', 'rate',
-                         'fee', 'balance', 'payment', 'billed', 'allowed',
-                         'copay', 'deductible', 'coinsurance')
-    col_lower = col_name.lower()
+    if re.match(r'^(decimal|numeric)\b', lower):
+        return "decimal/numeric must include complete precision and scale as (p,s)"
 
-    if precision > 4 and any(p in col_lower for p in monetary_patterns):
-        return f"{type_name}({precision},2)"
+    length_match = re.fullmatch(r'(varchar|char|nvarchar)\s*\(\s*(\d+)\s*\)', lower)
+    if length_match:
+        if int(length_match.group(2)) < 1:
+            return "character length must be a positive integer"
+        return None
 
-    # Non-monetary with high precision: likely needs some scale
-    if precision > 10:
-        return f"{type_name}({precision},2)"
+    if re.match(r'^(varchar|char|nvarchar)\b', lower):
+        return "varchar/char/nvarchar must include a complete positive length"
 
-    return dtype
-
-
-def _balance_parentheses(dtype: str) -> str:
-    """Ensure parentheses are balanced."""
-    open_count = dtype.count('(')
-    close_count = dtype.count(')')
-
-    if open_count > close_count:
-        dtype += ')' * (open_count - close_count)
-    elif close_count > open_count:
-        # Extra closing parens — strip from end
-        while dtype.count(')') > dtype.count('('):
-            dtype = dtype.rstrip(')')
-            dtype += ')' * dtype.count('(')
-            break
-
-    return dtype
+    return f"unsupported or malformed datatype '{value}'"
 
 
 # =============================================================================
@@ -218,13 +145,6 @@ def validate_schema_for_ddl(tables: list[dict]) -> dict:
     """
     errors = []
     warnings = []
-
-    VALID_BASE_TYPES = {
-        'bigint', 'int', 'integer', 'smallint', 'tinyint', 'long',
-        'double', 'float', 'boolean', 'string', 'binary',
-        'date', 'timestamp', 'timestamp_ntz',
-        'decimal', 'numeric', 'varchar', 'char', 'nvarchar',
-    }
 
     for table in tables:
         table_name = table.get('name')
@@ -253,17 +173,9 @@ def validate_schema_for_ddl(tables: list[dict]) -> dict:
                 errors.append(f"{table_name}: duplicate column '{col_name}'")
             col_names.append(col_name)
 
-            if not dtype:
-                errors.append(f"{table_name}.{col_name}: empty datatype")
-
-            # Check base type is valid
-            base_type = re.match(r'^([a-z_]+)', dtype.lower())
-            if base_type and base_type.group(1) not in VALID_BASE_TYPES:
-                warnings.append(f"{table_name}.{col_name}: unusual type '{dtype}' — verify")
-
-            # Check for unclosed parens (should be caught by validate_and_fix_datatypes)
-            if '(' in dtype and ')' not in dtype:
-                errors.append(f"{table_name}.{col_name}: unclosed parenthesis in '{dtype}'")
+            datatype_error = validate_datatype(dtype)
+            if datatype_error:
+                errors.append(f"{table_name}.{col_name}: {datatype_error}")
 
             if key_marker == 'PK':
                 has_pk = True
@@ -297,7 +209,7 @@ def validate_erd_output(tables: list[dict]) -> tuple[list[dict], dict]:
 
     This is the ONE function the orchestrating agent should call after
     vision model parsing. It:
-    1. Fixes truncated data types (deterministic auto-correction)
+    1. Applies only semantics-preserving whitespace normalization
     2. Validates the full schema is DDL-ready
     3. Returns the fixed tables + validation report
 
@@ -310,19 +222,21 @@ def validate_erd_output(tables: list[dict]) -> tuple[list[dict], dict]:
     print("ERD OUTPUT VALIDATION PIPELINE")
     print("═" * 60)
 
-    # Step 1: Fix data types
-    print("\n[1/2] Data type completeness check...")
-    tables, fixes = validate_and_fix_datatypes(tables)
+    # Step 1: Apply safe normalization only. Missing type components are never guessed.
+    print("\n[1/2] Data type normalization check...")
+    tables, normalizations = validate_and_fix_datatypes(tables)
 
     # Step 2: Full schema validation
     print("\n[2/2] Schema structure validation...")
     report = validate_schema_for_ddl(tables)
-    report['datatype_fixes'] = fixes
-    report['datatype_fixes_count'] = len(fixes)
+    report['datatype_fixes'] = []
+    report['datatype_fixes_count'] = 0
+    report['safe_normalizations'] = normalizations
+    report['safe_normalizations_count'] = len(normalizations)
 
     print("\n" + "═" * 60)
     if report['status'] == 'PASS':
-        print(f"✅ ERD VALIDATION PASSED — {len(tables)} tables, {len(fixes)} type fixes applied")
+        print(f"✅ ERD VALIDATION PASSED — {len(tables)} tables, no datatype components inferred")
     else:
         print(f"❌ ERD VALIDATION FAILED — {len(report['errors'])} errors must be resolved")
     print("═" * 60)

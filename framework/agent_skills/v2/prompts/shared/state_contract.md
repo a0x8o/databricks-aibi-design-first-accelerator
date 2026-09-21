@@ -531,8 +531,11 @@ owning stage.
 ### What the LLM MUST NOT do:
 
 - Re-parse the ERD when the `parse_erd` fingerprint gate and structural verification pass
-- Re-generate DDL when the `generate_ddl` fingerprint gate and catalog/schema reconciliation pass
-- Re-generate synthetic data when its fingerprint gate passes and every required table has rows
+- Re-generate DDL when the `generate_ddl` fingerprint gate and exact target-identity readback pass
+- Re-run schema reconciliation when the `reconcile_schema` fingerprint gate, authenticated
+  `{OUTPUT_FOLDER}/schema_reconciliation.yaml`, and fresh exact name/type readback all pass
+- Re-generate synthetic data when its fingerprint gate passes, its authenticated immediate
+  `reconcile_schema` dependency remains valid, and every required table has rows
 - Re-create Metric Views when their fingerprint gates and current catalog checks pass
 - Re-create a dashboard when its fingerprint gate plus required Lakeview GET/name verification pass
 - Re-create a Genie Space when its fingerprint gate plus required full GET/title verification pass
@@ -556,9 +559,10 @@ its individual claims retain the authorities assigned by G-3:
 |-------|----------|-------------|
 | parse_erd | erd_parsed.yaml | file exists + tables array non-empty |
 | build_semantic_model | semantic_model.yaml | file exists |
-| generate_ddl | Tables in catalog + schema reconciliation evidence | after run_context/handoff parity, exact table identities from `table_spec.yaml` plus verbatim `step_handoff.asset_suffix` in the handoff target namespace resolve by current catalog readback; exact deployed name/type sets match the expected schema; policy is `DEPLOYED_DATATYPE_REPAIR_V1`; `data_layer_validation.yaml.schema_reconciliation.status: PASS` with zero unresolved mismatches |
-| generate_synthetic_data | Row count > 0 | `SELECT COUNT(*) > 0` for each table |
-| validate_data | data_layer_validation.yaml | current run/version; `overall_status: PASS`; `schema_reconciliation.policy_id: DEPLOYED_DATATYPE_REPAIR_V1`; `schema_reconciliation.status: PASS`; zero unresolved schema mismatches |
+| generate_ddl | Tables in catalog | after run_context/handoff parity, exact table identities from `table_spec.yaml` plus verbatim `step_handoff.asset_suffix` in the handoff target namespace resolve by current catalog readback; this phase proves identity/existence only and does not claim datatype reconciliation |
+| reconcile_schema | `{OUTPUT_FOLDER}/schema_reconciliation.yaml` | current run/target/suffix; `producer_phase: reconcile_schema`; policy is `DEPLOYED_DATATYPE_REPAIR_V1`; `status: PASS`; exact ordered deployed name/type readback matches `table_spec.yaml`; expected/observed schema hashes match; zero unresolved mismatches |
+| generate_synthetic_data | Row count > 0 plus authenticated reconciliation dependency | the immediate `reconcile_schema` phase remains reusable, its standalone artifact authenticates against a fresh exact name/type readback, and `SELECT COUNT(*) > 0` for each exact expected table |
+| validate_data | data_layer_validation.yaml | current run/version; `overall_status: PASS`; authenticates the standalone reconciliation artifact path/hash and embeds the same policy/status/schema hashes/attempts/unresolved payload without contradiction; zero unresolved schema mismatches |
 | profile_schema | `{OUTPUT_FOLDER}/metric_views/schema_profile.yaml` | file exists |
 | map_kpis | kpi_metric_mapping.yaml | file exists |
 | plan_metric_views | `{OUTPUT_FOLDER}/metric_views/metric_view_plan.yaml` | strategy-aware plan/handoff authentication below passes; ≥ 1 Metric View planned; capability tuple matches |
@@ -576,7 +580,7 @@ its individual claims retain the authorities assigned by G-3:
 | generate_sql | llm_genie_design.yaml plus executed SQL/benchmark evidence | exact quality tuple; every required example and benchmark fingerprint validates |
 | create_genie_space | Exact Genie manifest locator + matching `{genie_title}_validation.yaml` | manifest contains the expected space_id; matching validation binds the exact ID/title, has `source: api_readback`, records the authenticated quality tuple and contract-selected accepted outcome/action/status, and full GET matches |
 | validate_genie | `{genie_title}_validation.yaml` plus full GET | exact identity/content/count/quality-policy/outcome comparison passes |
-| generate_documentation | {AGENT_SKILLS_DIR}/prompts/documentation/readme.md | current-run/path/scope-bound paired draft and README are structurally valid |
+| generate_documentation | `{OUTPUT_FOLDER}/documentation/readme.md` | current-run/path/scope-bound paired draft and README are structurally valid |
 | validate_documentation | documentation/run_manifest_draft.json | canonical schema, placeholder scan, and authenticated evidence-scope checks pass |
 
 Dashboard phase reusability is based on mandatory structural evidence, not on satisfying every
@@ -593,7 +597,7 @@ its mandatory inputs becomes stale.
 
 ```text
 create_data_layer:
-  parse_erd → build_semantic_model → generate_ddl → generate_synthetic_data → validate_data
+  parse_erd → build_semantic_model → generate_ddl → reconcile_schema → generate_synthetic_data → validate_data
 
 create_metric_views:
   authenticated validate_data or authenticated live-source binding
@@ -1134,8 +1138,9 @@ points** for this state contract:
 |------|---------|----------------|---------------|
 | 01 | `erd_parsed_exists` | file_exists(erd_parsed.yaml) | parse_erd |
 | 01 | `ddl_notebook_executed` | exact expected table identities resolve in the frozen target namespace | generate_ddl |
-| 01 | `synthetic_data_populated` | COUNT(*) > 0 per table | generate_synthetic_data |
-| 01 | `validation_passed` | current-run data_layer_validation.yaml has `overall_status: PASS` | validate_data |
+| 01 | `schema_reconciled` | authenticated `{OUTPUT_FOLDER}/schema_reconciliation.yaml` has current-run policy `DEPLOYED_DATATYPE_REPAIR_V1`, `status: PASS`, exact fresh schema equality, and zero unresolved mismatches | reconcile_schema |
+| 01 | `synthetic_data_populated` | immediate `reconcile_schema` dependency remains valid and COUNT(*) > 0 per exact expected table | generate_synthetic_data |
+| 01 | `validation_passed` | current-run data_layer_validation.yaml has `overall_status: PASS` and authenticates the same standalone reconciliation artifact | validate_data |
 | 02 | `schema_profiled` | `{OUTPUT_FOLDER}/metric_views/schema_profile.yaml` exists | profile_schema |
 | 02 | `profile_cross_checked` | All profile columns verified against catalog via DESCRIBE TABLE (GATE 2.2) | profile_schema |
 | 02 | `kpi_mapped` | kpi_metric_mapping.yaml exists | map_kpis |

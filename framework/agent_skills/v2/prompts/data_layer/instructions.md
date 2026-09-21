@@ -45,14 +45,17 @@ The resulting data layer must be: structurally faithful to the ERD, semantically
     - id: ddl_notebook_executed
       after_step: 4
       check: "Catalog readback resolves exact current-run expected table FQN/name-set equality in the frozen target namespace"
+    - id: schema_reconciled
+      after_step: 4
+      check: "Authenticated current-run schema_reconciliation.yaml has policy DEPLOYED_DATATYPE_REPAIR_V1, status PASS, zero unresolved mismatches, matching table_spec hash, and fresh exact DESCRIBE name/type equality"
     - id: synthetic_spec_domain_check
       after_step: 5
-      check: "Every CATEGORICAL/WEIGHTED_CATEGORICAL column has concrete domain values (no val_N, no single-char placeholders)"
+      check: "schema_reconciled is PASS and every CATEGORICAL/WEIGHTED_CATEGORICAL column has concrete domain values (no val_N, no single-char placeholders)"
     - id: synthetic_data_populated
       after_step: 6
-      check: "SELECT COUNT(*) > 0 FROM each table"
+      check: "schema_reconciled remains PASS under fresh readback and SELECT COUNT(*) > 0 FROM each exact expected table"
     - id: validation_passed
-      after_step: 7
+      after_step: 8
       check: "file_exists('{OUTPUT_FOLDER}/data_layer_validation.yaml') AND overall_status = PASS"
 -->
 
@@ -85,6 +88,8 @@ The following actions are STRICTLY FORBIDDEN. Violating any is a pipeline failur
 21. **DO NOT write date-only strings for TIMESTAMP columns** — `"2020-01-01"` causes ValueError in dbldatagen. Always use full datetime: `"2020-01-01 00:00:00"`. The LLM KNOWS the column is TIMESTAMP from ERD; use that information.
 22. **DO NOT use backtick-quoted column names in DDL** — write `clm_dtl_billed_amt DECIMAL(27,4)` NOT `` `clm_dtl_billed_amt` DECIMAL(27,4) ``. Backticks in DDL cause `PARSE_SYNTAX_ERROR` when a comma is missing between columns.
 23. **DO NOT omit commas between column definitions** — every column MUST end with a comma except the LAST one before the closing `)`. Missing commas are the #1 cause of DDL `PARSE_SYNTAX_ERROR`.
+24. **DO NOT infer or default a missing datatype, decimal precision/scale, or character length** — obtain authoritative ERD evidence through a targeted crop/reparse or HALT with `ERD_EXTRACTION_ERROR`.
+25. **DO NOT build a synthetic-data spec or execute any synthetic write unless `reconcile_schema` is a current authenticated `VALID` phase and fresh catalog readback still matches its PASS evidence**.
 
 ### Environment-Specific Rules
 
@@ -123,9 +128,10 @@ reusable `phases_completed` record.
 | load_config | accelerator request + frozen run contracts | Never reusable; re-read to detect request drift while execution uses current-run `run_context.yaml`/`step_handoff.yaml` |
 | parse_erd | erd_parsed.yaml | current-run artifact is structurally valid, tables are non-empty, and its stored ERD-image digest equals the current input fingerprint. A prior-version cache hit accelerates execution but is not itself a phase skip. |
 | build_semantic_model | semantic_model.yaml | structurally valid and bound to the current parsed-ERD output fingerprint |
-| generate_ddl | Tables in catalog + `data_layer_validation.yaml.schema_reconciliation` | catalog readback resolves the exact current-run expected table FQN/name/type set in the frozen target namespace; policy is `DEPLOYED_DATATYPE_REPAIR_V1`; schema reconciliation is `PASS` with zero unresolved mismatches |
-| generate_synthetic_data | Row count > 0 | current catalog readback has `COUNT(*) > 0` for every expected table and matches the stored normalized readback fingerprint |
-| validate_data | data_layer_validation.yaml | current-run/version artifact exists + `overall_status: PASS` + policy `DEPLOYED_DATATYPE_REPAIR_V1` + `schema_reconciliation.status: PASS` + zero unresolved schema mismatches |
+| generate_ddl | Exact expected tables in catalog | catalog readback resolves every exact current-run expected table identity in the frozen target namespace; no schema-success claim is made yet |
+| reconcile_schema | schema_reconciliation.yaml | current-run artifact authenticates `table_spec.yaml`; policy is `DEPLOYED_DATATYPE_REPAIR_V1`; status is `PASS`; expected/current DESCRIBE fingerprints match; zero unresolved mismatches |
+| generate_synthetic_data | Row count > 0 + reconciliation dependency | authenticated `reconcile_schema` remains `VALID`; fresh readback matches its fingerprint; current catalog readback has `COUNT(*) > 0` for every expected table and matches the stored normalized readback fingerprint |
+| validate_data | data_layer_validation.yaml | current-run/version artifact exists + `overall_status: PASS` + exact path/hash/content parity with `schema_reconciliation.yaml` + zero unresolved schema mismatches |
 
 **Rules:** Never re-execute a phase whose complete fingerprint and phase-specific gates pass. After
 each successfully executed reusable phase, atomically upsert its exact `VALID` current record in
@@ -285,28 +291,28 @@ Read the exact frozen `{run_context.data_source.erd.image}` path with the vision
 
 ### Data Type Completeness (CRITICAL — DETERMINISM RULE)
 
-**The vision model MUST return COMPLETE data type definitions including precision, scale, and length.** Truncated types (e.g., `decimal(28` instead of `decimal(28,2)`) produce invalid DDL that fails at table creation.
+**The vision model MUST return COMPLETE data type definitions including precision, scale, and length.** Truncated types (e.g., `decimal(28` instead of an authoritative complete value such as `decimal(28,4)`) produce invalid DDL and MUST be rejected before table creation.
 
 **The LLM system prompt for ERD parsing MUST include this instruction:**
 
 ```text
 For EVERY column, return the COMPLETE data type exactly as shown in the ERD image:
-- decimal/numeric types: MUST include both precision AND scale in parentheses — e.g., decimal(28,2), NOT decimal(28
+- decimal/numeric types: MUST include both precision AND scale in parentheses — e.g., decimal(28,4), NOT decimal(28
 - varchar/char types: MUST include the length — e.g., varchar(100), NOT varchar
-- If precision/scale/length is partially visible or cut off, infer the most likely complete value from context
+- If precision/scale/length is partially visible or cut off, request a targeted high-resolution crop/reparse; if authoritative pixels still do not resolve it, return `ERD_EXTRACTION_ERROR`
 - NEVER return an unclosed parenthesis in a data type
 - NEVER truncate a data type definition mid-specification
 ```
 
 **Common vision model truncation errors (GATE 2.1b will catch these):**
 
-| Truncated (WRONG) | Complete (CORRECT) |
-|-------------------|--------------------|
-| `decimal(28` | `decimal(28,2)` |
-| `decimal(18` | `decimal(18,4)` |
-| `varchar(` | `varchar(100)` |
-| `numeric(10` | `numeric(10,0)` |
-| `char(` | `char(1)` |
+| Incomplete value | Required result |
+|------------------|-----------------|
+| `decimal(28` | `UNRESOLVED` — targeted crop/reparse; never invent scale `2` |
+| `decimal(18)` | `UNRESOLVED` — both precision and scale must be authoritative |
+| `varchar(` | `UNRESOLVED` — targeted crop/reparse; never invent length `100` |
+| `numeric(10` | `UNRESOLVED` — targeted crop/reparse; never invent scale `0` |
+| `char(` | `UNRESOLVED` — targeted crop/reparse; never invent length `1` |
 
 ### GATE 2.1b: Data Type Validation (MANDATORY post-parse)
 
@@ -710,9 +716,17 @@ COMMENT '{table description}';
 
 **GATE 4.1**: `SHOW TABLES IN {catalog}.{schema} LIKE '*{ASSET_SUFFIX}'` returns expected count. `ASSET_SUFFIX` is the exact frozen `step_handoff.yaml.asset_suffix`. HALT if fewer.
 
-### GATE 4.2: Schema Reconciliation (MANDATORY after DDL execution)
+### GATE 4.2 / `reconcile_schema`: Schema Reconciliation (MANDATORY after DDL execution)
 
 After GATE 4.1 passes, verify that each table's **actual deployed schema** from `DESCRIBE TABLE` matches the **expected generated schema** in `table_spec.yaml`. GATE 4.0 already proves that `table_spec.yaml` is an exact projection of `erd_parsed.yaml`. This ensures `CREATE TABLE IF NOT EXISTS` cannot hide schema drift when an object already exists.
+
+This is a distinct reusable phase and a hard execution boundary. Call `report_progress` with
+`phase_id: reconcile_schema` before readback. The deterministic DDL runtime MUST atomically write
+`{OUTPUT_FOLDER}/schema_reconciliation.yaml` on both PASS and FAIL before any Step 5 work. Mark the
+phase `VALID` only after a persisted PASS artifact authenticates the current run, asset suffix,
+target, raw `table_spec.yaml` SHA-256, expected/readback schema fingerprints, policy ID, attempts,
+and an empty `unresolved_mismatches` list. A FAIL artifact is durable diagnostic evidence, never
+permission to continue.
 
 **Algorithm:**
 
@@ -761,6 +775,27 @@ For each table in table_spec.yaml:
 
 Any structural mismatch remaining after an empty-table recreation is a `SCHEMA_CONTRACT_ERROR`; HALT. Any datatype mismatch remaining after the single eligible repair is `DATATYPE_MISMATCH_UNSAFE_TO_REPAIR`; HALT. Never skip an expected column, include an unexpected deployed column, coerce a datatype, or modify an intent artifact to accept drift.
 
+On PASS, persist the `reconcile_schema` checkpoint with the raw artifact digest and current catalog
+readback fingerprint. On FAIL, persist the classified failure and HALT immediately; do not build
+`synthetic_data_spec.yaml`, run PK/FK/domain checks, or execute dbldatagen.
+
+The phase's sorted `output_fingerprints` are exactly:
+
+```yaml
+- id: schema_reconciliation_artifact
+  kind: RAW_BYTES
+  locator: "{OUTPUT_FOLDER}/schema_reconciliation.yaml"
+  sha256: <SHA-256 of exact artifact bytes>
+- id: schema_reconciliation_catalog_readback
+  kind: CATALOG_READBACK
+  locator: "table_spec:{catalog}.{schema}:{asset_suffix}"
+  sha256: <canonical expected-inventory DESCRIBE name/type fingerprint>
+```
+
+The dbldatagen runtime MUST authenticate both exact entries before checking that every append target
+is empty. An existence-only artifact check or a phase status without these fingerprints cannot
+admit a write.
+
 **Why this is safe:**
 - Suffix matching alone never proves ownership; the exact FQN must also be an expected current-run
   greenfield target in the frozen namespace and must not be source/live/unversioned or ambiguous
@@ -781,6 +816,12 @@ Any structural mismatch remaining after an empty-table recreation is a `SCHEMA_C
 # Step 5: Build Synthetic Data Specification
 
 Run only when `run_context.data_source.greenfield.synthetic_data: true`.
+
+**Hard admission gate:** authenticate the current `reconcile_schema` phase record and exact
+`schema_reconciliation.yaml` bytes. Require policy `DEPLOYED_DATATYPE_REPAIR_V1`, `status: PASS`,
+zero unresolved mismatches, matching run/target/suffix/table-spec hashes, and a fresh `DESCRIBE`
+fingerprint equal to the persisted readback fingerprint. Missing, failed, stale, or changed evidence
+HALTS before creating the synthetic specification.
 
 Create `{OUTPUT_FOLDER}/synthetic_data_spec.yaml` from: `erd_parsed.yaml` + `semantic_model.yaml` + KPI context + volume config.
 
@@ -1010,6 +1051,8 @@ volume_targets:
 
 ### Pre-Flight
 
+- [ ] `reconcile_schema` is current `VALID`; authenticated `schema_reconciliation.yaml` is `PASS` with zero unresolved mismatches and fresh catalog name/type equality
+- [ ] every exact expected append-only target is empty before the notebook's first write; a non-empty target HALTS to prevent duplicate data
 - [ ] `synthetic_data_spec.yaml` exists with FK strategies for every relationship
 - [ ] GATE 5.1 passed (domain values validated)
 - [ ] Generation order computed from dependency graph
@@ -1302,6 +1345,9 @@ authority:
   expected_schema_source: table_spec.yaml
   deployed_schema_source: catalog_describe
 schema: { tables_expected: N, tables_created: N, missing: [], unexpected: [] }
+reconciliation_evidence:
+  path: <exact current-run schema_reconciliation.yaml path>
+  sha256: <raw lowercase SHA-256>
 schema_reconciliation:
   policy_id: DEPLOYED_DATATYPE_REPAIR_V1
   status: PASS | FAIL
@@ -1342,9 +1388,15 @@ domain_values: { columns_checked: N, generic_value_failures: [] }
 data_quality: { null_violations: [], generic_fallback_columns: [] }
 ```
 
+Authenticate `{OUTPUT_FOLDER}/schema_reconciliation.yaml`, record its exact path/raw digest, and
+copy its reconciliation payload without reinterpretation. The final report may add later integrity
+results, but it must not recompute or rewrite the earlier schema outcome. A GATE 4.2 failure writes
+`schema_reconciliation.yaml` with `status: FAIL` and halts before Step 5; it does not fabricate a
+partial final validation report.
+
 Every relationship in `semantic_model.yaml` MUST have exactly one matching entry in `relationships:`. Preserve its source provenance. After this report exists, it supersedes `semantic_model.yaml` for the question "is this deployed relationship safe to use?"
 
-**GATE 7.1**: `data_layer_validation.yaml` exists with `overall_status: PASS`, `schema_reconciliation.policy_id: DEPLOYED_DATATYPE_REPAIR_V1`, `schema_reconciliation.status: PASS`, zero `schema_reconciliation.unresolved_mismatches`, every intended relationship has exactly one validation entry, and every relationship entry has `validation_status: PASS`. HALT otherwise. A GATE 4.2 failure may persist this artifact early with `overall_status: FAIL` and the exact mismatch evidence; its existence never authorizes resume or downstream execution.
+**GATE 7.1**: `data_layer_validation.yaml` exists with `overall_status: PASS`; its reconciliation path/raw SHA authenticate the current `schema_reconciliation.yaml`; the embedded reconciliation content matches exactly and has policy `DEPLOYED_DATATYPE_REPAIR_V1`, `status: PASS`, and zero unresolved mismatches; every intended relationship has exactly one validation entry; and every relationship entry has `validation_status: PASS`. HALT otherwise.
 
 ---
 
@@ -1483,6 +1535,7 @@ HALT with `❌ EXECUTION HALTED` when: ERD unreadable, vision model unavailable,
 |----------|----------|-----------|
 | erd_parsed.yaml | `{OUTPUT_FOLDER}/` | `tables:` array matches ERD count |
 | table_spec.yaml | `{OUTPUT_FOLDER}/` | Exact expected-schema projection of `erd_parsed.yaml`; GATE 4.0 passed |
+| schema_reconciliation.yaml | `{OUTPUT_FOLDER}/` | Current-run GATE 4.2 evidence; policy `DEPLOYED_DATATYPE_REPAIR_V1`; `status: PASS`; exact expected/readback name-type fingerprints; zero unresolved mismatches |
 | semantic_model.yaml | `{OUTPUT_FOLDER}/` | Contains `generation_order:` |
 | synthetic_data_spec.yaml | `{OUTPUT_FOLDER}/` | Entry for every table, GATE 5.1 passed |
 | DDL notebook | `{OUTPUT_FOLDER}/notebooks/ddl_{domain}.py` | All tables in catalog |
@@ -1499,6 +1552,7 @@ HALT with `❌ EXECUTION HALTED` when: ERD unreadable, vision model unavailable,
 | Parse ERD | `parse_erd` | tables, relationships, columns |
 | Semantic Model | `build_semantic_model` | facts, dimensions, relationships_resolved |
 | Generate DDL | `generate_ddl` | tables_created, columns_total |
+| Reconcile Schema | `reconcile_schema` | tables_checked, repaired_tables, unresolved_mismatches |
 | Synthetic Data | `generate_synthetic_data` | tables_populated, total_rows, fk_linked |
 | Validate | `validate_data` | pk_tests, fk_tests, pk_failures, fk_failures |
 

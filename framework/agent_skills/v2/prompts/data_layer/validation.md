@@ -5,7 +5,7 @@
 ## Gates
 
 ### GATE 2.1b: Data Type Validation (MANDATORY post-parse)
-After parsing ERD, verify every column has a concrete data type. If ANY column has NULL/UNKNOWN type, re-invoke vision model with a targeted crop. HALT if still unresolved after 2 retries.
+After parsing ERD, verify every column has a concrete, complete datatype. DECIMAL/NUMERIC requires authoritative `(precision,scale)` with `1 <= precision <= 38` and `0 <= scale <= precision`; CHAR/VARCHAR requires an authoritative positive length. Never infer or default a missing datatype component. For NULL, UNKNOWN, truncated, unbalanced, or incomplete types, re-invoke the vision model with a targeted crop. HALT with `ERD_EXTRACTION_ERROR` if still unresolved after 2 retries.
 
 ### GATE 4.0: Expected Schema Contract (MANDATORY before DDL execution)
 `table_spec.yaml` must be an exact physical projection of `erd_parsed.yaml`. Normalize and compare every table, column, and datatype. HALT with `SCHEMA_CONTRACT_ERROR` on any missing, unexpected, renamed, or retyped object.
@@ -14,7 +14,7 @@ After parsing ERD, verify every column has a concrete data type. If ANY column h
 `SHOW TABLES IN {catalog}.{schema} LIKE '*{ASSET_SUFFIX}'` must return expected count, using the exact frozen `step_handoff.yaml.asset_suffix`. HALT if fewer.
 **CRITICAL:** `SHOW TABLES LIKE` uses **glob syntax** (`*` = wildcard), NOT SQL LIKE syntax (`%` = wildcard). See **G-15** in `{AGENT_SKILLS_DIR}/prompts/shared/global_guardrails.md`. Using `%` returns zero results.
 
-### GATE 4.2: Schema Reconciliation (MANDATORY after DDL execution)
+### GATE 4.2 / `reconcile_schema`: Schema Reconciliation (MANDATORY after DDL execution)
 After GATE 4.1, verify each table's **actual deployed schema** from `DESCRIBE TABLE` matches the **expected generated schema** in `table_spec.yaml`, including normalized column names and datatypes. GATE 4.0 already proves that `table_spec.yaml` matches `erd_parsed.yaml`.
 
 The canonical policy identifier is `DEPLOYED_DATATYPE_REPAIR_V1`.
@@ -33,7 +33,9 @@ The only allowed automatic action is: record the mismatch, drop the exact empty 
 
 If ownership is ambiguous, the table is non-empty, row count cannot be proven, the object is source/live/unversioned, the operation lacks permission, or post-repair readback still differs, write failure evidence and HALT with `DATATYPE_MISMATCH_UNSAFE_TO_REPAIR`. Do not delete or coerce data. Missing/unexpected/renamed-column mismatches use the same empty-current-version-table eligibility gate and otherwise halt with `SCHEMA_CONTRACT_ERROR`.
 
-Record every decision in `data_layer_validation.yaml.schema_reconciliation`: policy identifier, expected/observed schema, canonical comparison, ownership checks, row count, action, attempt count, post-repair readback, and terminal status. A failure may write a partial validation artifact with `overall_status: FAIL`; downstream and resume gates accept only `overall_status: PASS`, `schema_reconciliation.policy_id: DEPLOYED_DATATYPE_REPAIR_V1`, `schema_reconciliation.status: PASS`, and zero unresolved mismatches.
+Before any synthetic specification or write, atomically record every decision in `{OUTPUT_FOLDER}/schema_reconciliation.yaml`: current run/target/suffix binding, raw `table_spec.yaml` digest, expected/observed schema fingerprints, policy identifier, expected/observed schemas, canonical comparison, ownership checks, row count, action, attempt count, post-repair readback, unresolved mismatches, and terminal status. Persist both PASS and FAIL outcomes. Only PASS with zero unresolved mismatches creates a `VALID` `reconcile_schema` checkpoint. FAIL halts immediately and must not run later data-quality checks.
+
+Steps 5 and 6 must re-authenticate this artifact and freshly recompute catalog name/type equality before work. The final `data_layer_validation.yaml` records the reconciliation artifact's exact path/raw digest and embeds the same outcome; it does not first create or reinterpret reconciliation evidence.
 
 ### GATE 5.1: Domain Value Validation
 Every categorical column MUST have domain-specific values (not `val_1`...`val_5`). Run the Domain Value Inference Protocol for any column with generic values.
@@ -45,7 +47,7 @@ All values for VARCHAR/STRING columns MUST be quoted strings in `synthetic_data_
 ALL tables must have rows > 0 after synthetic data generation. HALT with `SYNTHETIC_GENERATION_ERROR` if any table is empty.
 
 ### GATE 7.1: Data Layer Validation
-`data_layer_validation.yaml` must exist with `overall_status: PASS`, `schema_reconciliation.policy_id: DEPLOYED_DATATYPE_REPAIR_V1`, `schema_reconciliation.status: PASS`, and zero unresolved schema mismatches. Every relationship in `semantic_model.yaml` must have exactly one relationship-level validation entry with `validation_status: PASS`. HALT otherwise. `semantic_model.yaml` is relationship intent; this relationship-level result is the authority for downstream use of the deployed relationship.
+`data_layer_validation.yaml` must exist with `overall_status: PASS`; its recorded path/raw digest must authenticate the current `schema_reconciliation.yaml`; the embedded reconciliation payload must match and have policy `DEPLOYED_DATATYPE_REPAIR_V1`, status `PASS`, and zero unresolved mismatches. Every relationship in `semantic_model.yaml` must have exactly one relationship-level validation entry with `validation_status: PASS`. HALT otherwise. `semantic_model.yaml` is relationship intent; this relationship-level result is the authority for downstream use of the deployed relationship.
 
 ---
 
@@ -61,5 +63,6 @@ ALL tables must have rows > 0 after synthetic data generation. HALT with `SYNTHE
 | `AP-DL-4` | SHOW TABLES LIKE Uses Wrong Wildcard |
 | `AP-DL-7` | Join Fanout From Missing pk_cols in Dimension Tables |
 | `AP-DL-8` | DELTA_EXCEED_CHAR_VARCHAR_LIMIT from dbldatagen Generated Values |
+| `AP-DL-9` | Populated Current-Version Schema Drift / `DATATYPE_MISMATCH_UNSAFE_TO_REPAIR` |
 
 Classify the failure from current evidence before loading a runbook section. The index is a routing aid, not authority to bypass the stage owner or retry policy.

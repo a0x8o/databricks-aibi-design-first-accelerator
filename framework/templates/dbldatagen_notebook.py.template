@@ -54,6 +54,11 @@ dbutils.library.restartPython()
 
 # DBTITLE 1,Setup and Utilities
 import dbldatagen as dg
+import hashlib
+import json
+import os
+import re
+import yaml
 from pyspark.sql.types import *
 from pyspark.sql import functions as F
 from pyspark.sql.window import Window
@@ -66,7 +71,7 @@ spark.conf.set("spark.sql.ansi.enabled", "false")
 
 # --- Safety patch: defense-in-depth for known dbldatagen issues ---
 # These are SAFETY NETS only. The primary fixes are:
-#   - GATE 5.2 (§5.4 in 01_create_data_layer.md): coerces types at YAML write time
+#   - GATE 5.2 in the authenticated v2 data-layer instructions validates YAML types
 #   - POST-BUILD type coercion in generate_table(): coerces at runtime
 #   - generate_table() Tier 3: explicitly formats begin/end for timestamps
 #
@@ -101,24 +106,305 @@ def _safe_withColumn(self, colName, colType, *args, **kwargs):
 
 dg.DataGenerator.withColumn = _safe_withColumn
 
-CATALOG = "{{SOURCE_CATALOG}}"
-SCHEMA = "{{SOURCE_SCHEMA}}"
-VERSION_SUFFIX = "{{VERSION_SUFFIX}}"
+OUTPUT_FOLDER = "{{OUTPUT_FOLDER}}"
+CATALOG = "{{TARGET_CATALOG}}"
+SCHEMA = "{{TARGET_SCHEMA}}"
+ASSET_SUFFIX = "{{ASSET_SUFFIX}}"
+VERSION_SUFFIX = ASSET_SUFFIX  # internal compatibility alias; never independently derived
+TABLE_SPEC_PATH = f"{OUTPUT_FOLDER}/table_spec.yaml"
+RECONCILIATION_PATH = f"{OUTPUT_FOLDER}/schema_reconciliation.yaml"
+RUN_CONTEXT_PATH = f"{OUTPUT_FOLDER}/run_context.yaml"
+HANDOFF_PATH = f"{OUTPUT_FOLDER}/step_handoff.yaml"
+POLICY_ID = "DEPLOYED_DATATYPE_REPAIR_V1"
+
+
+class _UniqueKeyLoader(yaml.SafeLoader):
+    pass
+
+
+def _construct_unique_mapping(loader, node, deep=False):
+    mapping = {}
+    for key_node, value_node in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        if key in mapping:
+            raise ValueError(f"Duplicate YAML key: {key}")
+        mapping[key] = loader.construct_object(value_node, deep=deep)
+    return mapping
+
+
+_UniqueKeyLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
+    _construct_unique_mapping,
+)
+
+
+def _load_yaml(path):
+    with open(path, encoding="utf-8") as handle:
+        value = yaml.load(handle, Loader=_UniqueKeyLoader)
+    if not isinstance(value, dict):
+        raise RuntimeError(f"Expected a YAML mapping at {path}")
+    return value
+
+
+def _raw_sha256(path):
+    with open(path, "rb") as handle:
+        return hashlib.sha256(handle.read()).hexdigest()
+
+
+def _atomic_write_json(path, value):
+    temp_path = f"{path}.tmp.{os.getpid()}"
+    with open(temp_path, "w", encoding="utf-8") as handle:
+        json.dump(value, handle, indent=2, sort_keys=True)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(temp_path, path)
+
+
+def _canonical_sha256(value):
+    payload = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _quote_identifier(value):
+    if not isinstance(value, str) or not value or "`" in value:
+        raise RuntimeError(f"Unsafe or empty SQL identifier: {value!r}")
+    return f"`{value}`"
+
+
+def _fqn(table):
+    return ".".join(_quote_identifier(part) for part in (CATALOG, SCHEMA, table))
+
+
+_TYPE_ALIASES = {"integer": "int", "long": "bigint"}
+_SIMPLE_TYPES = {
+    "bigint", "int", "smallint", "tinyint", "float", "double", "string",
+    "boolean", "date", "timestamp", "timestamp_ntz", "binary",
+}
+
+
+def _canonicalize_datatype(value):
+    if not isinstance(value, str) or not value.strip():
+        raise RuntimeError("Empty deployed datatype")
+    compact = re.sub(r"\s+", "", value).lower()
+    compact = _TYPE_ALIASES.get(compact, compact)
+    if compact in _SIMPLE_TYPES:
+        return compact
+    decimal_match = re.fullmatch(r"(decimal|numeric)\((\d+),(\d+)\)", compact)
+    if decimal_match:
+        precision = int(decimal_match.group(2))
+        scale = int(decimal_match.group(3))
+        if not 1 <= precision <= 38 or not 0 <= scale <= precision:
+            raise RuntimeError(f"Invalid decimal bounds: {value}")
+        return f"decimal({precision},{scale})"
+    length_match = re.fullmatch(r"(varchar|char|nvarchar)\((\d+)\)", compact)
+    if length_match and int(length_match.group(2)) > 0:
+        return f"{length_match.group(1)}({int(length_match.group(2))})"
+    raise RuntimeError(f"Unsupported or incomplete deployed datatype: {value}")
+
+
+def _read_schema(table):
+    rows = spark.sql(f"DESCRIBE TABLE {_fqn(table)}").collect()
+    result = []
+    for row in rows:
+        column_name = str(row["col_name"]).strip()
+        datatype = str(row["data_type"]).strip()
+        if not column_name or column_name.startswith("#"):
+            break
+        result.append({
+            "column": column_name,
+            "datatype": datatype,
+            "canonical_datatype": _canonicalize_datatype(datatype),
+        })
+    return result
+
+
+def _expected_schema(table):
+    return [
+        {
+            "column": column["name"],
+            "datatype": column["type"].strip(),
+            "canonical_datatype": _canonicalize_datatype(column["type"]),
+        }
+        for column in table["columns"]
+    ]
+
+
+# HARD PRE-DATA GATE: authenticate reconciliation evidence and refresh readback.
+for _name, _value in {
+    "OUTPUT_FOLDER": OUTPUT_FOLDER,
+    "TARGET_CATALOG": CATALOG,
+    "TARGET_SCHEMA": SCHEMA,
+    "ASSET_SUFFIX": ASSET_SUFFIX,
+}.items():
+    if not _value or "{{" in _value or "}}" in _value:
+        raise RuntimeError(f"Unresolved required template value: {_name}")
+
+TABLE_SPEC = _load_yaml(TABLE_SPEC_PATH)
+RECONCILIATION = _load_yaml(RECONCILIATION_PATH)
+RUN_CONTEXT = _load_yaml(RUN_CONTEXT_PATH)
+STEP_HANDOFF = _load_yaml(HANDOFF_PATH)
+RUN_ID = RUN_CONTEXT.get("run_id")
+
+if TABLE_SPEC.get("catalog") != CATALOG or TABLE_SPEC.get("schema") != SCHEMA:
+    raise RuntimeError("SCHEMA_RECONCILIATION_AUTHORITY_ERROR: table_spec target mismatch")
+table_spec_suffix = TABLE_SPEC.get("asset_suffix", TABLE_SPEC.get("version_suffix"))
+if table_spec_suffix != ASSET_SUFFIX:
+    raise RuntimeError("SCHEMA_RECONCILIATION_AUTHORITY_ERROR: table_spec asset_suffix mismatch")
+
+parity_checks = {
+    "context.target.catalog": (RUN_CONTEXT.get("target", {}).get("catalog"), CATALOG),
+    "context.target.schema": (RUN_CONTEXT.get("target", {}).get("schema"), SCHEMA),
+    "context.asset_suffix": (RUN_CONTEXT.get("version", {}).get("asset_suffix"), ASSET_SUFFIX),
+    "context.output_folder": (RUN_CONTEXT.get("output_folder"), OUTPUT_FOLDER),
+    "handoff.run_id": (STEP_HANDOFF.get("run_id"), RUN_ID),
+    "handoff.catalog": (STEP_HANDOFF.get("catalog"), CATALOG),
+    "handoff.schema": (STEP_HANDOFF.get("schema"), SCHEMA),
+    "handoff.asset_suffix": (STEP_HANDOFF.get("asset_suffix"), ASSET_SUFFIX),
+    "handoff.output_folder": (STEP_HANDOFF.get("output_folder"), OUTPUT_FOLDER),
+    "reconciliation.run_id": (RECONCILIATION.get("run_id"), RUN_ID),
+    "reconciliation.asset_suffix": (RECONCILIATION.get("asset_suffix"), ASSET_SUFFIX),
+    "reconciliation.catalog": (RECONCILIATION.get("catalog"), CATALOG),
+    "reconciliation.schema": (RECONCILIATION.get("schema"), SCHEMA),
+    "reconciliation.output_folder": (RECONCILIATION.get("output_folder"), OUTPUT_FOLDER),
+    "reconciliation.artifact_type": (
+        RECONCILIATION.get("artifact_type"), "schema_reconciliation"
+    ),
+    "reconciliation.contract_version": (RECONCILIATION.get("contract_version"), 1),
+    "reconciliation.producer_step": (
+        RECONCILIATION.get("producer_step"), "create_data_layer"
+    ),
+    "reconciliation.producer_phase": (
+        RECONCILIATION.get("producer_phase"), "reconcile_schema"
+    ),
+    "reconciliation.policy_id": (RECONCILIATION.get("policy_id"), POLICY_ID),
+    "reconciliation.status": (RECONCILIATION.get("status"), "PASS"),
+    "reconciliation.table_spec_sha256": (
+        RECONCILIATION.get("table_spec_sha256"), _raw_sha256(TABLE_SPEC_PATH)
+    ),
+}
+for field, (actual, expected) in parity_checks.items():
+    if actual != expected:
+        raise RuntimeError(
+            f"SCHEMA_RECONCILIATION_AUTHORITY_ERROR: {field}={actual!r}, expected {expected!r}"
+        )
+if RECONCILIATION.get("unresolved_mismatches") != []:
+    raise RuntimeError("SCHEMA_RECONCILIATION_AUTHORITY_ERROR: unresolved schema mismatches remain")
+
+TABLE_SPEC_TABLES = TABLE_SPEC.get("tables")
+if not isinstance(TABLE_SPEC_TABLES, list) or not TABLE_SPEC_TABLES:
+    raise RuntimeError("SCHEMA_RECONCILIATION_AUTHORITY_ERROR: table_spec has no tables")
+
+CURRENT_EXPECTED_INVENTORY = []
+CURRENT_OBSERVED_INVENTORY = []
+for table in TABLE_SPEC_TABLES:
+    deployed_name = f"{table['name']}{ASSET_SUFFIX}"
+    expected_schema = _expected_schema(table)
+    observed_schema = _read_schema(deployed_name)
+    if [x["column"] for x in expected_schema] != [x["column"] for x in observed_schema]:
+        raise RuntimeError(f"SCHEMA_DRIFT_BEFORE_DATA: column mismatch in {deployed_name}")
+    for expected_column, observed_column in zip(expected_schema, observed_schema):
+        if expected_column["canonical_datatype"] != observed_column["canonical_datatype"]:
+            raise RuntimeError(
+                f"SCHEMA_DRIFT_BEFORE_DATA: {deployed_name}.{expected_column['column']} "
+                f"expected {expected_column['datatype']}, observed {observed_column['datatype']}"
+            )
+    CURRENT_EXPECTED_INVENTORY.append({
+        "table_fqn": f"{CATALOG}.{SCHEMA}.{deployed_name}", "schema": expected_schema
+    })
+    CURRENT_OBSERVED_INVENTORY.append({
+        "table_fqn": f"{CATALOG}.{SCHEMA}.{deployed_name}", "schema": observed_schema
+    })
+
+if _canonical_sha256(CURRENT_EXPECTED_INVENTORY) != RECONCILIATION.get("expected_schema_sha256"):
+    raise RuntimeError("SCHEMA_RECONCILIATION_AUTHORITY_ERROR: expected schema fingerprint mismatch")
+if _canonical_sha256(CURRENT_OBSERVED_INVENTORY) != RECONCILIATION.get("observed_schema_sha256"):
+    raise RuntimeError("SCHEMA_DRIFT_BEFORE_DATA: current readback fingerprint changed after reconciliation")
+
+# The standalone evidence is necessary but not sufficient: require its durable
+# current-run phase record and both raw-artifact and live-readback fingerprints.
+phase_records = [
+    record
+    for record in RUN_CONTEXT.get("phases_completed", [])
+    if record.get("step") == "create_data_layer"
+    and record.get("phase") == "reconcile_schema"
+]
+if len(phase_records) != 1:
+    raise RuntimeError(
+        "SCHEMA_RECONCILIATION_AUTHORITY_ERROR: exactly one reconcile_schema phase record is required"
+    )
+phase_record = phase_records[0]
+if (
+    phase_record.get("checkpoint_contract_version") != 1
+    or phase_record.get("checkpoint_status") != "VALID"
+    or not phase_record.get("completed_at")
+    or phase_record.get("invalidated_at") is not None
+    or phase_record.get("invalidation_reason") is not None
+):
+    raise RuntimeError(
+        "SCHEMA_RECONCILIATION_AUTHORITY_ERROR: reconcile_schema phase record is not reusable"
+    )
+output_fingerprints = phase_record.get("output_fingerprints")
+if not isinstance(output_fingerprints, list):
+    raise RuntimeError(
+        "SCHEMA_RECONCILIATION_AUTHORITY_ERROR: reconcile_schema output fingerprints are missing"
+    )
+artifact_sha256 = _raw_sha256(RECONCILIATION_PATH)
+readback_sha256 = _canonical_sha256(CURRENT_OBSERVED_INVENTORY)
+readback_locator = f"table_spec:{CATALOG}.{SCHEMA}:{ASSET_SUFFIX}"
+artifact_fingerprint_ok = any(
+    item.get("id") == "schema_reconciliation_artifact"
+    and item.get("kind") == "RAW_BYTES"
+    and item.get("locator") == RECONCILIATION_PATH
+    and item.get("sha256") == artifact_sha256
+    for item in output_fingerprints
+    if isinstance(item, dict)
+)
+readback_fingerprint_ok = any(
+    item.get("id") == "schema_reconciliation_catalog_readback"
+    and item.get("kind") == "CATALOG_READBACK"
+    and item.get("locator") == readback_locator
+    and item.get("sha256") == readback_sha256
+    for item in output_fingerprints
+    if isinstance(item, dict)
+)
+if not artifact_fingerprint_ok or not readback_fingerprint_ok:
+    raise RuntimeError(
+        "SCHEMA_RECONCILIATION_AUTHORITY_ERROR: reconcile_schema phase fingerprints do not "
+        "authenticate the persisted artifact and current catalog readback"
+    )
+
+# Full-notebook generation is append-only. Every target must be empty before the first write.
+nonempty_targets = []
+for table in TABLE_SPEC_TABLES:
+    deployed_name = f"{table['name']}{ASSET_SUFFIX}"
+    count = int(
+        spark.sql(f"SELECT COUNT(*) AS row_count FROM {_fqn(deployed_name)}").collect()[0]["row_count"]
+    )
+    if count != 0:
+        nonempty_targets.append({"table": deployed_name, "row_count": count})
+if nonempty_targets:
+    raise RuntimeError(
+        f"SYNTHETIC_DATA_NONEMPTY_TARGET: refusing append-only rerun: {nonempty_targets}"
+    )
+
+print(
+    f"Schema reconciliation preflight PASSED: {len(TABLE_SPEC_TABLES)} exact empty targets; "
+    "synthetic writes admitted"
+)
 
 # ============================================================================
 # UTILITY FUNCTIONS (domain-agnostic — DO NOT MODIFY)
 # ============================================================================
 
 def discover_tables() -> dict:
-    """Discover all tables belonging to THIS version in the schema.
-    Returns {logical_name: actual_table_name}."""
-    all_tables = [row.tableName for row in spark.sql(f"SHOW TABLES IN `{CATALOG}`.`{SCHEMA}`").collect()]
-    version_tables = [t for t in all_tables if t.endswith(VERSION_SUFFIX)] if VERSION_SUFFIX else all_tables
-    result = {}
-    for t in version_tables:
-        logical = t[:-len(VERSION_SUFFIX)] if VERSION_SUFFIX else t
-        result[logical] = t
-    print(f"Discovered {len(result)} tables for version '{VERSION_SUFFIX}': {list(result.values())}")
+    """Resolve only exact table identities authenticated by table_spec.yaml."""
+    result = {
+        table["name"]: f"{table['name']}{ASSET_SUFFIX}"
+        for table in TABLE_SPEC_TABLES
+    }
+    for actual_name in result.values():
+        spark.sql(f"DESCRIBE TABLE {_fqn(actual_name)}").collect()
+    print(f"Resolved {len(result)} authenticated tables: {list(result.values())}")
     return result
 
 
@@ -492,27 +778,31 @@ TABLES = discover_tables()
 # This shrinks the LLM's executable surface area.
 # ============================================================================
 
-import os
-import yaml as _yaml
 import hashlib as _hl
 import json as _json
 
 SPEC_PATH = "{{OUTPUT_FOLDER}}/synthetic_data_spec.yaml"
 
-if os.path.exists(SPEC_PATH):
-    print(f"Reading declarative spec: {SPEC_PATH}")
-    with open(SPEC_PATH) as f:
-        SPEC = _yaml.safe_load(f)
-    print(f"  Tables in spec: {len(SPEC.get('tables', []))}")
-else:
-    SPEC = None
-    print("No synthetic_data_spec.yaml found — falling back to LLM-populated cells.")
+if not os.path.exists(SPEC_PATH):
+    raise RuntimeError("SYNTHETIC_SPEC_ERROR: synthetic_data_spec.yaml is required")
+print(f"Reading declarative spec: {SPEC_PATH}")
+SPEC = _load_yaml(SPEC_PATH)
+spec_table_names = [table.get("name") for table in SPEC.get("tables", [])]
+expected_table_names = [table["name"] for table in TABLE_SPEC_TABLES]
+if (
+    len(spec_table_names) != len(set(spec_table_names))
+    or set(spec_table_names) != set(expected_table_names)
+):
+    raise RuntimeError(
+        f"SYNTHETIC_SPEC_ERROR: exact table inventory mismatch; "
+        f"expected {expected_table_names}, observed {spec_table_names}"
+    )
+print(f"  Tables in spec: {len(spec_table_names)}")
 
 # Compute source hash for manifest
-if SPEC:
-    _spec_raw = _json.dumps(SPEC, sort_keys=True)
-    SOURCE_HASH = _hl.sha256(_spec_raw.encode()).hexdigest()
-    print(f"  Source hash: {SOURCE_HASH[:16]}...")
+_spec_raw = _json.dumps(SPEC, sort_keys=True)
+SOURCE_HASH = _hl.sha256(_spec_raw.encode()).hexdigest()
+print(f"  Source hash: {SOURCE_HASH[:16]}...")
 
 # COMMAND ----------
 
@@ -527,7 +817,9 @@ GENERATED_HASHES = []
 if SPEC and SPEC.get("tables"):
     for table_entry in SPEC["tables"]:
         logical_name = table_entry["name"]
-        actual_name = TABLES.get(logical_name, logical_name)
+        if logical_name not in TABLES:
+            raise RuntimeError(f"SYNTHETIC_SPEC_ERROR: unauthenticated table {logical_name}")
+        actual_name = TABLES[logical_name]
         rows = table_entry.get("rows", 1000)
         pk_cols = table_entry.get("pk_columns", [])
         date_range = tuple(table_entry.get("date_range", ["2020-01-01", "2024-12-31"]))
@@ -541,7 +833,11 @@ if SPEC and SPEC.get("tables"):
         FK_REPLACEMENTS = {}
         for fk_col, fk_spec in table_entry.get("fk_columns", {}).items():
             parent_logical = fk_spec["parent_table"]
-            parent_actual = TABLES.get(parent_logical, parent_logical)
+            if parent_logical not in TABLES:
+                raise RuntimeError(
+                    f"SYNTHETIC_SPEC_ERROR: unauthenticated parent table {parent_logical}"
+                )
+            parent_actual = TABLES[parent_logical]
             FK_REPLACEMENTS[fk_col] = (parent_actual, fk_spec["parent_pk"])
 
         separator = "=" * 60
@@ -583,19 +879,34 @@ if SPEC and SPEC.get("tables"):
         _table_hash = _hl.sha256(str(actual_name).encode()).hexdigest()
         GENERATED_HASHES.append({"table": actual_name, "hash": _table_hash})
 
+    # Re-read every schema after writes. Appends must not mutate the reconciled contract.
+    post_write_inventory = []
+    for table in TABLE_SPEC_TABLES:
+        deployed_name = f"{table['name']}{ASSET_SUFFIX}"
+        post_write_inventory.append({
+            "table_fqn": f"{CATALOG}.{SCHEMA}.{deployed_name}",
+            "schema": _read_schema(deployed_name),
+        })
+    if _canonical_sha256(post_write_inventory) != RECONCILIATION.get("observed_schema_sha256"):
+        raise RuntimeError("SCHEMA_DRIFT_AFTER_DATA: deployed schema changed during generation")
+
     # Write manifest with hash chain
     _manifest = {
         "artifact_type": "synthetic_data",
+        "run_id": RUN_ID,
+        "asset_suffix": ASSET_SUFFIX,
         "validation_source": "template_runtime",
         "source_hash": SOURCE_HASH,
+        "schema_reconciliation_path": RECONCILIATION_PATH,
+        "schema_reconciliation_sha256": _raw_sha256(RECONCILIATION_PATH),
+        "schema_readback_sha256": _canonical_sha256(post_write_inventory),
         "tables_generated": len(SPEC["tables"]),
         "table_hashes": GENERATED_HASHES,
         "state_comparison": "match",
     }
     _manifest_path = "{{OUTPUT_FOLDER}}/synthetic_data_manifest.json"
     if _manifest_path:
-        with open(_manifest_path, "w") as f:
-            _json.dump(_manifest, f, indent=2)
+        _atomic_write_json(_manifest_path, _manifest)
         print(f"\nManifest written: {_manifest_path}")
         print(f"  Source hash:     {SOURCE_HASH[:16]}...")
         print(f"  Tables generated: {len(GENERATED_HASHES)}")
@@ -609,11 +920,9 @@ if SPEC and SPEC.get("tables"):
 # (LLM populates one cell per table in dependency order)
 # ============================================================================
 #
-# This section is used ONLY when synthetic_data_spec.yaml is NOT present.
-# When the spec file exists, the Declarative Spec Processing section above
-# handles all table generation automatically.
+# This section is documentation-only. Runtime execution requires
+# synthetic_data_spec.yaml and never falls back to LLM-populated cells.
 #
-# The LLM generating this notebook uses the DOMAIN-FIRST pattern:
 # The LLM generating this notebook uses the DOMAIN-FIRST pattern:
 #
 #   1. Define DOMAIN_COLS dict with ALL categorical/analytical columns

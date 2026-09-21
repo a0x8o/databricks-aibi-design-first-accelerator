@@ -57,7 +57,8 @@ INCORRECT:
 Metadata authority is lifecycle- and concern-specific:
 
 - Before deployment, `table_spec.yaml` defines the expected physical schema only after it has been validated as an exact projection of `erd_parsed.yaml`.
-- After deployment, catalog readback using `DESCRIBE TABLE` defines the exact object names, column names, and datatypes that executable SQL may reference. The deployed schema must first reconcile to `table_spec.yaml`, and matching `data_layer_validation.yaml` evidence must show policy `DEPLOYED_DATATYPE_REPAIR_V1`, `schema_reconciliation.status: PASS`, and zero unresolved mismatches.
+- After DDL deployment and before synthetic-data SQL, catalog readback using `DESCRIBE TABLE` defines the exact object names, column names, and datatypes that executable SQL may reference. The deployed schema must first reconcile to `table_spec.yaml`, and authenticated `{OUTPUT_FOLDER}/schema_reconciliation.yaml` evidence must show the current run/target/suffix, policy `DEPLOYED_DATATYPE_REPAIR_V1`, `status: PASS`, matching expected/observed schema hashes, and zero unresolved mismatches. A fresh exact name/type readback must still agree with that evidence.
+- After `validate_data`, all downstream executable SQL additionally requires matching current-run `data_layer_validation.yaml` evidence with `overall_status: PASS`. Its reconciliation artifact path/hash and embedded reconciliation payload must authenticate the same standalone evidence; final validation never substitutes for the pre-generation reconciliation boundary.
 - `semantic_model.yaml` defines intended grains and relationships; it does not prove a deployed join is safe.
 - Once `data_layer_validation.yaml` exists, SQL may use only relationships whose matching relationship-level entry has `validation_status: PASS`.
 - If applicable authority sources disagree, HALT with the relevant contract error. Do not choose one silently, omit a conflicting field, or invent a reconciliation.

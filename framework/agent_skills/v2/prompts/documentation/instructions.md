@@ -134,7 +134,7 @@ with new `VALID` records. It does not bypass checkpoint audit history.
 | Exact `phase_id` | Artifact | Additional phase-specific skip check after the fingerprint gate |
 |-------|----------|----------|
 | gather_artifacts | Artifacts loaded | Never reusable; always re-read (stateless) |
-| generate_documentation | `{AGENT_SKILLS_DIR}/prompts/documentation/readme.md` | canonical file and paired draft have exact current run/lifecycle/path, checkpoint, evidence-scope, and Genie quality-policy binding |
+| generate_documentation | `{OUTPUT_FOLDER}/documentation/readme.md` | canonical file and paired draft have exact current run/lifecycle/path, checkpoint, evidence-scope, and Genie quality-policy binding |
 | validate_documentation | `documentation/run_manifest_draft.json` | canonical schema, placeholder scan, factual consistency, and current run/lifecycle/path/checkpoint/scope/quality-policy bindings pass |
 
 ---
@@ -1098,7 +1098,7 @@ Common patterns:
 |---|---|---|
 | Dashboard shows "No rows returned" | FK integrity failure in data layer | Route correction to the Data Layer owner, fix FK generation, and revalidate the affected dependency graph |
 | Metric View returns zero rows | Join column mismatch (STRING vs BIGINT) | Check `data_layer_validation.yaml` §7.9 analytical readiness |
-| Data Layer reports `DATATYPE_MISMATCH_UNSAFE_TO_REPAIR` | Deployed type conflicts with `table_spec.yaml`, but the table was non-empty, not current-version-owned, ambiguous, unreadable, or already retried | Review `data_layer_validation.yaml.schema_reconciliation`; preserve the table and perform an explicitly approved migration/cleanup outside the automatic pipeline |
+| Data Layer reports `DATATYPE_MISMATCH_UNSAFE_TO_REPAIR` | Deployed type conflicts with `table_spec.yaml`, but the table was non-empty, not current-version-owned, ambiguous, unreadable, or already retried | Review standalone `schema_reconciliation.yaml` (and its authenticated copy in final `data_layer_validation.yaml`, if final validation ran); preserve the table and perform an explicitly approved migration/cleanup outside the automatic pipeline |
 | Genie gives wrong answers | Incorrect MEASURE() SQL | Check `genie_space/{genie_title}_validation.yaml` benchmark failures |
 | Dashboard filters don't respond | Missing filter column in dataset SQL | Check the matching `dashboards/{resolved_display_name}_validation.yaml` filter binding |
 

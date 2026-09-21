@@ -3,7 +3,7 @@
 # Metric View YAML syntax is defined by the official Databricks documentation:
 # https://docs.databricks.com/aws/en/uc-semantics/metric-views/yaml-reference
 #
-# The prompt 02_create_metric_views.md references the docs directly and
+# agent_skills/v2/prompts/metric_views/instructions.md references the docs directly and
 # contains validated learnings for syntax pitfalls not covered in docs.
 #
 # Key rules (from validated production runs):
