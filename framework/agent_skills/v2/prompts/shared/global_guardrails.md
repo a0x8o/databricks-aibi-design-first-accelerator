@@ -383,6 +383,14 @@ the orchestrator schedules re-execution from the earliest stale phase. Existing 
 idempotency, deployment ownership, and `DEPLOYED_DATATYPE_REPAIR_V1` rules still control every
 write. The Metric View auto-handoff producer checkpoint remains a separate exact-key attestation.
 
+Completion is a consumer barrier, not a display event. For every reusable phase, atomically
+upsert and re-read the one exact `run_context.phases_completed` record before emitting a completed
+progress event. In App mode, also require the schema-valid native JSON event to be committed and
+read back from Lakebase. Never pass Markdown, YAML, Python `repr`, pre-serialized JSON, null JSONB
+fields, or comma-delimited bare text to `persist_phase_update`. Do not launch a downstream
+notebook while the workspace record is absent or the App stores disagree; classify that condition
+as `CHECKPOINT_PERSISTENCE_ERROR`.
+
 ---
 
 ## G-7: Python 3.11 Compatibility

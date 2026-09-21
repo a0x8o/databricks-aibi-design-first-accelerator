@@ -894,6 +894,23 @@ target, raw `table_spec.yaml` SHA-256, expected/readback schema fingerprints, po
 and an empty `unresolved_mismatches` list. A FAIL artifact is durable diagnostic evidence, never
 permission to continue.
 
+After a PASS, apply the shared Reusable-Phase Completion Commit before Step 5: atomically upsert
+the exact `create_data_layer` / `reconcile_schema` `VALID` record into `run_context.yaml`, re-read
+and verify exactly one matching record, emit a schema-valid structured JSON progress object, and
+in App mode wait for matching Lakebase persistence/readback. Immediately before launching the
+synthetic-data notebook, re-read `run_context.yaml` and require that same record to remain `VALID`.
+A PASS `schema_reconciliation.yaml` with a missing/unacknowledged phase record is
+`CHECKPOINT_PERSISTENCE_ERROR`; do not launch synthetic data and do not repeat reconciliation or
+DDL merely to repair checkpoint persistence.
+
+For the observed missing-write case only, perform one bounded checkpoint-only recovery before
+Step 5: require zero existing `reconcile_schema` records, authenticate the current-run PASS
+artifact and its table-spec digest, recompute the exact fresh catalog fingerprint, construct the
+canonical record from frozen checkpoint metadata, and run the same workspace/App commit barrier.
+This recovery writes orchestration state only; it never reruns DDL or reconciliation. A duplicate,
+`STALE`, malformed, conflicting, or still-uncommittable record remains
+`CHECKPOINT_PERSISTENCE_ERROR` and cannot admit synthetic writes.
+
 **Algorithm:**
 
 ```text
@@ -986,8 +1003,10 @@ Run only when `run_context.data_source.greenfield.synthetic_data: true`.
 **Hard admission gate:** authenticate the current `reconcile_schema` phase record and exact
 `schema_reconciliation.yaml` bytes. Require policy `DEPLOYED_DATATYPE_REPAIR_V1`, `status: PASS`,
 zero unresolved mismatches, matching run/target/suffix/table-spec hashes, and a fresh `DESCRIBE`
-fingerprint equal to the persisted readback fingerprint. Missing, failed, stale, or changed evidence
-HALTS before creating the synthetic specification.
+fingerprint equal to the persisted readback fingerprint. Exactly zero phase records may enter only
+the bounded checkpoint-only recovery defined above; it must atomically persist and re-read the
+reconstructed record before proceeding. Failed, stale, duplicate, conflicting, changed, or
+unrecoverable evidence HALTS before creating the synthetic specification.
 
 Create `{OUTPUT_FOLDER}/synthetic_data_spec.yaml` from: `erd_parsed.yaml` + `semantic_model.yaml` + KPI context + volume config.
 
@@ -1742,4 +1761,7 @@ defects are self-corrected and do not trigger a terminal halt.
 | Synthetic Data | `generate_synthetic_data` | tables_populated, total_rows, fk_linked |
 | Validate | `validate_data` | pk_tests, fk_tests, pk_failures, fk_failures |
 
-Call `report_progress` with `status: "started"` before each phase, `status: "completed"` after, and `status: "update"` with `progress_pct` during long phases.
+Call `report_progress` with `status: "started"` before each phase, `status: "completed"` after, and
+`status: "update"` with `progress_pct` during long phases. Every call uses the native JSON-object
+schema in the shared state contract: `stats` is an object, `happenings` and `findings` are arrays,
+and empty JSONB values are `{}` or `[]`, never null or comma-delimited bare text.

@@ -6,7 +6,9 @@ import ast
 import copy
 import hashlib
 import importlib.util
+import json
 from pathlib import Path
+import re
 import tempfile
 import unittest
 import yaml
@@ -726,6 +728,27 @@ class ContractTemplateTests(unittest.TestCase):
         self.assertNotIn("SOURCE_CATALOG", self.data_template)
         self.assertNotIn("SOURCE_SCHEMA", self.data_template)
 
+    def test_missing_reconciliation_checkpoint_has_bounded_evidence_recovery(self):
+        recovery = 'if len(phase_records) == 0:'
+        first_synthetic_write = '.mode("append").saveAsTable'
+
+        self.assertIn(recovery, self.data_template)
+        self.assertIn('RECONCILIATION.get("canonical_comparison") != "MATCH"', self.data_template)
+        self.assertIn('RECONCILIATION.get("expected_schema_inventory")', self.data_template)
+        self.assertIn('RECONCILIATION.get("observed_schema_inventory")', self.data_template)
+        self.assertIn('greenfield.get("synthetic_data") is not True', self.data_template)
+        self.assertIn('or downstream_records', self.data_template)
+        self.assertIn('"output_fingerprints": expected_output_fingerprints', self.data_template)
+        self.assertIn('_atomic_write_json(RUN_CONTEXT_PATH, repaired_context)', self.data_template)
+        self.assertIn('recovered checkpoint readback mismatch', self.data_template)
+        self.assertLess(self.data_template.index(recovery), self.data_template.index(first_synthetic_write))
+
+    def test_checkpoint_recovery_never_accepts_invalid_or_duplicate_records(self):
+        self.assertIn('elif len(phase_records) > 1:', self.data_template)
+        self.assertIn('phase record is not reusable', self.data_template)
+        self.assertIn('phases_completed must be a list of mappings', self.data_template)
+        self.assertIn('SYNTHETIC_DATA_NONEMPTY_TARGET', self.data_template)
+
 
 class AuthorityBootstrapPromptTests(unittest.TestCase):
     """Keep the bootstrap contract compatible with fresh and legacy runs."""
@@ -758,6 +781,50 @@ class AuthorityBootstrapPromptTests(unittest.TestCase):
     def test_missing_authority_rule_has_a_producer_creation_exception(self):
         self.assertIn("after its defined creation point", self.global_guardrails)
         self.assertIn("producer phase's own output before its first execution", self.global_guardrails)
+
+
+class ProgressPersistenceContractTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        prompts = PROJECT_ROOT / "agent_skills/v2/prompts"
+        cls.state_contract = (prompts / "shared/state_contract.md").read_text(encoding="utf-8")
+        cls.global_guardrails = (prompts / "shared/global_guardrails.md").read_text(encoding="utf-8")
+        cls.master_prompt = (prompts / "00_master_prompt.md").read_text(encoding="utf-8")
+        cls.data_instructions = (prompts / "data_layer/instructions.md").read_text(encoding="utf-8")
+        cls.all_v2_markdown = "\n".join(
+            path.read_text(encoding="utf-8") for path in prompts.rglob("*.md")
+        )
+
+    def test_canonical_progress_example_is_strict_json_with_jsonb_shapes(self):
+        match = re.search(
+            r"<!-- CANONICAL_PROGRESS_EVENT_START -->\s*```json\s*(.*?)\s*```\s*"
+            r"<!-- CANONICAL_PROGRESS_EVENT_END -->",
+            self.state_contract,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(match)
+        payload = json.loads(match.group(1), parse_constant=lambda value: (_ for _ in ()).throw(ValueError(value)))
+        self.assertIsInstance(payload, dict)
+        self.assertIsInstance(payload["stats"], dict)
+        self.assertIsInstance(payload["happenings"], list)
+        self.assertIsInstance(payload["findings"], list)
+        self.assertTrue(all(isinstance(item, str) for item in payload["happenings"] + payload["findings"]))
+
+    def test_progress_contract_rejects_stringified_or_null_jsonb_payloads(self):
+        for required_text in (
+            "phase_data` is one JSON object",
+            "never `null`",
+            "never build JSON with interpolation",
+            "CHECKPOINT_PERSISTENCE_ERROR",
+        ):
+            self.assertIn(required_text, self.state_contract)
+        self.assertNotIn('`happenings"', self.all_v2_markdown)
+
+    def test_reconcile_schema_checkpoint_is_persisted_before_synthetic_notebook(self):
+        self.assertIn("Reusable-Phase Completion Commit", self.data_instructions)
+        self.assertIn("Immediately before launching the\nsynthetic-data notebook", self.data_instructions)
+        self.assertIn("atomic `run_context.yaml` upsert", self.master_prompt)
+        self.assertIn("Do not launch a downstream\nnotebook", self.global_guardrails)
 
     def test_output_hashes_are_not_prewrite_inputs_for_fresh_phases(self):
         self.assertIn("phase's own outputs do not exist yet and are never pre-write authority", self.data_instructions)

@@ -1771,7 +1771,7 @@ genie_space_configuration.md
 > - `phase_name`: "Create Genie Space"
 > - `status`: "started"
 > - `current_task`: "Creating Genie space via API"
-> - `happenings": ["Deploying notebook from template", "Constructing space payload", "Calling Genie API"]
+> - `happenings`: ["Deploying notebook from template", "Constructing space payload", "Calling Genie API"]
 
 Create the notebook at:
 

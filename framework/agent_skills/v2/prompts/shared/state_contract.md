@@ -6,9 +6,13 @@ This cross-cutting contract defines how pipeline state is persisted, recovered, 
 resumed. It applies uniformly to ALL pipeline steps (01–05) and governs how `report_progress`
 calls translate into durable checkpoints in Lakebase.
 
-The system provides two guarantees after the applicable persistence write is acknowledged:
+The system provides two guarantees after every required persistence write is acknowledged:
 
-1. **Durability** — In App mode, a `report_progress(status="completed")` checkpoint is durable only after Lakebase acknowledges the write. In Genie Code, the rendered progress call is not persistence; the checkpoint is durable only after the matching `run_context.yaml` workspace write succeeds.
+1. **Durability** — Every reusable phase first atomically persists and re-reads its exact
+   fingerprinted record in `run_context.yaml`, because deterministic notebooks consume that file
+   in both execution modes. In App mode, the same checkpoint becomes durable only after Lakebase
+   also acknowledges and returns the matching phase row. In Genie Code, the rendered progress call
+   is not persistence; the verified `run_context.yaml` write is the acknowledgement.
 
 2. **Resumability** — On restart, the pipeline reads durable checkpoint records and provides
    `RESUME_CONTEXT` to the LLM, which recomputes dependencies and skips only current `VALID`
@@ -154,6 +158,62 @@ output_fingerprints (JSONB), invalidated_at, invalidation_reason,
 started_at, completed_at
 ```
 
+### Canonical Progress-Event Serialization
+
+Every `report_progress` invocation and every `phase_update` delivered to
+`persist_phase_update(run_id, step, phase_data)` MUST use a native structured object. The event
+bridge MUST NOT pass Markdown, YAML, a comma-delimited string, a Python `repr`, or a string that
+it expects the state store to parse a second time. `run_id` and `step` are non-empty scalar
+arguments to `persist_phase_update`; `phase_data` is one JSON object, never `null` or a JSON
+string containing an object.
+
+The progress object has these transport types:
+
+| Field | Required transport type |
+|---|---|
+| `phase_id`, `phase_name`, `status`, `current_task` | non-empty JSON string |
+| `progress_pct` | JSON integer from 0 through 100; booleans are invalid |
+| `stats` | JSON object; use `{}` when empty |
+| `happenings`, `findings` | JSON arrays of JSON strings; use `[]` when empty |
+
+`status` is exactly `started`, `update`, `completed`, or `failed`. A comma, quote, newline, or
+colon inside a message remains inside one JSON string and is escaped by the serializer. Never
+flatten an array into bare text such as `"read schema, compare types"`. Never send `null` for a
+required scalar or JSONB field. JSON values must be finite; `NaN`, `Infinity`, and
+`-Infinity` are invalid.
+
+This is a canonical example; replace values without changing their JSON types:
+
+<!-- CANONICAL_PROGRESS_EVENT_START -->
+```json
+{
+  "phase_id": "reconcile_schema",
+  "phase_name": "Reconcile Schema",
+  "status": "completed",
+  "current_task": "Schema reconciliation checkpoint persisted",
+  "progress_pct": 70,
+  "stats": {
+    "tables_checked": 8,
+    "repaired_tables": 0,
+    "unresolved_mismatches": 0
+  },
+  "happenings": [
+    "Compared expected and deployed name/type schemas"
+  ],
+  "findings": [
+    "Reconciliation passed, and the durable checkpoint was verified"
+  ]
+}
+```
+<!-- CANONICAL_PROGRESS_EVENT_END -->
+
+Before any Lakebase call, schema-validate the native object, serialize exactly once with a real
+JSON serializer configured to reject non-finite values, parse that serialization once, and
+require structural equality with the original object. Bind JSONB values through the database
+driver's JSON adapter (or the once-serialized JSON text); never build JSON with interpolation or
+split on commas. A serialization, schema, non-null, or JSONB write failure is
+`CHECKPOINT_PERSISTENCE_ERROR`, not a cosmetic progress failure.
+
 ### Canonical Fingerprint Contract (`checkpoint_contract_version: 1`)
 
 Before the first reusable phase completes, `run_context.yaml` MUST contain this immutable
@@ -253,6 +313,41 @@ not permit omitting a phase dependency.
 When an enabled reusable phase has a validated no-op outcome (for example, no intermediate views
 are planned), persist and fingerprint a canonical current-run `NOT_APPLICABLE` decision artifact as
 its output. Do not use an empty output list or fabricate a deployed object.
+
+### Reusable-Phase Completion Commit
+
+For every reusable phase, apply this barrier after all owned outputs and readbacks pass and before
+starting any dependent phase or notebook:
+
+1. Build the exact `VALID` phase record above from the verified inputs, outputs, producer, and
+   frozen run contract. Do not derive it from display text in a progress message.
+2. Re-read `run_context.yaml` with duplicate-key rejection and verify its authenticated preimage.
+   Under the workspace-I/O contract, replace any prior record for the exact `(step, phase)` with
+   exactly one new record, atomically write the complete file, then re-read it.
+3. Require exactly one matching record, exact field/type/value equality with the intended record,
+   and successful frozen-run digest recomputation. A PASS artifact with a missing record is not a
+   completed phase.
+4. Emit the canonical structured `report_progress(status="completed")` object. In App mode, the
+   event bridge schema-validates it, passes a native object to `persist_phase_update`, waits for
+   the Lakebase commit, then reads back the exact `(run_id, step, phase_id)` row and requires
+   checkpoint/fingerprint equality. In Genie Code, no Lakebase call is made.
+5. Immediately before invoking a dependent consumer, re-read `run_context.yaml` again and require
+   that the producer record remains the one exact current `VALID` record and still passes its
+   phase-specific gate.
+
+Do not acknowledge completion or invoke a dependent when any write, readback, serialization,
+non-null, uniqueness, or parity check fails. Classify that failure as
+`CHECKPOINT_PERSISTENCE_ERROR`. In App mode, a Lakebase failure after the workspace commit leaves
+the phase unacknowledged: retry only the idempotent Lakebase persistence/readback within the
+configured state-store retry policy. Do not rerun a successful deployment and do not launch the
+dependent phase while the two stores disagree.
+
+On resume, a producer artifact and its authoritative live readback may prove that the owned work
+passed while exactly zero matching phase records prove that its checkpoint write was missed. In
+that missing-only case, the producer may execute the completion commit once from authenticated
+frozen metadata without rerunning the owned deployment. This is checkpoint recovery, not phase
+success inference: any existing malformed, `STALE`, duplicate, conflicting, or unverifiable record
+blocks recovery, and every normal phase-specific authority/readback gate must pass first.
 
 Stateless bootstrap phases (`load_config`, `load_inputs`, and `gather_artifacts`) are always
 re-read. They may report progress but MUST NOT create or reuse durable entries in

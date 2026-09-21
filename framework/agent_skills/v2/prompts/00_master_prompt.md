@@ -492,7 +492,11 @@ For every configurable stage:
 4. Load only the active instructions, validation contract, and guardrails. Do not load the runbook.
 5. Execute that prompt's exact gates, deterministic runtime, retries, readback, and output contract.
 6. Accept completion only after direct validation evidence authenticates and durable phase state is
-   acknowledged.
+   acknowledged. For every reusable phase, this includes an atomic `run_context.yaml` upsert and
+   exact re-read in both modes; App mode additionally requires structured-JSON Lakebase commit and
+   readback. Re-read the required producer record immediately before invoking a downstream
+   notebook. A PASS artifact without that record is `CHECKPOINT_PERSISTENCE_ERROR`, not permission
+   to continue or rerun successful deployment work.
 7. Preserve failure classification and owner. Only then authenticate the frozen runbook and load
    the one matching section when diagnostics are needed. Never load unrelated history or implement
    a substitute in the kernel.
