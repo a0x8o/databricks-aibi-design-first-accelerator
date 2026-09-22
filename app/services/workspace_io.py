@@ -252,7 +252,7 @@ class WorkspaceService:
             self._client.workspace.import_(
                 path=path,
                 content=encoded,
-                format=ImportFormat.AUTO,
+                format=ImportFormat.RAW,
                 overwrite=overwrite
             )
             logger.debug(f"Written: {path} ({len(content)} chars)")

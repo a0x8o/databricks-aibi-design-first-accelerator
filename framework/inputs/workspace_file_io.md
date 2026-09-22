@@ -33,7 +33,7 @@ Host from `databricks.yml` → `targets.<target>.workspace.host`. Auth: same tok
 | Operation | API |
 |-----------|-----|
 | Create directory | `POST /api/2.0/workspace/mkdirs` — `{"path": "/Workspace/Users/.../output/metric_views"}` |
-| Write text file | `POST /api/2.0/workspace/import` — `path`, `content` (base64), `format`: `AUTO` or `RAW` |
+| Write text file | `POST /api/2.0/workspace/import` — `path`, `content` (base64), explicit `format`: `RAW` |
 | Write notebook | `POST /api/2.0/workspace/import` — `format`: `JUPYTER`, content = base64 notebook JSON |
 | Read file | `GET /api/2.0/workspace/export` — `path`, `format`: `AUTO` |
 | Delete tree | `POST /api/2.0/workspace/delete` — `path`, `recursive`: true |
@@ -60,7 +60,7 @@ def workspace_write_text(path: str, text: str, overwrite: bool = True) -> None:
     w.workspace.upload(
         path,
         text.encode("utf-8"),
-        format=ImportFormat.AUTO,
+        format=ImportFormat.RAW,
         overwrite=overwrite,
     )
 
@@ -71,7 +71,16 @@ def workspace_delete_recursive(path: str) -> None:
         pass  # idempotent clean_start
 ```
 
-For `.ipynb` under `workspace.output_folder/notebooks/`, use `ImportFormat.JUPYTER` with notebook JSON bytes.
+Never omit upload/import format: plain files must not enter source/directory/archive
+inference. Use RAW for YAML, JSON, SQL text, Markdown, locks, and Python helper files
+that must retain their exact bytes and filename. Pass UTF-8 bytes to SDK upload,
+not a local filename or base64 text. REST/import_ content instead requires base64.
+Verify plain-file byte readback after writes. Do not switch to DBC to fix a
+"zip archive contains no items" error; inspect the requested format and payload.
+
+For executable `.ipynb` notebooks, use `ImportFormat.JUPYTER` with notebook JSON bytes.
+For executable Python source notebooks, use SOURCE with language PYTHON (or the
+host notebook import tool). These are distinct from storing a plain Python helper.
 
 ---
 

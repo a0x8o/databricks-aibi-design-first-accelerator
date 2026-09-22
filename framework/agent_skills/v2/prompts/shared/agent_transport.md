@@ -72,6 +72,9 @@ Names in stage prompts denote OPERATIONS, not a required installed tool registry
 | report_step_complete | Optional host event tool | Return structured stage result to the master |
 
 No stage requires Flask, app/shared imports, an app event bridge, or Lakebase.
+Use the attested WorkspaceStore for lifecycle writes; do not invent a `put()` wrapper
+that omits upload format. Plain-file writes use explicit ImportFormat.RAW, UTF-8
+bytes, and verified readback. Notebook deployment uses its explicit notebook format.
 Templates and Python helpers may run in a notebook. If runtime filesystem access to
 /Workspace files is required by a selected Spark template, verify that exact mount
 is readable/writable in its execution environment before deployment. Do not assume

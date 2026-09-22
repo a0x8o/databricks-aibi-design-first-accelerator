@@ -80,6 +80,7 @@ READ_ONLY_TOOLS = {
 ERROR_CLASSIFICATION = {
     # LLM repairable — generation errors the LLM can fix
     "LLM_REPAIRABLE": [
+        "WORKSPACE_UPLOAD_FORMAT_REQUIRED",  # pre-execution rejection; safe to correct and resubmit
         "PARSE_SYNTAX_ERROR",
         "UNRESOLVED_COLUMN",
         "UNRESOLVED_FIELD",

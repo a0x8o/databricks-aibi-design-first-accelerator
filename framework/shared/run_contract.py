@@ -120,7 +120,7 @@ class WorkspaceStore(LocalStore):
     def write(self, path, raw, *, overwrite=True):
         from databricks.sdk.service.workspace import ImportFormat
         self.client.workspace.mkdirs(posixpath.dirname(path))
-        self.client.workspace.upload(path, raw, format=ImportFormat.AUTO, overwrite=overwrite)
+        self.client.workspace.upload(path, raw, format=ImportFormat.RAW, overwrite=overwrite)
         if self.read(path) != raw:
             raise RuntimeError(f'WORKSPACE_IO_ERROR: write readback differs: {path}')
 

@@ -317,6 +317,28 @@ class ToolExecutor:
         if not code.strip():
             return "ERROR: No code provided."
 
+        # Plain workspace files must not fall through to SDK source/archive inference.
+        # Diagnose generated calls; never rewrite the agent's code behind its back.
+        import ast
+        try:
+            tree = ast.parse(code)
+        except SyntaxError:
+            tree = None  # Let Python return its normal syntax diagnostic below.
+        for node in ast.walk(tree) if tree is not None else ():
+            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                    and node.func.attr in ('upload', 'import_')
+                    and isinstance(node.func.value, ast.Attribute)
+                    and node.func.value.attr == 'workspace'
+                    and not any(k.arg in ('format', None) for k in node.keywords)):
+                return (
+                    f"ERROR: WORKSPACE_UPLOAD_FORMAT_REQUIRED at line {node.lineno}. "
+                    "Use the attested WorkspaceStore.write() for lifecycle files. "
+                    "For other plain files pass format=ImportFormat.RAW explicitly, "
+                    "with UTF-8 bytes for upload (base64 text for import_). "
+                    "Notebook imports require their explicit SOURCE/language or JUPYTER format. "
+                    "No Python code was executed."
+                )
+
         # Build environment: inherit parent + ensure workspace access
         env = os.environ.copy()
         # Ensure /tmp exists as working directory
@@ -331,6 +353,14 @@ class ToolExecutor:
             )
             if proc.returncode != 0:
                 stderr = proc.stderr.strip()
+                if 'zip archive contains no items' in stderr.lower():
+                    stderr += (
+                        "\nWORKSPACE_UPLOAD_FORMAT_ERROR: inspect the failing upload's path, bytes, "
+                        "and format. Plain YAML/JSON/SQL/Markdown files require explicit "
+                        "ImportFormat.RAW; do not upload them as SOURCE/DBC or omit format. "
+                        "Use the attested WorkspaceStore.write() for lifecycle files. "
+                        "Inspect earlier writes before retrying the script."
+                    )
                 # Provide actionable guidance for common errors
                 if "makedirs" in stderr and "Workspace" in stderr:
                     stderr += (

@@ -119,7 +119,7 @@ class NotebookIntegrationTests(unittest.TestCase):
         sdk=ModuleType('databricks.sdk');sdk.WorkspaceClient=lambda:self.client
         errors=ModuleType('databricks.sdk.errors');errors.NotFound=NotFound
         sql=ModuleType('databricks.sdk.service.sql');sql.StatementState=SimpleNamespace(SUCCEEDED='SUCCEEDED')
-        workspace=ModuleType('databricks.sdk.service.workspace');workspace.ImportFormat=SimpleNamespace(AUTO='AUTO')
+        workspace=ModuleType('databricks.sdk.service.workspace');workspace.ImportFormat=SimpleNamespace(AUTO='AUTO', RAW='RAW')
         modules={'databricks':ModuleType('databricks'),'databricks.sdk':sdk,'databricks.sdk.errors':errors,
             'databricks.sdk.service':ModuleType('databricks.sdk.service'),'databricks.sdk.service.sql':sql,
             'databricks.sdk.service.workspace':workspace}
