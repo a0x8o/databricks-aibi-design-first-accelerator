@@ -166,6 +166,27 @@ synthetic templates. These interface keys differ from the Metric View template's
 CATALOG and SCHEMA. No value may be missing, null, or empty. The template's actual
 interface is authoritative; examples do not replace inspecting it.
 
+Bind the current interfaces using this source map after authenticating both files:
+
+| Template field | Persisted source |
+|---|---|
+| DOMAIN_NAME | `run_context.domain.name` |
+| OUTPUT_FOLDER | `step_handoff.output_folder` |
+| TARGET_CATALOG | `step_handoff.catalog` |
+| TARGET_SCHEMA | `step_handoff.schema` |
+| ASSET_SUFFIX (synthetic template) | `step_handoff.asset_suffix` |
+
+`ASSET_SUFFIX` must be a nonempty string equal to
+`run_context.version.asset_suffix`. It is distinct from `short_name_suffix`, which
+may be empty. Never substitute that field, derive a suffix from the folder/version,
+add a default, or silently repair persisted identity. A missing/empty/conflicting
+persisted asset suffix is `HANDOFF_AUTHORITY_ERROR`: halt and return to the master.
+If the persisted suffix is valid but the proposed binding omitted it, construct the
+complete map from the authenticated files before calling deployment. Run executable
+GATE TEMPLATE-BINDING separately for each template; the DDL map is not the synthetic
+map. Reading template bytes to inspect placeholders is permitted; rewriting cells
+is not. No App state or Lakebase lookup is needed for these bindings.
+
 Template deployment failure blocks generate_ddl or generate_synthetic_data and
 therefore blocks Metric Views. Require a successful import, terminal notebook
 success, and the phase's catalog/checkpoint validation before releasing consumers.

@@ -128,9 +128,19 @@ a UI label alone does not establish concurrent execution or completion. Missing
 completion events remain unverified; a halted active phase must not remain running.
 
 
-### TEMPLATE_BINDING_ERROR / Unreplaced TARGET_CATALOG or TARGET_SCHEMA
+### TEMPLATE_BINDING_ERROR / Missing template fields (including ASSET_SUFFIX)
 
 Follow DL-G4 and shared G-16. Inspect the frozen template's placeholder names rather
 than reusing another stage's map. Bind exact target coordinates from the authenticated
 handoff. The failed deployment cannot authorize Metric Views; inspect whether a later
 successful retry and all producer gates exist before interpreting historical UI logs.
+
+For `ASSET_SUFFIX`, distinguish an omitted tool argument from a bad handoff. Read
+current `step_handoff.asset_suffix` and `run_context.version.asset_suffix`; both
+must be nonempty and identical. Never use optional `short_name_suffix` or reconstruct
+the value from a folder. If valid, the master may admit a retry of the failed owning
+phase using GATE TEMPLATE-BINDING's complete map. If absent or inconsistent, return
+`HANDOFF_AUTHORITY_ERROR` to the master without importing or executing a notebook.
+The failed call imported nothing; an older notebook at the output path is not proof
+of a successful current deployment. Preserve existing reconciliation and empty-target
+checks before any synthetic execution on retry.

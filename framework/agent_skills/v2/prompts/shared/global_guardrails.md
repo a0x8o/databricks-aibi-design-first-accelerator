@@ -706,7 +706,7 @@ When deploying via a template notebook (`ddl_notebook.py.template`, `metric_view
 
 **Why:** LLMs reliably fail at "copy verbatim" — they truncate large code blocks, remove "unnecessary" comments, and "optimize" logic, which silently drops critical validation gates. The `deploy_from_template` tool removes the LLM from the file-copy loop entirely, making this failure mode impossible.
 
-**Validation:** The tool guarantees the output has the same line count as the template (only placeholder text differs). If the tool reports unreplaced placeholders, provide ALL placeholder values and retry.
+**Validation:** Require complete binding validation before deployment and an explicit successful import acknowledgement afterward. On unreplaced placeholders, halt and return to the master for an authenticated owning-phase retry under the admission rule above. Never execute an older notebook as a fallback.
 
 ---
 

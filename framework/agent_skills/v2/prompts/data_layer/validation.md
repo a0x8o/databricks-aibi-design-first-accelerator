@@ -141,5 +141,39 @@ Classify the failure from current evidence before loading a runbook section. The
 Enumerate all placeholders in the frozen template and verify complete, nonempty
 bindings before import. Require the deployment tool's success for the exact output
 path, followed by notebook terminal success and the existing phase readback gates.
+After authenticating the frozen template bytes, context, and handoff under the
+existing identity/parity gates, execute this binding gate on the host's Python
+execution surface. Pass its returned map directly to deployment; do not retype or
+reuse the preceding template's map. This works with App tools or Genie Code.
+
+```python
+def bind_data_template(template_text, run_context, step_handoff):
+    import re
+    required = set(re.findall(r"\{\{([A-Z_][A-Z0-9_]*)\}\}", template_text))
+    sources = {
+        "DOMAIN_NAME": run_context["domain"]["name"],
+        "OUTPUT_FOLDER": step_handoff["output_folder"],
+        "TARGET_CATALOG": step_handoff["catalog"],
+        "TARGET_SCHEMA": step_handoff["schema"],
+    }
+    if "ASSET_SUFFIX" in required:
+        suffix = step_handoff.get("asset_suffix")
+        if (not isinstance(suffix, str) or not suffix.strip()
+                or suffix != run_context["version"].get("asset_suffix")):
+            raise RuntimeError("HANDOFF_AUTHORITY_ERROR: missing, empty, or conflicting asset_suffix")
+        sources["ASSET_SUFFIX"] = suffix
+    invalid = sorted(key for key in required
+                     if not isinstance(sources.get(key), str)
+                     or not sources[key].strip()
+                     or "{{" in sources[key] or "}}" in sources[key])
+    if invalid:
+        raise RuntimeError(f"TEMPLATE_BINDING_ERROR: unresolved bindings: {invalid}")
+    return {key: sources[key] for key in sorted(required)}
+```
+
+If an updated frozen template introduces an unmapped field, halt for its owning
+contract to be resolved; do not guess a value. This gate does not replace template
+digest authentication, persisted handoff parity, or runtime pre-data checks.
+
 Any deployment error blocks dependent stages regardless of prior files or progress
 labels. Classify missing values as TEMPLATE_BINDING_ERROR and return to the master.

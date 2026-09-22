@@ -187,7 +187,7 @@ Then:
 2. Read `{OUTPUT_FOLDER}/step_handoff.yaml`; validate its own `output_folder` and all shared resolved catalog/schema/version/run values against the already loaded `run_context.yaml`, then consume those values verbatim. When either side supplies `deploy_root`, require both values to be non-empty and exactly equal. For backward-compatible run contexts where both omit `deploy_root`, continue using the already frozen absolute helper/template path-and-hash tuples; missing `deploy_root` alone is not `DATA_LAYER_INPUT_AUTHORITY_ERROR`.
 3. If the handoff is missing, malformed, or conflicts, HALT with `DATA_LAYER_INPUT_AUTHORITY_ERROR`; do not repeat Step 0 resolution locally or switch runs.
 4. Read the ERD image at the exact frozen `run_context` data-source path (the PNG/JPG is authoritative observed source-design input; after deployment, catalog readback is runtime truth).
-5. Load the exact frozen `run_context.templates.ddl_notebook` and `run_context.templates.dbldatagen_notebook`, and bind the exact `run_context.templates.erd_validation_utils.path` + `.sha256` tuple for the attested GATE 2.1b loader. The ERD validation helper and DDL notebook template carry policy `GREENFIELD_SYNTHETIC_DATATYPE_RESOLUTION_V1`; release tests prove their parity with `contracts/datatype_resolution_policy.yaml`. A `run_context.inputs.datatype_resolution_policy` entry is optional compatibility metadata: authenticate it when present, but its absence MUST NOT raise `DATA_LAYER_INPUT_AUTHORITY_ERROR` or block artifact creation.
+5. Load and authenticate the exact frozen path-and-hash tuples `run_context.templates.ddl_notebook` and `run_context.templates.dbldatagen_notebook`, and bind the exact `run_context.templates.erd_validation_utils.path` + `.sha256` tuple for the attested GATE 2.1b loader. The ERD validation helper and DDL notebook template carry policy `GREENFIELD_SYNTHETIC_DATATYPE_RESOLUTION_V1`; release tests prove their parity with `contracts/datatype_resolution_policy.yaml`. A `run_context.inputs.datatype_resolution_policy` entry is optional compatibility metadata: authenticate it when present, but its absence MUST NOT raise `DATA_LAYER_INPUT_AUTHORITY_ERROR` or block artifact creation.
 6. Use frozen `run_context.data_source.greenfield.volume`, `run_context.llm`, `run_context.validation`, and `run_context.quality_gates` for execution-affecting policy.
 7. Load the KPI/use-case specification from the exact frozen `run_context.inputs.kpi_spec` path (influences realistic values and coverage, NEVER alters schema).
 
@@ -754,7 +754,7 @@ Because inferred relationships are first-class in `semantic_model.yaml`:
 - [ ] All HALT-level items resolved
 - [ ] Every table has documented grain
 - [ ] Every PK identified
-- [ ] exact frozen `run_context.templates.ddl_notebook` loaded
+- [ ] exact frozen `run_context.templates.ddl_notebook.path` loaded
 
 ### Process (Three-Plane Architecture)
 
@@ -775,12 +775,12 @@ type is incomplete or differs, regenerate it from the resolved ERD and record th
    `validate_table_spec_projection(erd_tables, table_spec)` function. A failure routes to the
    owning ERD-reparse or table-spec-regeneration action and MUST occur before notebook deployment.
 5. **Apply guardrails DL-G4 and shared G-16, then deploy DDL notebook from template** — call the `deploy_from_template` tool with:
-   - `template_path`: exact frozen `run_context.templates.ddl_notebook`
+   - `template_path`: exact frozen `run_context.templates.ddl_notebook.path`
    - `output_path`: `{OUTPUT_FOLDER}/notebooks/ddl_{DOMAIN_NAME}.py`
-   - `placeholders`: `{"DOMAIN_NAME": "...", "OUTPUT_FOLDER": "...", "TARGET_CATALOG": "...", "TARGET_SCHEMA": "..."}`
+   - `placeholders`: the complete map returned by executable GATE TEMPLATE-BINDING in `validation.md`, using this template’s authenticated bytes and the current context/handoff
    This tool reads the template verbatim and performs ONLY placeholder substitution.
    DO NOT use `import_notebook` for this — it will reject template-based paths (G-16 enforcement).
-   DO NOT read the template yourself and do string manipulation — the tool handles everything.
+   Read the frozen template for binding validation; leave rendering and import to the deployment transport under shared G-16.
 6. The DDL template reads `table_spec.yaml` and compiles it into CREATE TABLE IF NOT EXISTS statements
 7. Four gates run before execution (see gate_checks framework)
 
@@ -1275,9 +1275,9 @@ volume_targets:
 
 1. Produce `{OUTPUT_FOLDER}/synthetic_data_spec.yaml` — declarative specification of all tables, row counts, column domains, FK mappings, and PK columns. The LLM produces ONLY this spec.
 2. **Apply guardrails DL-G4 and shared G-16, then deploy dbldatagen notebook from template** — call `deploy_from_template` with:
-   - `template_path`: exact frozen `run_context.templates.dbldatagen_notebook`
+   - `template_path`: exact frozen `run_context.templates.dbldatagen_notebook.path`
    - `output_path`: `{OUTPUT_FOLDER}/notebooks/synthetic_data_{DOMAIN_NAME}.py`
-   - `placeholders`: `{"DOMAIN_NAME": "...", "OUTPUT_FOLDER": "...", "TARGET_CATALOG": "...", "TARGET_SCHEMA": "...", "ASSET_SUFFIX": "..."}`
+   - `placeholders`: the complete map returned by executable GATE TEMPLATE-BINDING in `validation.md`, using this template’s authenticated bytes and the current context/handoff
      Use the exact handoff target catalog/schema and `asset_suffix`; generated greenfield tables are not addressed through current accelerator source coordinates.
    The template is a Deterministic Deployment Runtime: it reads `synthetic_data_spec.yaml`, iterates over all tables in dependency order, calls `generate_table()` for each, enforces varchar limits, validates row counts, and writes the manifest. The LLM MUST NOT add custom cells — everything is driven by the spec.
 3. Execute the notebook via `execute_notebook`
