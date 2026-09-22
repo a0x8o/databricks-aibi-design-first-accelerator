@@ -465,8 +465,16 @@ Before setup, require:
 - approved Metric View, Genie, and quality policy contracts authenticate.
 
 Failure is owned by `MASTER_RESOLVER`; do not start a stage.
+After this gate passes, finish `run_selected` reporting under shared G-12 with the
+persisted context locator, then emit the shared G-19 `stage_completed` event for
+`step_name=load_configuration`. Its evidence is the authenticated context/handoff
+and Step-0 admission result. Do not call `report_step_complete`.
 
 ## Step 1 — Environment Setup
+
+Before the first setup operation, emit shared G-19 progress with
+`step_name=environment_setup`, `phase_id=environment_setup`, `status=started`.
+Config Step-0 admission must already have passed; run selection alone is insufficient.
 
 Create only the exact version-scoped output structure needed by enabled stages. Ensure the target
 schema exists through the approved path and verify it by current catalog readback.
@@ -480,6 +488,12 @@ discovered file, or manifest alone never proves ownership. Ambiguity is
 `CLEAN_START_AUTHORITY_ERROR` and halts.
 
 Do not continue until environment, context, handoff, and target readback gates pass.
+Capture the exact target catalog/schema and successful current readback result in
+the setup completion evidence. Emit `environment_setup: completed` and then
+`stage_completed: completed`, both with `step_name=environment_setup` and those
+findings/stats, following shared G-19. Only then announce the first Data Layer phase.
+Do not report setup under `load_configuration` or `create_data_layer`. On resume,
+recheck setup readback before admitting Data Layer; the old UI status is not evidence.
 
 ## Active-Stage Router
 
@@ -507,7 +521,10 @@ For every configurable stage:
    mirror, not a stage dependency. Re-read the required producer record immediately before invoking a downstream
    notebook. A PASS artifact without that record is `CHECKPOINT_PERSISTENCE_ERROR`, not permission
    to continue or rerun successful deployment work.
-7. Preserve failure classification and owner. Only then authenticate the frozen runbook and load
+7. After all required stage gates pass, emit shared G-19 `stage_completed` for this
+   owning stage before routing onward. A failed stage returns to the failure path;
+   never emit successful stage completion merely because its prompt returned.
+8. Preserve failure classification and owner. Only then authenticate the frozen runbook and load
    the one matching section when diagnostics are needed. Never load unrelated history or implement
    a substitute in the kernel.
 

@@ -467,8 +467,6 @@ class AgentLoop:
 
                 # Emit tool result event
                 if callback:
-                    if tool_name == 'report_progress' and not is_error and context_vars.get('STEP_NAME') == 'master':
-                        callback('phase_update', json.loads(result_str))
                     callback("tool_result", {
                         "tool": tool_name,
                         "iteration": iterations,
@@ -477,6 +475,9 @@ class AgentLoop:
                         "result_summary": result_str if is_error else result_str[:1000],
                         "consecutive_errors": consecutive_errors,
                     })
+                    # Close the tool in its original stage before progress changes ownership.
+                    if tool_name == 'report_progress' and not is_error and context_vars.get('STEP_NAME') == 'master':
+                        callback('phase_update', json.loads(result_str))
 
                 # Add tool result to conversation
                 messages.append({

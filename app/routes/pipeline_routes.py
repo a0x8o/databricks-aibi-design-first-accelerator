@@ -628,7 +628,12 @@ def _run_pipeline_background(run_id: str, domain: str, steps: list, run_mode: st
                 run_store.create_run(run_id, domain, run_mode=run_mode, config_json={
                     'agent_skills_version': 'v2', 'app_journal_path': journal_path})
             run['agent_skills_version'] = 'v2'
-            run['step_data']['load_configuration']['status'] = 'completed'
+            # Host configuration was loaded; the master still owns freeze/admission.
+            config_info = run['step_data']['load_configuration']
+            config_info['status'] = 'running'
+            for phase in config_info['phases']:
+                if phase.get('phase_id') == 'load_yaml':
+                    phase.update(status='completed', current_task='Host configuration loaded; master freeze follows.')
             run['requested_steps'] = steps
             run['app_journal_path'] = journal_path
             app_mirror = AppStateMirror(services['workspace'], run_store, run, journal_path)

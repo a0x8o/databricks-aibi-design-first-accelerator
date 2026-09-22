@@ -92,6 +92,10 @@ class AppStateMirror:
                 existing.update(phase)
             if phase.get('status') == 'failed':
                 info['status'] = 'failed'
+            elif phase.get('phase_id') == 'stage_completed' and phase.get('status') == 'completed':
+                # Explicit master telemetry, never inferred from a later stage.
+                # Phase evidence remains unchanged; terminal manifest is final authority.
+                info['status'] = 'completed'
         elif name in ('tool_call', 'tool_result'):
             step = self.run.get('current_step') or 'master'
             info = self.run.setdefault('step_data', {}).setdefault(step,

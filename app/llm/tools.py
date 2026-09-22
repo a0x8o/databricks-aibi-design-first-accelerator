@@ -412,7 +412,9 @@ TOOL_DEFINITIONS = [
                 "Call with status='started' when beginning a phase, status='update' for "
                 "interim progress, and status='completed' when a phase finishes. "
                 "Include findings (key facts discovered), stats (numeric metrics), "
-                "and happenings (what is currently being done) for live UI display."
+                "and happenings (what is currently being done) for live UI display. "
+                "For master stage completion, follow shared G-19: phase_id=stage_completed, "
+                "status=completed only after all stage gates pass; report_step_complete ends the whole master."
             ),
             "parameters": {
                 "type": "object",

@@ -415,6 +415,22 @@ condition as `CHECKPOINT_PERSISTENCE_ERROR`.
 
 ### Sequential execution and truthful progress
 
+The master owns stage boundaries. Use `report_progress` (or the same structured
+transcript event on hosts without that tool) with exact stage identifiers:
+`load_configuration`, `environment_setup`, then the enabled router stage names.
+After a stage's required gates pass and its reusable checkpoints have been persisted
+and read back, emit `phase_id=stage_completed`, `status=completed`, a stage-specific
+`phase_name`, and `stats` identifying the validated evidence. This explicitly closes
+the stage for observers; completing one phase does not close its parent stage.
+Never use `report_step_complete` for this: that terminates the whole master in the App.
+Do not copy or invent completion of other phases when closing a stage.
+
+Before entering the next stage, verify the preceding stage's actual required evidence,
+close its reporting, then emit the new owning phase's `started` event before its first
+tool call. A progress event is a report of admission, not its proof. Missing telemetry
+alone does not authorize replay of successful mutations or require Lakebase. Missing
+or failed upstream evidence blocks the consumer under the existing owner gates.
+
 Every host must enforce this ordering, including Genie Code. Include the owning
 stage as `step_name` in progress events. Only acknowledge completion after the
 phase's required readback and durable checkpoint commit. A missing event is not

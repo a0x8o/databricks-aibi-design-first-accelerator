@@ -35,6 +35,37 @@ class MirrorTests(unittest.TestCase):
         saved = self.store.persist_app_snapshot.call_args.args[0]
         self.assertEqual(saved['step_data']['create_data_layer']['phases'][0]['stats'], {'tables': 3})
         self.assertEqual(json.loads(self.ws.files[self.path]), saved)
+    def test_explicit_stage_boundaries_close_config_and_setup_before_data(self):
+        events = [
+            ('load_configuration', 'load_yaml', 'completed'),
+            ('load_configuration', 'stage_completed', 'completed'),
+            ('environment_setup', 'environment_setup', 'started'),
+            ('environment_setup', 'environment_setup', 'completed'),
+            ('environment_setup', 'stage_completed', 'completed'),
+            ('create_data_layer', 'parse_erd', 'started'),
+        ]
+        for step, phase, status in events:
+            self.adapter.event('phase_update', dict(step_name=step, phase_id=phase, status=status))
+        saved = json.loads(self.ws.files[self.path])
+        self.assertEqual({step: info['status'] for step, info in saved['step_data'].items()},
+            {'load_configuration': 'completed', 'environment_setup': 'completed', 'create_data_layer': 'running'})
+
+    def test_progress_tool_closes_in_original_stage_before_switch(self):
+        from test_v2_master_host import AgentLoop
+        from types import SimpleNamespace
+        self.run['current_step'] = 'load_configuration'
+        executor = Mock()
+        executor.execute.return_value = json.dumps(dict(step_name='environment_setup',
+            phase_id='environment_setup', status='started'))
+        llm = Mock()
+        llm.chat_with_tools.side_effect = [dict(content='', tool_calls=[
+            {'id': 'progress-1', 'type': 'function', 'function':
+             {'name': 'report_progress', 'arguments': '{}'}}]), dict(content='done', tool_calls=[])]
+        AgentLoop(llm, executor, SimpleNamespace()).run('master', {'STEP_NAME': 'master'},
+            callback=self.adapter.event)
+        call = self.run['step_data']['load_configuration']['tool_calls'][0]
+        self.assertEqual(call['status'], 'completed')
+        self.assertEqual(self.run['current_step'], 'environment_setup')
     def test_next_phase_does_not_leave_previous_running_or_invent_success(self):
         for phase in ('generate_ddl', 'generate_synthetic_data'):
             self.adapter.event('phase_update', dict(step_name='create_data_layer',
