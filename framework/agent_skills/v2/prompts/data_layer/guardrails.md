@@ -190,3 +190,21 @@ is not. No App state or Lakebase lookup is needed for these bindings.
 Template deployment failure blocks generate_ddl or generate_synthetic_data and
 therefore blocks Metric Views. Require a successful import, terminal notebook
 success, and the phase's catalog/checkpoint validation before releasing consumers.
+
+
+## DL-G5: ERD-to-table-spec datatype projection
+
+ERD columns use `tables[].observed.columns[].datatype`; DDL columns use
+`tables[].columns[].type`. These are different artifact interfaces. Copy the exact
+validated/resolved ERD datatype into `type`; copying observed column dictionaries
+unchanged, looking up ERD `type`, or writing only a `datatype` key is invalid.
+Do not supply default STRING/BIGINT types or infer from column names here.
+
+Before deploying DDL, execute GATE 4.0's bounded projection in `validation.md`.
+With exact ordered table/column identity, regenerate derived types from the resolved
+ERD, record every replacement, then validate. This is allowed pre-deployment artifact
+construction, not permission to change an ERD or deployed table. Never raise the
+initial repairable projection report before performing this owned correction: in the
+App an execute_python exception terminates the master. Structural mismatch or invalid
+ERD datatype still halts and returns to its existing owner. Never catch unrelated
+SDK, permission, or runtime failures as a projection repair.

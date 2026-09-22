@@ -144,3 +144,16 @@ phase using GATE TEMPLATE-BINDING's complete map. If absent or inconsistent, ret
 The failed call imported nothing; an older notebook at the output path is not proof
 of a successful current deployment. Preserve existing reconciliation and empty-target
 checks before any synthetic execution on retry.
+
+
+### SCHEMA_CONTRACT_ERROR / Empty table-spec datatype across columns
+
+Read the actual current-run ERD and table-spec artifacts. Distinguish missing
+`type` from a populated but wrong field such as `datatype`. Under DL-G5, validated
+ERD `observed.columns[].datatype` projects to table-spec `columns[].type`. A widespread
+empty-type report does not by itself mean the ERD image lacks datatypes.
+
+On master-admitted retry, run GATE 4.0's bounded projection from the authenticated
+resolved ERD, persist only a passing candidate with replacement evidence, and validate
+readback before deployment. Do not reparse a valid ERD, invent datatypes, disable the
+gate, or blindly rerun an earlier script that might have performed other mutations.

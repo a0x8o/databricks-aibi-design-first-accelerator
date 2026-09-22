@@ -822,7 +822,8 @@ tables:
 ```
 
 **Rules:**
-- Column names and types MUST match `erd_parsed.yaml` exactly
+- Apply DL-G5: copy each `erd_parsed.tables[].observed.columns[].datatype` to
+  `table_spec.tables[].columns[].type`; preserve column identity/order and exact resolved types.
 - The compiler (template) generates `CREATE TABLE IF NOT EXISTS` with proper SQL syntax
 - The LLM NEVER writes SQL — only the declarative spec above
 - Backtick and comma issues are eliminated because the compiler controls SQL syntax
@@ -839,18 +840,18 @@ This gate is programmatic, not a prose review. Parse both current-run artifacts 
 rejection and call the already digest-attested helper before `deploy_from_template` or
 `execute_notebook`:
 
+Execute `project_table_spec_types` from GATE 4.0 in the already loaded `validation.md`:
+
 ```python
-_projection_report = _validate_table_spec_projection(
-    erd_parsed["tables"],
-    table_spec,
+table_spec, type_replacements = project_table_spec_types(
+    erd_parsed["tables"], table_spec, _validate_table_spec_projection
 )
-if _projection_report.get("status") != "PASS":
-    _failure_code = _projection_report.get("failure_code") or "SCHEMA_CONTRACT_ERROR"
-    raise RuntimeError(
-        f"{_failure_code}: GATE 4.0 failed before notebook deployment: "
-        f"{_projection_report.get('errors', [])}"
-    )
 ```
+
+Persist only this validated candidate and its replacement evidence, then read back
+and validate the persisted artifact per GATE 4.0. Do not raise a preliminary
+SCHEMA_CONTRACT_ERROR for missing derived `type` before this bounded projection.
+Do not persist or deploy a candidate whose final validation fails.
 
 An eligible datatype-only `ERD_EXTRACTION_ERROR` routes through the bounded targeted-crop protocol,
 then the governed resolver, and regenerates both `erd_parsed.yaml` and `table_spec.yaml` before

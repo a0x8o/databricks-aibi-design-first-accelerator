@@ -177,3 +177,45 @@ digest authentication, persisted handoff parity, or runtime pre-data checks.
 
 Any deployment error blocks dependent stages regardless of prior files or progress
 labels. Classify missing values as TEMPLATE_BINDING_ERROR and return to the master.
+
+
+### GATE 4.0: Bounded datatype projection (DL-G5)
+
+After authenticating the resolved ERD, assumptions, and candidate table spec, execute
+this function with the already attested `validate_table_spec_projection` callable.
+It constructs a candidate in memory; no SQL or Workspace writes occur. Structural
+mismatches are never repaired. Preserve returned replacement evidence in the owning
+DDL preflight/checkpoint evidence, persist the validated candidate using the approved
+Workspace transport, read it back with duplicate-key rejection, and rerun the validator
+on that readback before deploying. A failed final gate must not persist a candidate.
+
+```python
+def project_table_spec_types(erd_tables, table_spec, validate_projection):
+    import copy
+    candidate = copy.deepcopy(table_spec)
+    spec_tables = candidate.get("tables", [])
+    if (not erd_tables or not spec_tables
+            or [t["name"] for t in erd_tables] != [t["name"] for t in spec_tables]):
+        raise RuntimeError("SCHEMA_CONTRACT_ERROR: table inventory/order mismatch; no projection repair")
+    replacements = []
+    for erd_table, spec_table in zip(erd_tables, spec_tables):
+        observed = erd_table["observed"]["columns"]
+        columns = spec_table["columns"]
+        if [c["name"] for c in observed] != [c["name"] for c in columns]:
+            raise RuntimeError("SCHEMA_CONTRACT_ERROR: column inventory/order mismatch; no projection repair")
+        for source, target in zip(observed, columns):
+            resolved_type = source.get("datatype")
+            if target.get("type") != resolved_type:
+                replacements.append({"table": spec_table["name"], "column": target["name"],
+                                     "previous_type": target.get("type"), "type": resolved_type})
+            target["type"] = resolved_type
+            target.pop("datatype", None)  # ERD-only field, never the compiler interface
+    report = validate_projection(erd_tables, candidate)
+    if report.get("status") != "PASS":
+        raise RuntimeError(str(report.get("failure_code") or "SCHEMA_CONTRACT_ERROR")
+                           + ": GATE 4.0 projection failed: " + str(report.get("errors", [])))
+    return candidate, replacements
+```
+
+Missing or invalid source datatypes remain ERD_EXTRACTION_ERROR, following existing
+ERD reparse/resolution policy. Never use this function to manufacture source evidence.
