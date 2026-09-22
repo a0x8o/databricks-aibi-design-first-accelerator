@@ -510,17 +510,27 @@ class ContractTemplateTests(unittest.TestCase):
         self.assertIn("schema_assumptions_sha256", self.ddl_template)
         self.assertIn("schema_assumptions_sha256", self.data_template)
 
-    def test_legacy_reconciliation_may_omit_output_folder_but_not_conflict(self):
-        self.assertNotIn(
+    def test_legacy_reconciliation_may_omit_redundant_locations_but_not_conflict(self):
+        self.assertEqual(
+            self.data_template.count(
+                '"reconciliation.output_folder": (RECONCILIATION.get("output_folder"), OUTPUT_FOLDER)'
+            ),
+            1,
+        )
+        self.assertIn(
+            '"reconciliation.catalog": (RECONCILIATION.get("catalog"), CATALOG)',
+            self.data_template,
+        )
+        self.assertIn(
+            '"reconciliation.schema": (RECONCILIATION.get("schema"), SCHEMA)',
+            self.data_template,
+        )
+        self.assertIn(
             '"reconciliation.output_folder": (RECONCILIATION.get("output_folder"), OUTPUT_FOLDER)',
             self.data_template,
         )
         self.assertIn(
-            'reconciliation_output_folder = RECONCILIATION.get("output_folder")',
-            self.data_template,
-        )
-        self.assertIn(
-            "reconciliation_output_folder is not None and reconciliation_output_folder != OUTPUT_FOLDER",
+            "if actual is not None and actual != expected",
             self.data_template,
         )
 

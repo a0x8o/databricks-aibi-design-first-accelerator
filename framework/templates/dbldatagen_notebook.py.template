@@ -269,8 +269,6 @@ parity_checks = {
     "handoff.output_folder": (STEP_HANDOFF.get("output_folder"), OUTPUT_FOLDER),
     "reconciliation.run_id": (RECONCILIATION.get("run_id"), RUN_ID),
     "reconciliation.asset_suffix": (RECONCILIATION.get("asset_suffix"), ASSET_SUFFIX),
-    "reconciliation.catalog": (RECONCILIATION.get("catalog"), CATALOG),
-    "reconciliation.schema": (RECONCILIATION.get("schema"), SCHEMA),
     "reconciliation.artifact_type": (
         RECONCILIATION.get("artifact_type"), "schema_reconciliation"
     ),
@@ -319,20 +317,28 @@ for field, (actual, expected) in parity_checks.items():
         raise RuntimeError(
             f"SCHEMA_RECONCILIATION_AUTHORITY_ERROR: {field}={actual!r}, expected {expected!r}"
         )
-# Backward compatibility for reconciliation evidence produced before output_folder
-# was added to its contract. The artifact was loaded only from the exact canonical
-# sibling path above, and all run/target/suffix/hash/readback bindings remain mandatory.
-# A present conflicting value is never accepted.
-reconciliation_output_folder = RECONCILIATION.get("output_folder")
-if reconciliation_output_folder is not None and reconciliation_output_folder != OUTPUT_FOLDER:
-    raise RuntimeError(
-        "SCHEMA_RECONCILIATION_AUTHORITY_ERROR: reconciliation.output_folder="
-        f"{reconciliation_output_folder!r}, expected {OUTPUT_FOLDER!r}"
-    )
-if reconciliation_output_folder is None:
+# Backward compatibility for reconciliation evidence produced before these redundant
+# location fields were added. The artifact is loaded only from the exact canonical sibling
+# path, while table_spec, inventory FQNs, hashes, run/suffix, and fresh readback remain
+# mandatory. A present conflicting value is never accepted.
+legacy_optional_bindings = {
+    "reconciliation.catalog": (RECONCILIATION.get("catalog"), CATALOG),
+    "reconciliation.schema": (RECONCILIATION.get("schema"), SCHEMA),
+    "reconciliation.output_folder": (RECONCILIATION.get("output_folder"), OUTPUT_FOLDER),
+}
+for field, (actual, expected) in legacy_optional_bindings.items():
+    if actual is not None and actual != expected:
+        raise RuntimeError(
+            f"SCHEMA_RECONCILIATION_AUTHORITY_ERROR: {field}={actual!r}, expected {expected!r}"
+        )
+missing_legacy_bindings = sorted(
+    field for field, (actual, _) in legacy_optional_bindings.items() if actual is None
+)
+if missing_legacy_bindings:
     print(
-        "COMPATIBILITY: schema_reconciliation.output_folder is absent; exact canonical "
-        "artifact path plus run/target/suffix/hash/readback bindings were required"
+        "COMPATIBILITY: legacy schema_reconciliation location fields are absent: "
+        f"{missing_legacy_bindings}; exact path plus run/suffix/table-spec/inventory/hash/"
+        "readback bindings were required"
     )
 if RECONCILIATION.get("unresolved_mismatches") != []:
     raise RuntimeError("SCHEMA_RECONCILIATION_AUTHORITY_ERROR: unresolved schema mismatches remain")
