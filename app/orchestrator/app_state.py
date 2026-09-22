@@ -24,6 +24,18 @@ class AppStateMirror:
         self.path = journal_path
         self.revision = int(run.get('mirror_revision', 0))
 
+    def fail_active(self, error):
+        """Close live UI activity on halt; never promote an unverified phase to PASS."""
+        for info in self.run.get('step_data', {}).values():
+            if info.get('status') == 'running':
+                info.update(status='failed', error=error)
+            for phase in info.get('phases', []):
+                if phase.get('status') in ('running', 'started', 'update'):
+                    phase.update(status='failed', current_task=error)
+            for call in info.get('tool_calls', []):
+                if call.get('status') == 'running':
+                    call.update(status='failed', error=error)
+
     def save(self):
         self.revision += 1
         self.run['mirror_revision'] = self.revision
@@ -69,6 +81,14 @@ class AppStateMirror:
             phase = dict(data)
             if phase.get('status') in ('started', 'update'):
                 phase['status'] = 'running'
+                info['status'] = 'running'
+                for stage in self.run.get('step_data', {}).values():
+                    for previous in stage.get('phases', []):
+                        if previous.get('status') == 'running' and not (
+                            stage.get('step_name') == step and previous.get('phase_id') == phase.get('phase_id')
+                        ):
+                            previous.update(status='unverified',
+                                current_task='Phase ended without a completion event; checkpoint verification required.')
             phases = info['phases']
             phases[:] = [p for p in phases if p.get('phase_id') != phase.get('phase_id')]
             phases.append(phase)
@@ -98,6 +118,7 @@ class AppStateMirror:
             logs[step] = (logs.get(step, '') + data.get('content', '') + '\n')[-100000:]
         elif name == 'critical_failure':
             self.run['last_failure'] = dict(data)
+            self.fail_active(data.get('error', 'Critical tool failure'))
         else:
             return
         self.save()

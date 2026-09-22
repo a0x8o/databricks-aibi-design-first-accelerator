@@ -468,7 +468,7 @@ function renderAccordion(){
                 const phIcon=ph.status==='done'?'&#10003;':ph.status==='running'?'&#9679;':ph.status==='failed'?'&#10007;':'&#9675;';
                 const phIconCls=ph.status==='done'?'done':ph.status==='running'?'running':ph.status==='failed'?'failed':'pending';
                 const phStatusCls=ph.status==='done'?'completed':ph.status==='running'?'in-progress':ph.status==='failed'?'failed':'pending';
-                const phStatusLbl=ph.status==='done'?'Completed':ph.status==='running'?'In Progress':ph.status==='failed'?'Failed':'Pending';
+                const phStatusLbl=ph.status==='done'?'Completed':ph.status==='running'?'In Progress':ph.status==='failed'?'Failed':ph.status==='unverified'?'Completion unverified':'Pending';
                 // Show current task while running, findings summary when completed
                 const phDesc = ph.status==='done'
                     ? (ph.findings&&ph.findings.length>0 ? ph.findings.slice(0,2).join(' \u2022 ') : ph.currentTask||'')
@@ -917,7 +917,7 @@ async function pollStatus(){
                         phase_id: ph.phase_id||'',
                         name: ph.phase_name||'',
                         detail: ph.current_task||'',
-                        status: ph.status==='completed'?'done':ph.status==='failed'?'failed':'running',
+                        status: ph.status==='completed'?'done':ph.status==='failed'?'failed':ph.status==='unverified'?'unverified':['started','update','running'].includes(ph.status)?'running':'pending',
                         currentTask: ph.current_task||'',
                         progress: ph.progress_pct||0,
                         stats: ph.stats ? Object.entries(ph.stats).map(([k,v])=>{

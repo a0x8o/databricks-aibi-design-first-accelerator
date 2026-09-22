@@ -35,6 +35,23 @@ class MirrorTests(unittest.TestCase):
         saved = self.store.persist_app_snapshot.call_args.args[0]
         self.assertEqual(saved['step_data']['create_data_layer']['phases'][0]['stats'], {'tables': 3})
         self.assertEqual(json.loads(self.ws.files[self.path]), saved)
+    def test_next_phase_does_not_leave_previous_running_or_invent_success(self):
+        for phase in ('generate_ddl', 'generate_synthetic_data'):
+            self.adapter.event('phase_update', dict(step_name='create_data_layer',
+                phase_id=phase, phase_name=phase, status='started'))
+        phases = self.run['step_data']['create_data_layer']['phases']
+        self.assertEqual([p['status'] for p in phases], ['unverified', 'running'])
+        saved = json.loads(self.ws.files[self.path])
+        self.assertEqual(saved['step_data']['create_data_layer']['phases'][0]['status'],'unverified')
+    def test_critical_failure_closes_active_phase_and_tool(self):
+        self.adapter.event('phase_update', dict(step_name='create_data_layer',
+            phase_id='generate_synthetic_data', status='started'))
+        self.adapter.event('tool_call', dict(tool='execute_notebook'))
+        self.adapter.event('critical_failure', dict(tool='execute_notebook', error="KeyError: parent_pk"))
+        info = self.run['step_data']['create_data_layer']
+        self.assertEqual(info['status'], 'failed')
+        self.assertEqual(info['phases'][0]['status'], 'failed')
+        self.assertEqual(info['tool_calls'][0]['status'], 'failed')
     def test_outage_retries_and_retains_outbox(self):
         self.store.persist_app_snapshot.side_effect = RuntimeError('offline')
         with patch.object(mirror.time, 'sleep'):

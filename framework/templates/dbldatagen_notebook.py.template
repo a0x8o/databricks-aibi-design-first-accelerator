@@ -943,6 +943,8 @@ def generate_table(
             parent_fqn = f"{CATALOG}.{SCHEMA}.{parent_table}"
             parent_pks = [row[0] for row in
                 spark.table(parent_fqn).select(parent_pk_col).distinct().collect()]
+            if not parent_pks or any(value is None for value in parent_pks):
+                raise RuntimeError(f"SYNTHETIC_SPEC_ERROR: parent key domain {parent_fqn}.{parent_pk_col} is empty or contains nulls")
             if parent_pks:
                 # Cast to target type to avoid DELTA_METADATA_MISMATCH
                 target_type = col_types.get(fk_col, "bigint").lower()
@@ -1004,10 +1006,58 @@ import json as _json
 
 SPEC_PATH = "{{OUTPUT_FOLDER}}/synthetic_data_spec.yaml"
 
+def validate_synthetic_spec(spec, table_spec_tables):
+    """Validate the complete executable contract before generating/writing any table."""
+    def require(condition, location, message):
+        if not condition:
+            raise RuntimeError(f"SYNTHETIC_SPEC_ERROR: {location}: {message}; no data writes started")
+    require(isinstance(spec, dict), 'spec', 'expected a mapping')
+    tables = spec.get('tables')
+    require(isinstance(tables, list) and bool(tables), 'tables', 'expected a nonempty list')
+    columns = {t['name']: {c['name'] for c in t['columns']} for t in table_spec_tables}
+    require(all(isinstance(t, dict) and isinstance(t.get('name'), str) for t in tables),
+            'tables', 'each entry requires a name')
+    names = [t['name'] for t in tables]
+    require(len(names) == len(set(names)) and set(names) == set(columns), 'tables', 'exact table inventory required')
+    seen = set()
+    for table in tables:
+        name = table['name']
+        require(type(table.get('rows')) is int and table['rows'] > 0, name+'.rows', 'positive integer required')
+        pk = table.get('pk_columns')
+        require(isinstance(pk, list) and all(isinstance(c, str) and c in columns[name] for c in pk),
+                name+'.pk_columns', 'list of exact deployed columns required')
+        domains = table.get('domain_columns')
+        require(isinstance(domains, dict), name+'.domain_columns', 'mapping required, use {} when empty')
+        for column, domain in domains.items():
+            location = name+'.domain_columns.'+str(column)
+            require(column in columns[name] and isinstance(domain, dict), location, 'unknown column or invalid domain')
+            values, weights = domain.get('values'), domain.get('weights')
+            require(isinstance(values, list) and bool(values) and isinstance(weights, list)
+                    and len(values) == len(weights), location, 'nonempty equal-length values and weights required')
+            require(all(type(w) in (int, float) and 0 <= w <= 1 for w in weights)
+                    and abs(sum(weights)-1) < 1e-6, location, 'weights must be finite probabilities summing to 1')
+        fks = table.get('fk_columns')
+        require(isinstance(fks, dict), name+'.fk_columns', 'mapping required, use {} when empty')
+        for column, fk in fks.items():
+            location = name+'.fk_columns.'+str(column)
+            require(column in columns[name] and isinstance(fk, dict), location, 'unknown child column or invalid mapping')
+            require(set(fk) == {'parent_table', 'parent_pk'}, location,
+                    'required keys are parent_table and parent_pk; aliases or inferred keys are not accepted')
+            parent, key = fk['parent_table'], fk['parent_pk']
+            require(isinstance(parent, str) and parent in columns, location+'.parent_table', 'unknown logical parent table')
+            require(isinstance(key, str) and key in columns[parent], location+'.parent_pk', 'unknown parent key column')
+            parent_entry = tables[names.index(parent)]
+            require(parent_entry.get('pk_columns') == [key], location+'.parent_pk',
+                    'this sampler requires a single-column parent primary key; composite keys need a tuple-aware generator')
+            require(parent in seen, location, 'parent must precede child; cycles/self references are unsupported')
+        seen.add(name)
+    return spec
+
 if not os.path.exists(SPEC_PATH):
     raise RuntimeError("SYNTHETIC_SPEC_ERROR: synthetic_data_spec.yaml is required")
 print(f"Reading declarative spec: {SPEC_PATH}")
 SPEC = _load_yaml(SPEC_PATH)
+validate_synthetic_spec(SPEC, TABLE_SPEC_TABLES)
 spec_table_names = [table.get("name") for table in SPEC.get("tables", [])]
 expected_table_names = [table["name"] for table in TABLE_SPEC_TABLES]
 if (

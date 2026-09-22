@@ -1060,6 +1060,47 @@ Use `WEIGHTED_CATEGORICAL` for dimension columns. Vary `NUMERIC_RANGE` by catego
 
 ## 5.2 Column Generation Specification
 
+The following column-level strategy notes are planning metadata. They are **not**
+the executable notebook input schema. Write `synthetic_data_spec.yaml` using this
+exact table-level structure (logical table names without the asset suffix):
+
+```yaml
+tables:
+  - name: dim_member
+    rows: 100
+    pk_columns: [member_id]
+    date_range: ["2020-01-01", "2024-12-31"]
+    domain_columns:
+      status:
+        values: ["Active", "Inactive"]
+        weights: [0.8, 0.2]
+    fk_columns: {}
+  - name: fact_claim
+    rows: 500
+    pk_columns: [claim_id]
+    domain_columns: {}
+    fk_columns:
+      member_id:
+        parent_table: dim_member
+        parent_pk: member_id
+```
+
+Use the actual authenticated names, rows, domains, and relationships for this run.
+`parent_pk` is mandatory; do not substitute `parent_column`, `referenced_column`, or
+other aliases, and never infer a missing key from the child column's name. Both
+columns must match the reconciled deployed schema. Parents precede children. The
+current sampler supports single-column parent primary keys; composite keys and
+cycles must halt with an explicit unsupported-generation diagnostic.
+
+Before notebook deployment, run the exact frozen template's
+`validate_synthetic_spec(spec, table_spec_tables)` against the **entire** spec using
+the attested template bytes (extract that pure function with Python AST after
+excluding notebook `%` magic lines).
+The notebook repeats this check before the first data write. A preflight failure
+returns to this spec-generation phase; fix the owned spec before execution.
+Never blindly retry an append notebook after a partial write: inspect target row
+counts and use a fresh version when existing rows prevent safe execution.
+
 For every column:
 
 ```yaml
@@ -1202,16 +1243,15 @@ After constructing the spec dict and BEFORE serializing to YAML, apply `coerce_s
 for table in spec_tables:
     tname = table['name']
     col_types = type_map.get(tname, {})  # from erd_parsed.yaml
-    for col in table.get('columns', []):
-        cname = col.get('column', '')
+    for cname, domain in table.get('domain_columns', {}).items():
         ddl_type = col_types.get(cname, '').lower()
-        values = col.get('domain', {}).get('values', [])
+        values = domain.get('values', [])
         if not values:
             continue
         if any(t in ddl_type for t in ('char', 'string')):
-            col['domain']['values'] = [str(v) for v in values]
+            domain['values'] = [str(v) for v in values]
         elif 'timestamp' in ddl_type:
-            col['domain']['values'] = [
+            domain['values'] = [
                 f"{str(v)} 00:00:00" if len(str(v)) == 10 else str(v)
                 for v in values
             ]
@@ -1776,6 +1816,12 @@ defects are self-corrected and do not trigger a terminal halt.
 | Reconcile Schema | `reconcile_schema` | tables_checked, repaired_tables, unresolved_mismatches |
 | Synthetic Data | `generate_synthetic_data` | tables_populated, total_rows, fk_linked |
 | Validate | `validate_data` | pk_tests, fk_tests, pk_failures, fk_failures |
+
+The phases are sequential: `generate_ddl` → `reconcile_schema` →
+`generate_synthetic_data`. Wait for each notebook's terminal success, complete its
+readback and workspace checkpoint commit, and emit its completed event before
+starting the next phase. Never submit these notebooks concurrently. A missing
+completion event is not proof of success and must not be bypassed.
 
 Call `report_progress` with `status: "started"` before each phase, `status: "completed"` after, and
 `status: "update"` with `progress_pct` during long phases. Every call uses the native JSON-object

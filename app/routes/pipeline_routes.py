@@ -868,6 +868,7 @@ def _run_pipeline_background(run_id: str, domain: str, steps: list, run_mode: st
         run['error'] = str(e)
         if app_mirror is not None:
             try:
+                app_mirror.fail_active(str(e))
                 app_mirror.save()
             except Exception as persist_error:
                 run['persistence_warning'] = str(persist_error)
