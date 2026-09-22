@@ -133,3 +133,10 @@ All readers must reject an active lifecycle lock/transition before trusting pari
 If bootstrap or allocation fails before a valid run context exists, report the
 bootstrap failure and retained allocation evidence. Do not invent a terminal manifest
 or mutate another run to satisfy the post-allocation failure transaction.
+
+
+Template deployment carries the master's persisted `run_context_path` explicitly.
+A fresh host process can authenticate it without replaying `run_selected` progress.
+When an older caller supplies only OUTPUT_FOLDER, use its canonical context child
+as a candidate locator and authenticate identity before deployment. Never consult
+an in-memory acknowledgement flag or scan output versions to choose a context.

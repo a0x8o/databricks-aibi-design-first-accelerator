@@ -258,6 +258,10 @@ TOOL_DEFINITIONS = [
                             "(e.g. /Workspace/.../framework/templates/ddl_notebook.py.template)"
                         )
                     },
+                    "run_context_path": {
+                        "type": "string",
+                        "description": "For v2, the exact persisted run_context.yaml locator. Deployment authenticates it directly; no prior progress event is required."
+                    },
                     "output_path": {
                         "type": "string",
                         "description": (

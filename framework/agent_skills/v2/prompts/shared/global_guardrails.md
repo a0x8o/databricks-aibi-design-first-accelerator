@@ -673,6 +673,13 @@ dbutils.library.restartPython()     # ← preflight rejects this cell
 
 ## G-16: Template Notebooks Use `deploy_from_template` Tool
 
+Pass the exact persisted `run_context_path` to deployment tools that accept it.
+Authenticate that file and the output path directly. No prior progress event, host
+memory flag, or Lakebase acknowledgement is deployment authority. For compatible
+tools without a separate locator argument, the exact run-root OUTPUT_FOLDER binds
+its canonical `run_context.yaml`; read and validate that file before trusting it.
+
+
 Template deployment is a mandatory admission barrier. Select the exact release-owned
 path and verify its frozen SHA-256; a legacy same-named template is not an alternative. Enumerate placeholders from
 the actual frozen template and bind every required value before calling the tool.

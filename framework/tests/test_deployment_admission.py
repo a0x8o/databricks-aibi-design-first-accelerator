@@ -42,19 +42,27 @@ class DeploymentAdmissionTests(unittest.TestCase):
         self.assertIn('TEMPLATE_AUTHORITY_ERROR',result);ws.import_notebook.assert_not_called()
     def test_selected_template_requires_matching_frozen_digest(self):
         root='/Workspace/repo';template=root+'/framework/templates/v2_dashboard_notebook.py.template'
-        context=root+'/run_context.yaml'
+        context=root+'/output/v1/run_context.yaml'
+        identity=dict(domain='demo',created_by='app',version=1,run_id='run',
+            output_folder=root+'/output/v1',run_context_path=context)
         files={template:'valid source',root+'/framework/agent_skills/v2/contracts/release.yaml':
             'templates:\n  dashboard_notebook: framework/templates/v2_dashboard_notebook.py.template\n',
-            context:json.dumps({'templates':{'dashboard_notebook':{'path':template,'sha256':'wrong'}}})}
+            context:json.dumps({**identity,'templates':{'dashboard_notebook':{'path':template,'sha256':'wrong'}}})}
         ws=Mock();ws.read_file.side_effect=files.__getitem__
-        executor=Executor(SimpleNamespace(agent_skills_version='v2',framework_root=root+'/framework',deploy_root=root),{'workspace':ws})
-        executor._run_context_path=context
-        args=dict(template_path=template,output_path='/out')
+        executor=Executor(SimpleNamespace(agent_skills_version='v2',framework_root=root+'/framework',deploy_root=root,example_dir=root,domain_name='demo'),{'workspace':ws})
+        args=dict(template_path=template,output_path=root+'/output/v1/notebook',run_context_path=context)
         self.assertIn('frozen path/digest',executor.execute('deploy_from_template',args))
         ws.import_notebook.assert_not_called()
-        files[context]=json.dumps({'templates':{'dashboard_notebook':{'path':template,'sha256':hashlib.sha256(b'valid source').hexdigest()}}})
+        files[context]=json.dumps({**identity,'templates':{'dashboard_notebook':{'path':template,'sha256':hashlib.sha256(b'valid source').hexdigest()}}})
         self.assertTrue(executor.execute('deploy_from_template',args).startswith('SUCCESS'))
         ws.import_notebook.assert_called_once()
+        # A new executor must work with persisted state and no progress events.
+        fresh=Executor(executor._config,{'workspace':ws})
+        fallback={k:v for k,v in args.items() if k!='run_context_path'}
+        fallback['placeholders']={'OUTPUT_FOLDER':identity['output_folder']}
+        self.assertTrue(fresh.execute('deploy_from_template',fallback).startswith('SUCCESS'))
+        wrong={**args,'output_path':root+'/output/v2/notebook'}
+        self.assertIn('outside the authenticated run',fresh.execute('deploy_from_template',wrong))
     def test_notebook_error_tail_survives_agent_and_callback(self):
         error='NOTEBOOK ERROR: '+('x'*3000)+' /Workspace/full/path/dashboard_design.yaml'
         executor=Mock();executor.execute.return_value=error

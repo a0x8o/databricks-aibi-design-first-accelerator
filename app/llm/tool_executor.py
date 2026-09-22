@@ -485,7 +485,6 @@ class ToolExecutor:
                 or type(version) is not int or version < 1
                 or not isinstance(context.get('run_id'), str) or not context['run_id']):
             raise ValueError('RUN_SELECTION_AUTHORITY_ERROR: context identity mismatch')
-        self._run_context_path = path
         return dict(canonical_run_id=context['run_id'], run_context_path=path,
                     version=version, output_folder=context['output_folder'])
 
@@ -580,9 +579,21 @@ class ToolExecutor:
                        for p in release['templates'].values()}
             if template_path not in allowed:
                 return 'ERROR: TEMPLATE_AUTHORITY_ERROR: template is not selected by the v2 release manifest'
-            context_path = getattr(self, '_run_context_path', None)
+            # Persisted artifacts are authority, never an earlier UI event.
+            context_path = args.get('run_context_path') or placeholders.get('RUN_CONTEXT_PATH')
+            if not context_path and isinstance(placeholders.get('OUTPUT_FOLDER'), str):
+                context_path = placeholders['OUTPUT_FOLDER'].rstrip('/') + '/run_context.yaml'
             if not context_path:
-                return 'ERROR: TEMPLATE_AUTHORITY_ERROR: acknowledge persisted run selection before deployment'
+                return 'ERROR: TEMPLATE_AUTHORITY_ERROR: provide the persisted run_context_path'
+            selection = self._read_run_selection(context_path)
+            if (posixpath.normpath(output_path) != output_path
+                    or not output_path.startswith(selection['output_folder'].rstrip('/') + '/')):
+                return 'ERROR: TEMPLATE_AUTHORITY_ERROR: output path is outside the authenticated run'
+            if ('OUTPUT_FOLDER' in placeholders and
+                    placeholders['OUTPUT_FOLDER'] != selection['output_folder']):
+                return 'ERROR: TEMPLATE_AUTHORITY_ERROR: OUTPUT_FOLDER differs from persisted run context'
+            if ('RUN_CONTEXT_PATH' in placeholders and placeholders['RUN_CONTEXT_PATH'] != context_path):
+                return 'ERROR: TEMPLATE_AUTHORITY_ERROR: conflicting run context locators'
             context = yaml.safe_load(self._ws.read_file(context_path))
             references = [ref for ref in context.get('templates', {}).values()
                           if isinstance(ref, dict) and ref.get('path') == template_path]
