@@ -90,6 +90,63 @@ re-hash, and import with importlib.util.spec_from_file_location. Do not discover
 through sys.path. Bind `runtime` to that attested module and `w` to the authenticated
 WorkspaceClient whose host passed preflight.
 
+Execute this bootstrap verbatim on the host Python surface (App `execute_python`,
+Genie Code Python, or the preflight-selected control notebook). Supply `raw` from
+the exact release-selected Workspace download and `expected_sha256` from the
+current frozen reference (during initial bootstrap, the just-read release selection
+whose identity the master will freeze). Do not use `exec(raw, ...)`, an ad hoc `rc`
+module, or `inspect.getsource(WorkspaceStore)` to load or validate it.
+
+```python
+def load_lifecycle_runtime(raw, expected_sha256):
+    import hashlib
+    import importlib.util
+    import inspect
+    from pathlib import Path
+    import re
+    import sys
+    import tempfile
+
+    if (not isinstance(expected_sha256, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", expected_sha256)
+            or not isinstance(raw, bytes)
+            or hashlib.sha256(raw).hexdigest() != expected_sha256):
+        raise RuntimeError("HELPER_CONTRACT_ERROR: lifecycle source digest mismatch")
+    directory = Path(tempfile.mkdtemp(prefix="aibi_" + expected_sha256 + "_"))
+    module_path = directory / "run_contract.py"
+    module_path.write_bytes(raw)
+    if hashlib.sha256(module_path.read_bytes()).hexdigest() != expected_sha256:
+        raise RuntimeError("HELPER_CONTRACT_ERROR: staged source digest mismatch")
+    module_name = "aibi_lifecycle_" + expected_sha256 + "_" + directory.name.rsplit("_", 1)[-1]
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("HELPER_CONTRACT_ERROR: lifecycle loader unavailable")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module  # REQUIRED before exec_module, including in notebooks
+    try:
+        spec.loader.exec_module(module)
+        if Path(module.__file__).resolve() != module_path.resolve():
+            raise RuntimeError("HELPER_CONTRACT_ERROR: loaded lifecycle path mismatch")
+        for name in ("WorkspaceStore", "resolve_version", "commit_terminal", "load_attested"):
+            if not callable(getattr(module, name, None)):
+                raise RuntimeError("HELPER_CONTRACT_ERROR: missing lifecycle callable " + name)
+        inspect.signature(module.WorkspaceStore).bind(object())
+    except BaseException:
+        sys.modules.pop(module_name, None)
+        raise
+    return module
+```
+
+Bind `runtime = load_lifecycle_runtime(raw, expected_sha256)`. Keep the staged file
+and registered module for the invocation lifetime. Inspect the already verified raw
+bytes if source review is necessary; source reflection is not an execution gate.
+`inspect.signature` checks callable interfaces and does not require `getsource`.
+App Python tool calls are separate processes: reload this attested module in each
+call that needs it. Do not assume an earlier call's `runtime`, `store`, or `w` survives.
+Use `runtime.load_attested(store, frozen_reference)` for subsequent helpers; do not
+rediscover their imports or copy their class bodies. None of this requires App
+imports, Lakebase, or an agent-specific Python session.
+
 ```python
 store = runtime.WorkspaceStore(w)
 selection = runtime.resolve_version(

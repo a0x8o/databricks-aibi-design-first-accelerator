@@ -567,10 +567,19 @@ The loader MUST:
    directory such as `/tmp/pipeline_python/<full_sha256>/`;
 3. verify the copied bytes have the same digest;
 4. load with a unique module name containing the digest (for example through
-   `importlib.util.spec_from_file_location`), attest the loaded module's `__file__`, and
+   `importlib.util.spec_from_file_location`), register it in `sys.modules` BEFORE
+   `exec_module` (remove that entry on load failure), attest its `__file__`, and
    verify every required callable/signature before use; and
 5. fail closed on missing path/hash, digest mismatch, stale module identity, missing
    callable, or incompatible signature.
+
+Bootstrap the lifecycle helper with the exact loader in `shared/agent_transport.md`.
+Do not authenticate helpers with `inspect.getsource`, `getfile`, or `getsourcefile`:
+dynamic notebook/process loaders may not support source reflection. Hash original
+bytes, verify the staged file, and check callable signatures. A source-reflection
+failure is a loader/introspection problem, not evidence that a Workspace write failed.
+Never respond by rewriting the helper or bypassing digest checks. Honor host process
+boundaries: reload verified helpers when Python calls do not share a session.
 
 Compatibility aliases may be installed only after this attestation and only for the
 verified module instance needed by a verified dependent helper. A stage MUST NOT import a

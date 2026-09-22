@@ -361,6 +361,15 @@ class ToolExecutor:
                         "Use the attested WorkspaceStore.write() for lifecycle files. "
                         "Inspect earlier writes before retrying the script."
                     )
+                if ('inspect.py' in stderr and any(error in stderr for error in
+                        ('is a built-in class', 'could not get source code', 'source code not available'))):
+                    stderr += (
+                        "\nHELPER_INTROSPECTION_ERROR: source reflection failed; this does not "
+                        "establish a Workspace I/O error. Follow shared/agent_transport.md's "
+                        "attested file-backed loader and register the module in sys.modules "
+                        "before exec_module. Validate source bytes/digest and callable signatures, "
+                        "not inspect.getsource. Inspect earlier side effects before a master-admitted retry."
+                    )
                 # Provide actionable guidance for common errors
                 if "makedirs" in stderr and "Workspace" in stderr:
                     stderr += (
@@ -384,7 +393,9 @@ class ToolExecutor:
                         "/Workspace, use write_workspace_file tool with the YAML string "
                         "instead of execute_python + open()."
                     )
-                if "open(" in code and "/Workspace" in code:
+                # Diagnose the failing operation, not unrelated strings in the script.
+                if (any(error in stderr for error in ('FileNotFoundError:', 'PermissionError:', 'OSError:'))
+                        and '/Workspace/' in stderr and 'open(' in code):
                     stderr += (
                         "\n\nHINT: /Workspace paths are API-backed, not local filesystem. "
                         "Use write_workspace_file tool instead of open() in execute_python."
