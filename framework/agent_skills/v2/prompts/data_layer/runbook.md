@@ -102,3 +102,27 @@ Prior runs produced `val_1`...`val_5` for ALL categorical columns because the LL
 Backslash-digit sequences don't generate random digits on serverless. Use native Spark expressions for all PK/FK generation.
 
 ---
+
+
+### GENERATED_IDENTIFIER_ERROR: Invalid or colliding generated table name
+
+An object name such as `dim.provider_v14` contains a period inside one target
+component. Quoting does not legalize it. Follow this step's DL-G1 and validation
+GATE 2.1a: inspect the source label and its mapping, then return the defect to the
+parse owner through the master. Do not patch SQL or rename live/source objects.
+Use preflight mutation evidence to determine whether regeneration is safe; existing
+partial mutations require the master's recovery decision, not a blind notebook retry.
+
+### SYNTHETIC_SPEC_ERROR / KeyError parent_pk
+
+The generated spec does not satisfy the notebook's executable interface. Apply
+DL-G2 and GATE 5.0 to the whole spec. Correct the producer's artifact using actual
+schema/relationship evidence, not aliases or guessed parent keys. For an older
+notebook that failed after starting writes, inspect every target's row count before
+any retry; append execution cannot safely resume over partially populated targets.
+
+### Multiple data-layer phases displayed as running
+
+Apply DL-G3 and shared G-19. Check notebook run status and persisted checkpoints;
+a UI label alone does not establish concurrent execution or completion. Missing
+completion events remain unverified; a halted active phase must not remain running.

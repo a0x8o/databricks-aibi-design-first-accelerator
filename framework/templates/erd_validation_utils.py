@@ -502,11 +502,18 @@ def validate_schema_for_ddl(tables: list[dict]) -> dict:
     errors = []
     warnings = []
 
+    seen_table_names = set()
     for table in tables:
         table_name = table.get('name')
-        if not table_name:
+        if not isinstance(table_name, str) or not table_name:
             errors.append("Table found with no name")
             continue
+        if (len(table_name) > 255 or any(
+                c in '. /`' or ord(c) < 32 or ord(c) == 127 for c in table_name)):
+            errors.append(f"GENERATED_IDENTIFIER_ERROR: {table_name!r} is not a single UC table name; resolve its source label before DDL")
+        if table_name.lower() in seen_table_names:
+            errors.append(f"GENERATED_IDENTIFIER_ERROR: case-insensitive table-name collision: {table_name}")
+        seen_table_names.add(table_name.lower())
 
         columns = table.get('observed', {}).get('columns', [])
         if not columns:

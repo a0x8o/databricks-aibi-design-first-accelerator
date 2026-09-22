@@ -4,6 +4,27 @@
 
 ## Gates
 
+### GATE 2.1a: Generated target names (DL-G1)
+
+Before completing `parse_erd`, verify the source→target mapping required by this
+step's `guardrails.md` DL-G1. Execute the pinned DDL template's pure
+`validate_uc_target_names(catalog, schema, tables, asset_suffix)` over the entire
+target inventory. Require legal suffixed names, no case-insensitive collisions,
+and consistent relationship endpoints. Preserve source labels and mapping rationale
+in the parse artifact and its existing checkpoint output hash. DDL repeats this gate
+before mutation and records `GENERATED_IDENTIFIER_ERROR` on failure. Return control
+to the master for owning-phase regeneration; never silently rename inside SQL.
+
+### GATE 5.0: Executable synthetic specification (DL-G2 and DL-G3)
+
+Before deploying the synthetic notebook, execute its pinned pure
+`validate_synthetic_spec(spec, table_spec_tables)` on every table. Require all fields
+in DL-G2, existing FK endpoints, supported key shapes, and parent-before-child order.
+Confirm the authenticated `generate_ddl` and `reconcile_schema` prerequisites before
+admission. The notebook repeats validation before any data write. Missing `parent_pk`
+or another malformed field returns to the spec-producing phase; never infer a missing
+key in the runtime. Persist/hash the validated spec using the existing phase contract.
+
 ### GATE 2.1b: Data Type Validation (MANDATORY post-parse)
 After parsing the ERD, verify every column has a Databricks-valid datatype. `DECIMAL`, `DECIMAL(p)`,
 and `DECIMAL(p,s)` are complete platform syntax and canonicalize using documented defaults `p=10`,

@@ -18,6 +18,28 @@ All pipeline steps follow the three-plane architecture defined in `00_master_pro
 
 ---
 
+### Prompt ownership and deterministic enforcement
+
+The master and these shared guardrails own orchestration and remediation policy.
+The agent derives domain-specific names, relationships, distributions, and values
+from authenticated inputs. Fixed artifact field names are interface contracts,
+not hardcoded domain assumptions. Examples are illustrative, never runtime defaults.
+
+Validators and notebook templates enforce these contracts, report precise failures,
+and execute bounded operations. They must not guess missing keys, silently rename
+assets, choose the next stage, or mutate frozen intent to make a validation pass.
+Small transport glue may invoke attested helpers and serialize artifacts; it must
+not recreate domain compilers or lifecycle selection logic. Host adapters supply
+tools and durable UI state. The App may use Lakebase; Genie Code and other agents
+must be able to execute this chain without Lakebase or App imports.
+
+Step-local guardrails own stage-specific contracts and corrective actions. Shared
+guardrails own only cross-step invariants. Instructions define workflow; validation
+files define gates; runbooks hold diagnostics. Update the owning guardrail first,
+then align its prompt references, bounded runtime enforcement, and regression tests.
+
+---
+
 ## G-0.1: Four-Gate Validation Model (MANDATORY)
 
 Every declarative artifact MUST pass four gates before execution:
@@ -391,6 +413,17 @@ condition as `CHECKPOINT_PERSISTENCE_ERROR`.
 
 ---
 
+### Sequential execution and truthful progress
+
+Every host must enforce this ordering, including Genie Code. Include the owning
+stage as `step_name` in progress events. Only acknowledge completion after the
+phase's required readback and durable checkpoint commit. A missing event is not
+proof of success: display it as unverified and authenticate the checkpoint before
+reuse. On a failure, close active UI activity as failed; do not leave it running or
+promote it to success. Progress display never determines execution eligibility.
+
+---
+
 ## G-7: Python 3.11 Compatibility
 
 DO NOT use backslashes inside f-string `{}` expressions. This is a hard Python 3.11 syntax constraint.
@@ -415,6 +448,24 @@ f"{joined}"
 - Do NOT use `dbutils.fs` for `/Workspace/` paths
 - Do NOT use `os.makedirs` on `/Workspace/` paths from `execute_python` subprocess
 - Do NOT use shell commands to create, write, or modify workspace files
+
+---
+
+### Explicit workspace file and notebook transport
+
+Use the attested `WorkspaceStore.write()` for lifecycle files; do not invent an
+untyped `put()` helper. For plain YAML, JSON, Markdown, SQL text, lock, and Python
+helper files, explicitly use `ImportFormat.RAW`. SDK upload takes UTF-8 bytes;
+REST/import_ takes base64 content. Verify byte readback. Never omit the format or
+send these payloads as SOURCE/DBC. A Python helper stored as a file is distinct
+from an executable notebook: notebooks use SOURCE with its language, or JUPYTER.
+The shared workspace I/O input contains the transport examples.
+
+A pre-execution format rejection is repairable by the agent before resubmission.
+An archive/import error after execution is not evidence that nothing changed:
+inspect prior writes before retrying. Do not change permissions or invent another
+transport to bypass access errors. These rules apply to every host; App preflight
+checks are additional enforcement, not a substitute for the prompt contract.
 
 ---
 
@@ -515,6 +566,32 @@ an unverified helper beside an output artifact; use an already-cached module; or
 a manual validation fallback when a pinned helper is absent or incompatible. Such a
 failure is a helper-contract failure owned by the stage invoking it, not evidence that its
 validation passed.
+
+---
+
+### Selection persistence and completion acknowledgement
+
+**Allocation is not context persistence.** A new selection reserves the registry entry and
+returns the future `run_context_path`; the file does not exist yet. Continue through 0.4–0.8,
+build the full frozen context, persist it through the workspace store, and verify exact readback.
+Do not read a newly allocated context as an existing input, emit `run_selected: completed`,
+or launch asset creation before that barrier. Started/update progress is informational only.
+A missing context during this same active bootstrap must be resolved by finishing its
+authorized context write, not allocating another version or writing a placeholder context.
+An orphan from a previous interrupted allocation still follows the resolver's recovery rules.
+
+When a host provides `report_progress`, use `step_name=load_configuration`,
+`phase_id=run_selected`, `status=completed`, and `stats.run_context_path` only after
+verified context persistence. Started/update events make no persistence claim and
+must not trigger a context read in a UI callback. A premature completion error
+returns to the agent for the missing bootstrap step; it must not escape a display
+callback and terminate orchestration. A host without a progress tool emits the
+same structured event to its transcript after the same workspace checks.
+
+The master reports final completion only after its terminal lifecycle commit and
+includes the canonical root `run_manifest.json` locator, including on failure when
+a valid run context exists. In the App, `report_step_complete` terminates the whole
+master invocation; stage completion uses progress/checkpoint events instead.
 
 ---
 

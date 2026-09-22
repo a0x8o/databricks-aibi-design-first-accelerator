@@ -208,6 +208,31 @@ def _fqn(catalog, schema, table):
     return ".".join(_quote_identifier(part) for part in (catalog, schema, table))
 
 
+def validate_uc_target_names(catalog, schema, tables, asset_suffix):
+    """Validate all object-name components before any catalog mutation; never rename here."""
+    def validate(value, label):
+        if (not isinstance(value, str) or not value or len(value) > 255
+                or any(c in '. /`' or ord(c) < 32 or ord(c) == 127 for c in value)):
+            raise RuntimeError(
+                f"GENERATED_IDENTIFIER_ERROR: {label}={value!r} is not a valid single UC "
+                "object-name component. Resolve source labels to target names in the parse "
+                "contract before DDL; quoting a dotted name does not make it valid."
+            )
+    validate(catalog, 'catalog')
+    validate(schema, 'schema')
+    if not isinstance(asset_suffix, str):
+        raise RuntimeError('GENERATED_IDENTIFIER_ERROR: asset suffix must be text')
+    seen = set()
+    for table in tables:
+        name = table.get('name')
+        validate(name, 'logical table name')
+        deployed = name + asset_suffix
+        validate(deployed, 'deployed table name')
+        if deployed.lower() in seen:
+            raise RuntimeError(f'GENERATED_IDENTIFIER_ERROR: case-insensitive target collision: {deployed}')
+        seen.add(deployed.lower())
+
+
 _SIMPLE_TYPE_ALIASES = {"integer": "int", "long": "bigint"}
 _SIMPLE_TYPES = {
     "bigint", "int", "smallint", "tinyint", "float", "double",
@@ -642,6 +667,7 @@ try:
             raise RuntimeError(
                 "SCHEMA_CONTRACT_ERROR: deterministic table-spec regeneration did not converge"
             )
+    validate_uc_target_names(CATALOG, SCHEMA, spec.get('tables', []), ASSET_SUFFIX)
     preflight = {
         "artifact_type": "ddl_preflight",
         "contract_version": 1,
@@ -682,6 +708,9 @@ try:
 except RuntimeError as exc:
     message = str(exc)
     failure_code = (
+        "GENERATED_IDENTIFIER_ERROR"
+        if message.startswith("GENERATED_IDENTIFIER_ERROR:")
+        else
         "ERD_EXTRACTION_ERROR"
         if message.startswith("ERD_EXTRACTION_ERROR:")
         else "SCHEMA_CONTRACT_ERROR"

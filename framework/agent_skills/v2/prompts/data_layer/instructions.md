@@ -342,6 +342,12 @@ For EVERY column, return the COMPLETE data type exactly as shown in the ERD imag
 | `numeric(10` | `UNRESOLVED` — targeted crop/reparse, then governed policy if eligible |
 | `char(` | `UNRESOLVED` — targeted crop/reparse, then eligible policy resolves to non-truncating `STRING` |
 
+### Generated table-name resolution (before completing parse_erd)
+
+Apply this stage’s `guardrails.md` **DL-G1** before completing the parse. Use its
+source→target mapping contract and pinned target-name validator; then continue
+with datatype validation below. DDL must consume the resolved names verbatim.
+
 ### GATE 2.1b: Data Type Validation (MANDATORY post-parse)
 
 After the vision model returns the parsed ERD, load and run the exact frozen validation utility from `run_context.templates.erd_validation_utils`. The path and digest are a single authority tuple; a same-named ambient module is not an acceptable substitute.
@@ -1060,46 +1066,9 @@ Use `WEIGHTED_CATEGORICAL` for dimension columns. Vary `NUMERIC_RANGE` by catego
 
 ## 5.2 Column Generation Specification
 
-The following column-level strategy notes are planning metadata. They are **not**
-the executable notebook input schema. Write `synthetic_data_spec.yaml` using this
-exact table-level structure (logical table names without the asset suffix):
-
-```yaml
-tables:
-  - name: dim_member
-    rows: 100
-    pk_columns: [member_id]
-    date_range: ["2020-01-01", "2024-12-31"]
-    domain_columns:
-      status:
-        values: ["Active", "Inactive"]
-        weights: [0.8, 0.2]
-    fk_columns: {}
-  - name: fact_claim
-    rows: 500
-    pk_columns: [claim_id]
-    domain_columns: {}
-    fk_columns:
-      member_id:
-        parent_table: dim_member
-        parent_pk: member_id
-```
-
-Use the actual authenticated names, rows, domains, and relationships for this run.
-`parent_pk` is mandatory; do not substitute `parent_column`, `referenced_column`, or
-other aliases, and never infer a missing key from the child column's name. Both
-columns must match the reconciled deployed schema. Parents precede children. The
-current sampler supports single-column parent primary keys; composite keys and
-cycles must halt with an explicit unsupported-generation diagnostic.
-
-Before notebook deployment, run the exact frozen template's
-`validate_synthetic_spec(spec, table_spec_tables)` against the **entire** spec using
-the attested template bytes (extract that pure function with Python AST after
-excluding notebook `%` magic lines).
-The notebook repeats this check before the first data write. A preflight failure
-returns to this spec-generation phase; fix the owned spec before execution.
-Never blindly retry an append notebook after a partial write: inspect target row
-counts and use a fresh version when existing rows prevent safe execution.
+Apply this stage’s `guardrails.md` **DL-G2** for the executable
+`synthetic_data_spec.yaml` schema, FK fields, and complete-spec preflight.
+The column-level structure below is planning metadata, not the notebook input.
 
 For every column:
 
@@ -1817,11 +1786,8 @@ defects are self-corrected and do not trigger a terminal halt.
 | Synthetic Data | `generate_synthetic_data` | tables_populated, total_rows, fk_linked |
 | Validate | `validate_data` | pk_tests, fk_tests, pk_failures, fk_failures |
 
-The phases are sequential: `generate_ddl` → `reconcile_schema` →
-`generate_synthetic_data`. Wait for each notebook's terminal success, complete its
-readback and workspace checkpoint commit, and emit its completed event before
-starting the next phase. Never submit these notebooks concurrently. A missing
-completion event is not proof of success and must not be bypassed.
+Apply this stage’s `guardrails.md` **DL-G3** for sequential execution and
+checkpoint-backed progress. The phase table above supplies stage-specific IDs.
 
 Call `report_progress` with `status: "started"` before each phase, `status: "completed"` after, and
 `status: "update"` with `progress_pct` during long phases. Every call uses the native JSON-object
