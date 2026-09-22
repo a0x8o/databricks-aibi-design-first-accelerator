@@ -446,7 +446,7 @@ TOOL_DEFINITIONS = [
                     },
                     "stats": {
                         "type": "object",
-                        "description": "Key numeric metrics (e.g., {'tables_found': 14, 'relationships': 9}).",
+                        "description": "Metrics and evidence locators. For run_selected completed, include run_context_path as a plain absolute path string to the persisted run_context.yaml (not a display object).",
                         "additionalProperties": True
                     },
                     "happenings": {

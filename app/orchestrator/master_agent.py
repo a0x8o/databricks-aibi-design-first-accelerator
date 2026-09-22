@@ -47,8 +47,18 @@ def verify_terminal(workspace, artifacts, *, example_dir, domain):
     if posixpath.normpath(path) != path or not path.startswith(example_dir.rstrip('/')+'/'):
         raise RuntimeError('MASTER_COMPLETION_ERROR: manifest outside domain output')
     manifest=_mapping(workspace.read_file(path))
-    if manifest.get('domain') != domain or manifest.get('created_by') != 'app' or not manifest.get('run_id'):
-        raise RuntimeError('MASTER_COMPLETION_ERROR: manifest owner/domain/run mismatch')
+    # Match the identity normalization used by lifecycle parity and the resolver.
+    manifest_domain = _tuple(manifest)[1]
+    mismatches = []
+    if manifest_domain != domain:
+        mismatches.append(f"domain expected={domain!r} observed={manifest.get('domain')!r}")
+    if manifest.get('created_by') != 'app':
+        mismatches.append(f"created_by expected='app' observed={manifest.get('created_by')!r}")
+    if not isinstance(manifest.get('run_id'), str) or not manifest['run_id'].strip():
+        mismatches.append(f"run_id must be a nonempty string; observed={manifest.get('run_id')!r}")
+    if mismatches:
+        raise RuntimeError('MASTER_COMPLETION_ERROR: manifest owner/domain/run mismatch: '
+                           + '; '.join(mismatches) + f'; manifest={path}')
     output=posixpath.dirname(path)
     if manifest.get('output_folder') != output or manifest.get('run_context_path') != output+'/run_context.yaml':
         raise RuntimeError('MASTER_COMPLETION_ERROR: manifest/context path mismatch')

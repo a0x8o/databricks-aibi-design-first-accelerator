@@ -197,3 +197,21 @@ A fresh host process can authenticate it without replaying `run_selected` progre
 When an older caller supplies only OUTPUT_FOLDER, use its canonical context child
 as a candidate locator and authenticate identity before deployment. Never consult
 an in-memory acknowledgement flag or scan output versions to choose a context.
+
+
+## Recovery after host interruption
+
+Loss of an App/Lakebase ownership session proves only that the tracking session is
+absent. It does not prove a submitted Jobs run, SQL statement, or notebook stopped.
+Before any retry mutation, the master must inspect the exact current-run remote
+execution identifiers and their terminal results, then authenticate durable phase
+checkpoints under the existing Resume Skip Gate. If an operation remains active,
+observe it to terminal status; do not submit a duplicate or cancel it implicitly.
+If execution identity cannot be established from persisted evidence and authorized
+API readback, halt recovery for reconciliation rather than guessing or appending data
+again. Preserve the existing run identity and lifecycle-lock recovery rules.
+
+An App snapshot marked failed is observational state; it does not reopen a portable
+registry entry or clear its lock. Never rewrite portable lifecycle state merely to
+match UI status. These checks also apply after a Genie Code session or other agent
+host is interrupted and do not require Lakebase outside the App.

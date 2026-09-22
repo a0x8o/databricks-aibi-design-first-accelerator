@@ -236,11 +236,22 @@ class RouteRecoveryTests(unittest.TestCase):
         self.assertEqual([p['status'] for p in phases], ['unverified', 'unverified', 'completed'])
     def test_disconnected_worker_recovers_as_retryable_failure(self):
         self.store.app_execution_active.return_value = False
+        self.snapshot['step_data'] = {'create_data_layer': dict(status='running', phases=[
+            dict(phase_id='generate_ddl', status='completed'),
+            dict(phase_id='generate_synthetic_data', status='running')], tool_calls=[
+                dict(tool_name='execute_notebook', status='running')])}
+        self.ws.files[self.path] = json.dumps(self.snapshot)
         response = self.client.get('/api/pipeline/run/r/status')
         self.assertEqual(response.status_code,200)
         self.assertEqual(response.json['status'],'failed')
         self.assertIn('disconnected',response.json['error'])
         self.assertEqual(json.loads(self.ws.files[self.path])['status'],'failed')
+        saved = json.loads(self.ws.files[self.path])
+        self.assertEqual(saved['interruption']['remote_execution_status'], 'unknown')
+        info = saved['step_data']['create_data_layer']
+        self.assertEqual([p['status'] for p in info['phases']], ['completed', 'unverified'])
+        self.assertEqual(info['tool_calls'][0]['status'], 'interrupted')
+        self.assertIn('jobs may still be running', response.json['error'])
     def test_cached_remote_run_refreshes_on_next_poll(self):
         self.client.get('/api/pipeline/run/r/status')
         updated = {**self.snapshot,'status':'failed','error':'Saved failure','mirror_revision':2}

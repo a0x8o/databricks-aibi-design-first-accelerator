@@ -604,6 +604,15 @@ inability to produce a trustworthy requested solution. Any retained `STALE` phas
 
 ## Terminal Lifecycle Transaction
 
+Derive terminal identity from the authenticated context/registry, never from UI labels
+or current process defaults. Domain identity is the string name (`domain.name` when
+stored as a mapping); lifecycle parity compares that name across supported document
+shapes. Preserve the exact canonical `run_id` and `created_by`. In an App invocation
+the supplied owner is `app`; a Genie Code invocation retains its own frozen owner.
+A display name or App request identifier does not replace canonical identity. Before
+reporting completion, read back the committed manifest/context/registry and verify
+this normalized identity tuple. Do not rewrite frozen identity to satisfy a host error.
+
 Call the attested `run_contract.commit_terminal()` with the master-composed manifest.
 It holds the lifecycle lock throughout the following workspace transaction and
 verifies byte readback, identity parity, and rollback on failure:

@@ -61,7 +61,7 @@ Runtime failures are classified before routing to remediation:
 
 | Error Pattern | Routing | Why |
 |---------------|---------|-----|
-| PARSE_SYNTAX_ERROR, UNRESOLVED_COLUMN | LLM repair | Generation error — fix the spec |
+| PARSE_SYNTAX_ERROR, UNRESOLVED_COLUMN | LLM repair | Fix generated SQL/spec using current schema and semantic evidence; preserve KPI grain |
 | DEPLOYED_DATATYPE_MISMATCH | Data Layer owner gate | Preserve expected/observed types; only GATE 4.2 may perform one empty-current-version compiler recreation, otherwise halt with `DATATYPE_MISMATCH_UNSAFE_TO_REPAIR` |
 | PERMISSION_DENIED, RESOURCE_EXHAUSTED, QUOTA_EXCEEDED | Deterministic fail | Infrastructure — LLM cannot fix |
 | RATE_LIMIT, TIMEOUT | Retry with backoff (max 3) | Transient — retry, then fail |
@@ -627,6 +627,25 @@ returns to the agent for the missing bootstrap step; it must not escape a displa
 callback and terminate orchestration. A host without a progress tool emits the
 same structured event to its transcript after the same workspace checks.
 
+For this event, `stats` is a mapping and `stats.run_context_path` is the exact plain
+string from the persisted selection, not `{value: ...}`, a folder, a relative path,
+or a path reconstructed from the latest version. Example call shape (substitute the
+authenticated locator variable, never this illustrative variable name as text):
+
+```python
+report_progress(step_name="load_configuration", phase_id="run_selected",
+                phase_name="Resolve and Freeze Run", status="completed",
+                stats={"run_context_path": run_context_path})
+```
+
+Report selection completion at the Config boundary. Setup and later-stage updates
+use their own owning step/phase; do not replay `run_selected` as a generic completion
+signal. If a selection report is rejected, inspect its arguments and authenticate the
+existing context. A malformed telemetry argument is not permission to reallocate,
+overwrite the run context, or rerun successful Setup. Correct the report with the
+same authenticated locator; actual identity conflicts still halt under owner gates.
+
+
 The master reports final completion only after its terminal lifecycle commit and
 includes the canonical root `run_manifest.json` locator, including on failure when
 a valid run context exists. In the App, `report_step_complete` terminates the whole
@@ -808,3 +827,18 @@ config = {"visible": True, "enabled": False, "value": None}
 ```
 
 **Impact:** Dashboard creation notebooks, widget configs, and API payload construction are the most common failure sites. The App's pre-flight gate (Gate 3 in `_py_compile_check`) detects this before execution, but the Genie Code path does NOT — always use Python booleans.
+
+
+### Unresolved SQL columns: evidence-bound repair
+
+Before executing generated SQL, bind each qualified column to its actual alias/table
+using current catalog readback and the authenticated semantic model. On
+`UNRESOLVED_COLUMN`, inspect the exact failing SQL and current columns. A suggested
+column is a diagnostic candidate, not authorization to substitute it. Confirm its
+business meaning and the approved join/cardinality/aggregation grain; moving a filter
+or measure from a header to a detail table can change results or multiply rows.
+Repair only the owning generated query/spec, rerun its validation, and retain the
+failed attempt and successful verification. Never add a fabricated source column,
+change an ERD, or mark the stage complete solely because the error is repairable.
+If no authoritative equivalent exists, return to the semantic/KPI owner and halt the
+consumer. This procedure is domain-independent and applies on every agent host.

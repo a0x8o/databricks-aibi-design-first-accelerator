@@ -151,8 +151,23 @@ def recover_snapshot(workspace, store, record):
                 raise ValueError('App snapshot identity changed during recovery')
             snapshot = latest
             if snapshot.get('status') in ('running', 'started', 'pending'):
-                snapshot.update(status='failed', error='Interrupted: App execution owner disconnected. Resume through the master.',
+                snapshot.update(status='failed', error=(
+                    'Interrupted: App execution owner disconnected (Lakebase ownership session absent). '
+                    'The cause is not established; submitted Databricks jobs may still be running. '
+                    'Reconcile remote job status and persisted checkpoints through the master before retrying mutations.'),
                                 completed_at=utcnow())
+                snapshot['interruption'] = dict(reason='execution_owner_session_absent',
+                    detected_at=utcnow(), remote_execution_status='unknown')
+                for info in snapshot.get('step_data', {}).values():
+                    if info.get('status') == 'running':
+                        info.update(status='failed', error=snapshot['error'])
+                    for phase in info.get('phases', []):
+                        if phase.get('status') in ('running', 'started', 'update'):
+                            phase.update(status='unverified', current_task=(
+                                'App tracking interrupted; verify remote execution and checkpoint before resuming.'))
+                    for call in info.get('tool_calls', []):
+                        if call.get('status') == 'running':
+                            call.update(status='interrupted', error='Execution result unknown after App owner loss.')
                 AppStateMirror(workspace, store, snapshot, config['app_journal_path']).save()
         finally:
             connection.close()

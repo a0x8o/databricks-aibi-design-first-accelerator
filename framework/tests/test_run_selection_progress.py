@@ -60,6 +60,26 @@ class SelectionProgressTests(unittest.TestCase):
         progress=json.loads(self.executor.execute('report_progress',{**self.args,'status':'started','stats':{}}))
         self.mirror.event('phase_update',progress)
         self.assertNotIn('canonical_run_id',self.run)
+    def test_malformed_locator_is_diagnosed_without_reading_or_reallocating(self):
+        for path in (None, '', {'value': self.path}, self.root + '/generated_outputs/v12',
+                     '/Workspace/other/run_context.yaml', self.root + '/../run_context.yaml'):
+            with self.subTest(path=path):
+                result = self.executor.execute('report_progress', {
+                    **self.args, 'stats': {'run_context_path': path}})
+                self.assertIn('RUN_SELECTION_NOT_ACKNOWLEDGED', result)
+                self.assertIn(repr(path), result)
+                self.assertNotIn('allocation does not create', result)
+                self.assertIn('Do not allocate another version', result)
+        self.assertEqual(self.ws.reads, [])
+
+    def test_corrected_selection_report_preserves_existing_context(self):
+        self.ws.files[self.path] = json.dumps(self.context)
+        before = dict(self.ws.files)
+        result = self.executor.execute('report_progress', {**self.args, 'stats': {}})
+        self.assertIn('nonempty plain string', result)
+        result = json.loads(self.executor.execute('report_progress', self.args))
+        self.assertEqual(result['_validated_run_selection']['canonical_run_id'], 'canonical')
+        self.assertEqual(self.ws.files, before)
     def test_agent_can_repair_early_completion_in_same_run(self):
         def response(tool,args,index):
             return {'content':'','tool_calls':[{'id':str(index),'type':'function',

@@ -552,13 +552,14 @@ function renderPhaseDetail(phase, recentTools){
     if(recentTools.length > 0){
         const toolItems = recentTools.map((tc, idx)=>{
             const isFailed = tc.status==='failed';
-            const iconCls = tc.status==='completed' ? 'done' : isFailed ? 'failed' : 'running';
-            const iconChar = tc.status==='completed' ? '\u2713' : isFailed ? '\u2717' : '\u25B8';
+            const isInterrupted = tc.status==='interrupted';
+            const iconCls = tc.status==='completed' ? 'done' : isFailed ? 'failed' : isInterrupted ? 'pending' : 'running';
+            const iconChar = tc.status==='completed' ? '\u2713' : isFailed ? '\u2717' : isInterrupted ? '?' : '\u25B8';
             // Detect retry: same tool label failed previously in this batch
             const isRetry = isFailed && recentTools.slice(0, idx).some(prev => prev.label===tc.label && prev.status==='failed');
             const retryTag = isRetry ? ' <span style="color:var(--danger);font-size:10px;font-weight:600;">RETRY</span>' : '';
             // Cap detail at 50 chars
-            let detail = tc.detail || '';
+            let detail = isInterrupted ? 'Tracking interrupted; execution result unknown' : tc.detail || '';
             if(detail.length > 50) detail = detail.slice(0, 47) + '\u2026';
             const detailHtml = detail ? ` \u2014 <span style="color:var(--text-muted);font-style:italic;font-size:11px;">${detail}</span>` : '';
             const failStyle = isFailed ? 'color:var(--danger);' : '';

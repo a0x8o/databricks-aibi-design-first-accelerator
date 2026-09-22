@@ -470,9 +470,16 @@ class ToolExecutor:
         import posixpath
         import yaml
         root = self._config.example_dir.rstrip('/')
-        if (not isinstance(path, str) or posixpath.normpath(path) != path
-                or not path.startswith(root + '/') or posixpath.basename(path) != 'run_context.yaml'):
-            raise ValueError('RUN_SELECTION_AUTHORITY_ERROR: invalid domain context locator')
+        if not isinstance(path, str) or not path:
+            raise ValueError(
+                'RUN_SELECTION_AUTHORITY_ERROR: stats.run_context_path must be a nonempty plain string; '
+                f'received {path!r}. Expected the exact persisted run_context.yaml locator under {root!r}')
+        if (posixpath.normpath(path) != path or not path.startswith(root + '/')
+                or posixpath.basename(path) != 'run_context.yaml'):
+            raise ValueError(
+                f'RUN_SELECTION_AUTHORITY_ERROR: invalid domain context locator {path!r}; '
+                f'expected a canonical path under {root!r} ending in /run_context.yaml. '
+                'Copy the persisted selection locator; do not infer another version or normalize a different path.')
         class UniqueLoader(yaml.SafeLoader):
             pass
         def mapping(loader, node, deep=False):
@@ -531,15 +538,23 @@ class ToolExecutor:
         if (getattr(self._config, 'agent_skills_version', None) == 'v2'
                 and progress['phase_id'] == 'run_selected' and progress['status'] == 'completed'):
             try:
-                progress['_validated_run_selection'] = self._read_run_selection(
-                    (progress['stats'] or {}).get('run_context_path'))
+                stats = progress['stats']
+                if not isinstance(stats, dict):
+                    raise ValueError('RUN_SELECTION_AUTHORITY_ERROR: stats must be an object containing run_context_path')
+                progress['_validated_run_selection'] = self._read_run_selection(stats.get('run_context_path'))
             except Exception as exc:
-                return (
-                    f"ERROR: RUN_SELECTION_NOT_ACKNOWLEDGED: {exc}. "
+                guidance = (
                     "The resolver returns a locator; allocation does not create run_context.yaml. "
-                    "Follow the master's freeze-and-persist step and verify workspace readback "
-                    "before reporting run_selected completed. Check the exact path and read permissions; "
-                    "do not allocate another version, invent an empty context, or proceed to asset creation."
+                    "Finish the master's freeze-and-persist step only if this invocation has not done so. "
+                    if isinstance(exc, FileNotFoundError) else
+                    "Check the supplied stats.run_context_path and persisted selection identity; "
+                    "this reporting error alone does not establish that bootstrap is incomplete. "
+                )
+                return (
+                    f"ERROR: RUN_SELECTION_NOT_ACKNOWLEDGED: {exc}. " + guidance +
+                    "Verify the exact persisted context before reporting run_selected completed. "
+                    "Do not allocate another version, invent or overwrite context, or replay setup to fix telemetry. "
+                    "Report Setup using step_name=environment_setup and its own phase, not run_selected."
                 )
         logger.info(f"Progress: {progress['phase_name']} [{progress['status']}]")
         return json.dumps(progress)

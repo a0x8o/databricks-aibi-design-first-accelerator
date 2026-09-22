@@ -59,6 +59,26 @@ class MasterHostTests(unittest.TestCase):
         return verify_terminal(self.ws,[self.path],example_dir=self.example,domain='demo')
     def test_success_requires_persisted_evidence(self):
         self.assertEqual(self.verify()['status'],'completed')
+    def test_manifest_mapping_domain_matches_lifecycle_identity(self):
+        self.manifest['domain'] = {'name': 'demo', 'display_name': 'Demonstration'}
+        self.persist()
+        self.assertEqual(self.verify()['status'], 'completed')
+    def test_wrong_domain_and_owner_remain_rejected_with_observed_values(self):
+        for field, value, expected in [('domain', {'name': 'other'}, 'domain expected='),
+                                       ('created_by', 'genie_code', 'created_by expected='),
+                                       ('run_id', 123, 'run_id must be')]:
+            with self.subTest(field=field):
+                prior = self.manifest[field]
+                self.manifest[field] = value
+                self.persist()
+                with self.assertRaisesRegex(RuntimeError, expected):
+                    self.verify()
+                self.manifest[field] = prior
+    def test_normalized_domain_does_not_bypass_run_parity(self):
+        self.manifest.update(domain={'name': 'demo'}, run_id='another-run')
+        self.persist()
+        with self.assertRaisesRegex(RuntimeError, 'lifecycle parity mismatch'):
+            self.verify()
     def test_text_completion_cannot_replace_manifest(self):
         with self.assertRaisesRegex(RuntimeError,'locator required'):
             verify_terminal(self.ws,[],example_dir=self.example,domain='demo')
