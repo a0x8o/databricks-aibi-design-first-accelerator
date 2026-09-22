@@ -151,6 +151,15 @@ lifecycle_contract_version: 1
 For a new run, `run_id` equals the candidate UUID. For a resume, it equals the selected entry.
 Any mismatch is `RUN_SELECTION_AUTHORITY_ERROR`; do not switch branches or manufacture identity.
 
+**Allocation is not context persistence.** A new selection reserves the registry entry and
+returns the future `run_context_path`; the file does not exist yet. Continue through 0.4–0.8,
+build the full frozen context, persist it through the workspace store, and verify exact readback.
+Do not read a newly allocated context as an existing input, emit `run_selected: completed`,
+or launch asset creation before that barrier. Started/update progress is informational only.
+A missing context during this same active bootstrap must be resolved by finishing its
+authorized context write, not allocating another version or writing a placeholder context.
+An orphan from a previous interrupted allocation still follows the resolver's recovery rules.
+
 ### 0.3 Lifecycle Parity and Explicit Retry
 
 The canonical lifecycle tuple is:

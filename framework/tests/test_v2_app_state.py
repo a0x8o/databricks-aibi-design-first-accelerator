@@ -83,7 +83,9 @@ class MirrorTests(unittest.TestCase):
         self.ws.files[path] = json.dumps(dict(run_id='canonical', domain={'name':'demo'},
             version={'number':3}, created_by='app', run_context_path=path, output_folder=path.rsplit('/',1)[0]))
         self.adapter.event('phase_update', dict(step_name='load_configuration',
-            phase_id='run_selected', status='completed', stats={'run_context_path':path}))
+            phase_id='run_selected', status='completed', stats={'run_context_path':path},
+            _validated_run_selection=dict(canonical_run_id='canonical', version=3,
+                run_context_path=path, output_folder=path.rsplit('/',1)[0])))
         self.assertEqual(self.run['version'], 3)
         self.assertEqual(self.run['canonical_run_id'], 'canonical')
     def test_tool_error_survives_snapshot(self):

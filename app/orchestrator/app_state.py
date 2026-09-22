@@ -7,8 +7,6 @@ import copy
 import json
 import logging
 import time
-import posixpath
-import yaml
 from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
@@ -59,26 +57,19 @@ class AppStateMirror:
 
     def event(self, name, data):
         if name == 'phase_update':
-            if data.get('phase_id') == 'run_selected':
-                path = (data.get('stats') or {}).get('run_context_path')
-                domain_root = posixpath.dirname(posixpath.dirname(self.path))
-                if not isinstance(path, str) or posixpath.normpath(path) != path or not path.startswith(domain_root+'/'):
-                    raise ValueError('App run locator is outside its domain')
-                context = yaml.safe_load(self.workspace.read_file(path))
-                domain = context.get('domain')
-                if isinstance(domain, dict):
-                    domain = domain.get('name')
-                if domain != self.run['domain'] or context.get('created_by') != 'app' or context.get('run_context_path') != path:
-                    raise ValueError('App run locator identity mismatch')
-                version = context['version']
-                self.run.update(canonical_run_id=context['run_id'], run_context_path=path,
-                    version=version.get('number') if isinstance(version, dict) else version,
-                    output_folder=context['output_folder'])
+            if data.get('phase_id') == 'run_selected' and data.get('status') == 'completed':
+                # The tool authenticates readback and returns failures to the agent.
+                # UI callbacks never read an announced, potentially not-yet-created file.
+                selection = data.get('_validated_run_selection')
+                if not isinstance(selection, dict):
+                    raise ValueError('Completed App selection lacks tool-verified readback')
+                self.run.update(selection)
             step = data.get('step_name') or self.run.get('current_step') or 'master'
             self.run['current_step'] = step
             info = self.run.setdefault('step_data', {}).setdefault(step,
                 dict(step_name=step, status='running', phases=[], tool_calls=[]))
             phase = dict(data)
+            phase.pop('_validated_run_selection', None)
             if phase.get('status') in ('started', 'update'):
                 phase['status'] = 'running'
                 info['status'] = 'running'

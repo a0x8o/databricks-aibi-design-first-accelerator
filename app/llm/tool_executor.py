@@ -420,6 +420,44 @@ class ToolExecutor:
         except Exception as e:
             return f"ERROR calling vision model: {str(e)}"
 
+    def _read_run_selection(self, path):
+        """Authenticate a completed selection inside the tool's error boundary.
+
+        Resolver allocation returns a future context path; only the master writes
+        the context. A progress callback must never try to perform that bootstrap.
+        """
+        import posixpath
+        import yaml
+        root = self._config.example_dir.rstrip('/')
+        if (not isinstance(path, str) or posixpath.normpath(path) != path
+                or not path.startswith(root + '/') or posixpath.basename(path) != 'run_context.yaml'):
+            raise ValueError('RUN_SELECTION_AUTHORITY_ERROR: invalid domain context locator')
+        class UniqueLoader(yaml.SafeLoader):
+            pass
+        def mapping(loader, node, deep=False):
+            result = {}
+            for key, value in node.value:
+                key = loader.construct_object(key, deep=deep)
+                if key in result:
+                    raise ValueError('RUN_SELECTION_AUTHORITY_ERROR: duplicate contract key')
+                result[key] = loader.construct_object(value, deep=deep)
+            return result
+        UniqueLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, mapping)
+        context = yaml.load(self._ws.read_file(path), Loader=UniqueLoader)
+        if not isinstance(context, dict):
+            raise ValueError('RUN_SELECTION_AUTHORITY_ERROR: context must be a mapping')
+        domain, version = context.get('domain'), context.get('version')
+        domain = domain.get('name') if isinstance(domain, dict) else domain
+        version = version.get('number') if isinstance(version, dict) else version
+        if (domain != self._config.domain_name or context.get('created_by') != 'app'
+                or context.get('run_context_path') != path
+                or context.get('output_folder') != posixpath.dirname(path)
+                or type(version) is not int or version < 1
+                or not isinstance(context.get('run_id'), str) or not context['run_id']):
+            raise ValueError('RUN_SELECTION_AUTHORITY_ERROR: context identity mismatch')
+        return dict(canonical_run_id=context['run_id'], run_context_path=path,
+                    version=version, output_folder=context['output_folder'])
+
     def _handle_report_progress(self, args: dict) -> str:
         """Handle progress reporting from the LLM.
 
@@ -427,7 +465,11 @@ class ToolExecutor:
         logical step is happening (e.g., Parse ERD, Build Semantic Model).
         The structured data flows to both:
         - App UI via SSE events (real-time)
-        - run_manifest.json via event_callback (persistent)
+        - App workspace snapshot and Lakebase mirror (persistent UI state)
+
+        The master alone writes the canonical run manifest. Completed v2 selection
+        events authenticate their context here so read errors become tool feedback,
+        not exceptions escaping the UI callback.
 
         Returns a JSON string that the agent_event_bridge parses and
         re-emits as a 'phase_update' event.
@@ -445,6 +487,19 @@ class ToolExecutor:
             "happenings": args.get("happenings", []),
             "findings": args.get("findings", []),
         }
+        if (getattr(self._config, 'agent_skills_version', None) == 'v2'
+                and progress['phase_id'] == 'run_selected' and progress['status'] == 'completed'):
+            try:
+                progress['_validated_run_selection'] = self._read_run_selection(
+                    (progress['stats'] or {}).get('run_context_path'))
+            except Exception as exc:
+                return (
+                    f"ERROR: RUN_SELECTION_NOT_ACKNOWLEDGED: {exc}. "
+                    "The resolver returns a locator; allocation does not create run_context.yaml. "
+                    "Follow the master's freeze-and-persist step and verify workspace readback "
+                    "before reporting run_selected completed. Check the exact path and read permissions; "
+                    "do not allocate another version, invent an empty context, or proceed to asset creation."
+                )
         logger.info(f"Progress: {progress['phase_name']} [{progress['status']}]")
         return json.dumps(progress)
 
