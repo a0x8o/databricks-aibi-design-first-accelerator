@@ -4,7 +4,7 @@
 # Domain config (catalogs, KPIs, assets, ERD) lives in kpi_domains/<domain>/accelerator.yaml.
 #
 # Deploy:  databricks bundle deploy -t dev
-# Genie:   run framework/agent_skills/<version>/00_master_prompt.md (reads both YAML files)
+# Genie:   run framework/agent_skills/v2/prompts/00_master_prompt.md (reads both YAML files)
 # Version is set per-domain in accelerator.yaml → workspace.agent_skills_version
 
 bundle:

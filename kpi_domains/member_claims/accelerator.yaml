@@ -11,7 +11,7 @@ paths:
   databricks_yml: ../../databricks.yml
   framework_root: ../../framework
   framework_prompts: ../../framework/agent_skills
-  master_prompt: ../../framework/agent_skills/{agent_skills_version}/00_master_prompt.md
+  master_prompt: ../../framework/agent_skills/{agent_skills_version}/prompts/00_master_prompt.md
 workspace:
   short_name: null
   agent_skills_version: v2
@@ -51,7 +51,7 @@ assets:
     notebook_name: genie_space_configuration_member_claims
   sample_queries_file: sample_queries_member_claims.sql
 templates:
-  genie_notebook: ../../framework/templates/genie_space_notebook.py.template
+  genie_notebook: ../../framework/templates/v2_genie_space_notebook.py.template
   ddl_notebook: ../../framework/templates/ddl_notebook.py.template
   dbldatagen_notebook: ../../framework/templates/dbldatagen_notebook.py.template
 pipeline:
@@ -79,7 +79,7 @@ llm:
   temperature: 1
   max_tokens: 32000
   steps:
-    parse_erd:
+    erd_parse:
       model: databricks-gpt-5-5
       capability: vision
       instruction: Must use vision model to read ERD image directly. Never read from

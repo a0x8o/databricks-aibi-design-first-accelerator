@@ -277,7 +277,9 @@ class AgentLoop:
                 # Treat as implicit completion
                 logger.info(f"Agent loop ended at iteration {iterations} (no more tool calls)")
                 return AgentResult(
-                    success=True,
+                    success=context_vars.get("STEP_NAME") != "master",
+                    error=("Master ended without report_step_complete and a canonical manifest"
+                           if context_vars.get("STEP_NAME") == "master" else None),
                     summary=assistant_content[:500] if assistant_content else "Step completed.",
                     iterations=iterations,
                     tool_calls_made=tool_calls_made,
@@ -461,6 +463,8 @@ class AgentLoop:
 
                 # Emit tool result event
                 if callback:
+                    if tool_name == 'report_progress' and not is_error and context_vars.get('STEP_NAME') == 'master':
+                        callback('phase_update', json.loads(result_str))
                     callback("tool_result", {
                         "tool": tool_name,
                         "iteration": iterations,
@@ -728,6 +732,27 @@ class AgentLoop:
         (which are environment-agnostic) and the actual tools available
         in App mode. This keeps prompts portable to Genie Code.
         """
+        if context_vars.get("STEP_NAME") == "master":
+            return "\n".join([
+                "Execute the supplied v2 master prompt as the pipeline orchestrator.",
+                "The shared agent_transport contract maps operations to the available tools.",
+                "Load active-stage instructions, validation and guardrails from workspace files.",
+                "Use deploy_from_template for deployment notebooks; execute_python is an isolated",
+                "subprocess with SDK access, so reload attested modules and state in each call.",
+                "Use the frozen WorkspaceStore for lifecycle state; Lakebase is optional telemetry.",
+                "Do not use file-existence resume shortcuts or the app's legacy version resolver.",
+                "report_progress reports phases; report_step_complete terminates THIS MASTER RUN.",
+                "Include the owning stage as step_name on every report_progress call.",
+                "Immediately after selecting and persisting run_context, report_progress with",
+                "step_name=load_configuration, phase_id=run_selected, status=completed, and",
+                "stats.run_context_path set to that exact path so the App can persist the resume locator.",
+                "Call report_step_complete only after terminal lifecycle commit and include the",
+                "exact canonical root run_manifest.json path in artifacts, including on failure.",
+                "Re-read active instructions if prior tool content has been compressed.",
+                "Invocation (caller settings to resolve before freezing):",
+                json.dumps(context_vars, sort_keys=True),
+                supplement,
+            ])
         parts = [
             "You are an AI/BI Studio pipeline agent executing a framework prompt.",
             "",

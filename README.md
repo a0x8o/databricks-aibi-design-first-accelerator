@@ -19,6 +19,9 @@ Built for **customers**, **data platform teams**, **analytics engineers**, and *
 
 ---
 
+For the master-led v2 chain in Genie Code, the Agentic App, or another agent, see
+[Portable v2 execution and migration](docs/v2-portable-execution.md).
+
 ## Get started in 3 steps
 
 From clone to a full synthetic healthcare stack on your workspace in three moves.
@@ -79,7 +82,7 @@ Files sync to:
 Open **Databricks Genie** (agent) and paste:
 
 ```
-Execute the master prompt at /Workspace/Users/<you>/aibi-design-first-accelerator/framework/agent_skills/<version>/00_master_prompt.md with EXAMPLE_DIR /Workspace/Users/<you>/aibi-design-first-accelerator/kpi_domains/member_claims — run end to end.
+Execute the master prompt at /Workspace/Users/<you>/aibi-design-first-accelerator/framework/agent_skills/v2/prompts/00_master_prompt.md with EXAMPLE_DIR /Workspace/Users/<you>/aibi-design-first-accelerator/kpi_domains/member_claims — run end to end.
 ```
 
 Replace `<you>` with your workspace user name. The master prompt loads `accelerator.yaml` from **EXAMPLE_DIR** and runs the full pipeline.
@@ -377,7 +380,7 @@ aibi-design-first-accelerator/
 └── VALIDATION.md            # → docs/design.md#validation
 ```
 
-Genie pipeline: `framework/agent_skills/<version>/00_master_prompt.md` → steps `01`–`06`. Details: [Design guide](docs/design.md).
+Genie pipeline: `framework/agent_skills/v2/prompts/00_master_prompt.md` → steps `01`–`06`. Details: [Design guide](docs/design.md).
 
 ---
 

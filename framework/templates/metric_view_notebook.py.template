@@ -378,8 +378,7 @@ for mv in MV_SPECS:
         smoke_val = smoke.result.data_array[0][0] if smoke.result and smoke.result.data_array else None
         print(f"  {view_name}: MEASURE(`{first_measure}`) = {smoke_val} (PASS)")
     except RuntimeError as e:
-        smoke_pass = False
-        print(f"  {view_name}: MEASURE() smoke test FAILED: {e}")
+        raise RuntimeError(f"Verification FAILED: {view_name} MEASURE() query: {e}") from e
 
     # Check 3: DESCRIBE for readback
     try:
@@ -390,8 +389,10 @@ for mv in MV_SPECS:
                 if row[0] and not row[0].startswith("#"):
                     cols.append(row[0])
         READBACK_DATA.append({"view": view_name, "columns": json.dumps(sorted(cols))})
-    except RuntimeError:
-        READBACK_DATA.append({"view": view_name, "columns": ""})
+    except RuntimeError as e:
+        raise RuntimeError(f"Verification FAILED: {view_name} DESCRIBE: {e}") from e
+    if not cols:
+        raise RuntimeError(f"Verification FAILED: {view_name} returned no columns")
 
     VERIFICATION_RESULTS.append({
         "view": view_name, "exists": view_exists,

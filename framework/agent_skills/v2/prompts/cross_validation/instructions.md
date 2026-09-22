@@ -1,5 +1,7 @@
 # AIBI Design-First Accelerator — Terminal Cross-Validation Stage
 
+> **Transport:** apply the frozen `shared/agent_transport.md` contract. Tool names are portable operations; App/Lakebase integration is optional. Runtime paths come only from `contracts/release.yaml`.
+
 ## Contract Loading
 
 Always load `{AGENT_SKILLS_DIR}/prompts/cross_validation/validation.md`, `{AGENT_SKILLS_DIR}/prompts/cross_validation/guardrails.md`,
@@ -133,8 +135,49 @@ or embed a substitute implementation in this prompt.
 
 ## Stage 3 — Perform Current Readback
 
-Call the authenticated `run_cross_validation` once with the bound workspace client, exact frozen
-scope, exact current-run locators, and exact frozen quality policies. The helper must read current
+Call the authenticated `run_cross_validation(workspace_client, scope=scope,
+quality_gates=run_context["quality_gates"], validation=run_context["validation"])` once.
+The function returns a diagnostic mapping on PASS and FAIL; always persist it using
+`write_ground_truth_validation(path, report, source="cross_validation_sweep", store=store)`.
+That writer returns the persisted raw-byte digest. Never turn an exception into PASS.
+
+The scope uses this executable schema in addition to the identity/hash fields above:
+
+```yaml
+warehouse_id: <frozen warehouse>
+enabled_asset_classes: [tables, metric_views, dashboards, genie_spaces]
+expected_inventory:
+  tables:
+    - sql_fqn: "`catalog`.`schema`.`table`"
+      columns: [[column_name, exact_describe_type]]
+      definition: <authenticated producer SHOW CREATE TABLE readback>
+      validation_queries: [{sql: "SELECT COUNT(*) FROM ...", check: positive_count}]
+  metric_views:
+    - sql_fqn: "`catalog`.`schema`.`metric_view`"
+      columns: [[column_name, exact_describe_type]]
+      definition: <authenticated producer SHOW CREATE TABLE readback>
+      validation_queries: [{sql: "SELECT MEASURE(...) FROM ...", check: nonempty}]
+  dashboards:
+    - id: <authenticated locator>
+      name: <exact handoff display name>
+      expected: <the producer validator's authenticated expected argument>
+  genie_spaces:
+    - id: <authenticated locator>
+      name: <exact handoff title>
+      expected: <the producer validator's authenticated expected argument>
+      benchmark_evidence: {run_id: ..., space_id: ..., readback_sha256: ..., passed: 15, total: 15}
+```
+
+Disabled classes are empty arrays and absent from enabled_asset_classes. Generated
+intermediate materialized views belong in `tables` with their producer's definition,
+columns and readiness queries; their scope comes from the Metric View plan, not table_spec.
+Every enabled class must be nonempty. Bind producer definitions to their validated intent
+before constructing scope. Every implemented KPI contributes an executed validation query.
+Authenticate benchmark evidence against its current-run artifact fingerprint and preserve
+per-question execution evidence; it cannot be fabricated from configuration counts.
+Persist the complete scope as `{OUTPUT_FOLDER}/cross_validation_scope.json` before readback,
+re-read it, and require its canonical digest to equal the report's scope_inputs_sha256.
+Documentation reads that exact scope file to recompute the digest. The helper must read current
 reality rather than copy producer assertions.
 
 Required checks include:

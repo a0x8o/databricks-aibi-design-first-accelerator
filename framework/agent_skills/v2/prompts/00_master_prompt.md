@@ -32,6 +32,12 @@ documentation content, API validation implementations, or stage-specific retry m
 
 ## Mandatory Global Inputs
 
+First read `{AGENT_SKILLS_DIR}/prompts/shared/agent_transport.md` and
+`{AGENT_SKILLS_DIR}/contracts/release.yaml`. Complete their capability preflight and
+configuration normalization before allocating a run. Their portable transport and
+workspace-only lifecycle rules govern all host-specific examples below. Stage tool
+names are operations that the host maps to native tools or authenticated SDK calls.
+
 Before resolution or stage execution, read and apply:
 
 1. `{AGENT_SKILLS_DIR}/prompts/shared/global_guardrails.md`;
@@ -114,8 +120,9 @@ resolver selects an authenticated same-run resume.
 ### 0.2 Select the Version Through the Shared Resolver
 
 Resolve the caller-supplied registry path once as `{EXAMPLE_DIR}/version_registry.yaml`. Call only
-the release-owned `{REPO_ROOT}/app/shared/resolve_version.py` with exact `registry_path`,
-`created_by`, mode, one candidate UUID, and any explicit version. Never reimplement the resolver,
+the release-owned `{REPO_ROOT}/framework/shared/run_contract.py` `resolve_version()` with
+the exact keyword arguments and WorkspaceStore in `shared/agent_transport.md`.
+Never reimplement the resolver,
 select a context by directory scan, or substitute another registry.
 
 | Mode | Same-owner `running` | Same-owner `failed` | Terminal or legacy orphan |
@@ -133,7 +140,7 @@ Require this immutable selection:
 version: <positive integer>
 version_suffix: "_v<N>"
 is_new: <boolean>
-created_by: <app|genie_code>
+created_by: <stable execution-owner string>
 run_id: <canonical non-empty UUID>
 output_folder: <absolute normalized path>
 run_context_path: <output_folder>/run_context.yaml
@@ -154,8 +161,8 @@ The canonical lifecycle tuple is:
 ```
 
 Before resume and every terminal mutation, require exact tuple parity across records that have
-reached their creation point: selected registry entry, `run_context.yaml`, canonical root manifest,
-and the exact Lakebase row when configured.
+reached their creation point: selected registry entry, `run_context.yaml`, and canonical root manifest.
+Optional telemetry is excluded from lifecycle parity.
 
 A failed run reopens only under the resolver's exclusive lifecycle lock for explicit retry. It must
 authenticate failed parity, copy and digest-verify the failed manifest into immutable attempt
@@ -493,8 +500,8 @@ For every configurable stage:
 5. Execute that prompt's exact gates, deterministic runtime, retries, readback, and output contract.
 6. Accept completion only after direct validation evidence authenticates and durable phase state is
    acknowledged. For every reusable phase, this includes an atomic `run_context.yaml` upsert and
-   exact re-read in both modes; App mode additionally requires structured-JSON Lakebase commit and
-   readback. Re-read the required producer record immediately before invoking a downstream
+   exact re-read through the frozen store in every host. App/Lakebase telemetry is an optional
+   mirror, not a stage dependency. Re-read the required producer record immediately before invoking a downstream
    notebook. A PASS artifact without that record is `CHECKPOINT_PERSISTENCE_ERROR`, not permission
    to continue or rerun successful deployment work.
 7. Preserve failure classification and owner. Only then authenticate the frozen runbook and load
@@ -577,14 +584,18 @@ inability to produce a trustworthy requested solution. Any retained `STALE` phas
 
 ## Terminal Lifecycle Transaction
 
-Commit the chosen status with the same tuple in this order:
+Call the attested `run_contract.commit_terminal()` with the master-composed manifest.
+It holds the lifecycle lock throughout the following workspace transaction and
+verifies byte readback, identity parity, and rollback on failure:
 
 1. atomically write and re-read the root manifest;
 2. update and re-read resolver-selected `run_context.yaml` terminal fields;
 3. under the lifecycle lock, compare registry bytes/digest to the authenticated preimage, mutate
    only the selected entry at frozen `registry_path`, atomically replace, and re-read;
-4. update and re-read the exact Lakebase row when configured;
-5. require full tuple and outcome parity across every store.
+4. require full tuple and outcome parity across the workspace stores.
+
+After commit, an optional host adapter may mirror the result to Lakebase/UI telemetry.
+It must not change workspace lifecycle authority or block a portable agent.
 
 On mandatory failure, perform the same transaction with `failed` before reporting the halt. A
 partial write is `RUN_LIFECYCLE_AUTHORITY_ERROR`; never report success while stores differ.

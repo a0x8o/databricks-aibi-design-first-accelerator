@@ -55,6 +55,33 @@ class StateStore:
 
     # --- SQL Helpers ---
 
+    def open_app_execution(self, run_id):
+        """Hold a session lock so other UI workers can distinguish live from stopped."""
+        conn = self._connect()
+        try:
+            cur = conn.cursor()
+            cur.execute('SELECT pg_try_advisory_lock(hashtext(%s)::bigint)', ('aibi-app:'+run_id,))
+            acquired = cur.fetchone()[0]
+            conn.commit()
+            if not acquired:
+                raise RuntimeError('This App run already has an active execution owner')
+            return conn
+        except Exception:
+            conn.close()
+            raise
+
+    def app_execution_active(self, run_id):
+        conn = self._connect()
+        try:
+            cur = conn.cursor()
+            cur.execute('SELECT pg_try_advisory_lock(hashtext(%s)::bigint)', ('aibi-app:'+run_id,))
+            acquired = cur.fetchone()[0]
+            conn.commit()
+            return not acquired
+        finally:
+            # Closing releases a successful probe lock, never another owner's lock.
+            conn.close()
+
     def _execute(self, sql: str, params: tuple = ()) -> list:
         """Execute SQL and return all rows as list of dicts."""
         conn = self._connect()
@@ -181,6 +208,14 @@ class StateStore:
         if not runs:
             return None
         run = runs[0]
+        config = run.get('config_json') or {}
+        if isinstance(config, str):
+            config = json.loads(config)
+        run['agent_skills_version'] = config.get('agent_skills_version')
+        if config.get('agent_skills_version') == 'v2' and config.get('app_snapshot'):
+            snapshot = config['app_snapshot']
+            return {**run, **snapshot, 'config_json': config,
+                    'steps': list(snapshot.get('step_data', {}).values())}
         steps = self._execute(
             "SELECT * FROM public.steps WHERE run_id = %s ORDER BY step_index ASC", (run_id,)
         )
@@ -194,6 +229,34 @@ class StateStore:
             step["phases"] = phases_by_step.get(step["step_name"], [])
         run["steps"] = steps
         return run
+
+    def persist_app_snapshot(self, snapshot: dict) -> None:
+        """Atomic, monotonic App mirror; failures propagate for outbox replay."""
+        revision = int(snapshot['mirror_revision'])
+        row = self._execute_one(
+            """UPDATE public.runs SET
+                 config_json = jsonb_set(COALESCE(config_json, '{}'::jsonb),
+                                        '{app_snapshot}', %s::jsonb),
+                 status = %s, current_step = %s, progress_pct = %s,
+                 error = %s, version = %s, completed_at = %s, updated_at = NOW()
+               WHERE run_id = %s AND
+                 COALESCE((config_json->'app_snapshot'->>'mirror_revision')::bigint, -1) < %s
+               RETURNING run_id""",
+            (json.dumps(snapshot), snapshot['status'], snapshot.get('current_step'),
+             snapshot.get('progress_pct', 0), snapshot.get('error'), snapshot.get('version'),
+             snapshot.get('completed_at'),
+             snapshot['run_id'], revision))
+        if row is None:
+            current = self._execute_one('SELECT config_json FROM public.runs WHERE run_id = %s',
+                                        (snapshot['run_id'],))
+            config = (current or {}).get('config_json') or {}
+            if isinstance(config, str):
+                config = json.loads(config)
+            saved = config.get('app_snapshot') or {}
+            if saved.get('mirror_revision', -1) < revision:
+                raise RuntimeError('App mirror run row missing or snapshot not acknowledged')
+            if saved.get('mirror_revision') == revision and saved != snapshot:
+                raise RuntimeError('App mirror conflicting revision')
 
     def get_active_runs(self) -> list:
         return self._execute(
@@ -517,6 +580,11 @@ class StateStore:
         )
         if not run:
             return None
+        config = run.get('config_json') or {}
+        if isinstance(config, str):
+            config = json.loads(config)
+        if config.get('agent_skills_version') == 'v2' and config.get('app_snapshot'):
+            return {**config['app_snapshot'], 'config_json': config}
 
         # Load steps
         steps = self._execute(
@@ -582,6 +650,8 @@ class StateStore:
         # Build the run dict in the same shape as _runs[run_id]
         return {
             'run_id': run_id,
+            'agent_skills_version': config.get('agent_skills_version'),
+            'config_json': config,
             'domain': run.get('domain', ''),
             'status': run.get('status', 'unknown'),
             'current_step': run.get('current_step'),

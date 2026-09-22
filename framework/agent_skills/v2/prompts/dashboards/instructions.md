@@ -1,5 +1,7 @@
 # Create Dashboards
 
+> **Transport:** apply the frozen `shared/agent_transport.md` contract. Tool names are portable operations; App/Lakebase integration is optional. Runtime paths come only from `contracts/release.yaml`.
+
 > **Always load for this stage:** `{AGENT_SKILLS_DIR}/prompts/shared/global_guardrails.md`, `{AGENT_SKILLS_DIR}/prompts/dashboards/validation.md`, `{AGENT_SKILLS_DIR}/prompts/dashboards/guardrails.md`, `{AGENT_SKILLS_DIR}/prompts/shared/state_contract.md`, `{AGENT_SKILLS_DIR}/prompts/shared/sql_generation_rules.md`.
 > **Failure-only:** authenticate `run_context.inputs.stage_runbooks.create_dashboards` and load only the matching section of `{AGENT_SKILLS_DIR}/prompts/dashboards/runbook.md` after a classified failure. Never load the runbook on the normal success path.
 
@@ -356,7 +358,7 @@ where configured.
 
 ### How to Load the Template Helpers
 
-The helper template has a `.template` extension and must be copied to a digest-qualified `.py` path before loading. Populate all four notebook placeholders below exactly from the already authenticated `run_context`; use this boilerplate at the top of every `execute_python` call that builds dashboards.
+The release-selected helper may have a `.py` or `.template` extension and must be copied to a digest-qualified `.py` path before loading. Populate all four notebook placeholders below exactly from the already authenticated `run_context`; use this boilerplate at the top of every `execute_python` call that builds dashboards.
 
 Use the **G-12 canonical path derivation** from `{AGENT_SKILLS_DIR}/prompts/shared/global_guardrails.md`:
 
@@ -585,11 +587,11 @@ except (TypeError, ValueError) as exc:
 _validator_parameters = list(_validator_signature.parameters.values())
 _validator_names = [parameter.name for parameter in _validator_parameters]
 if _validator_names != [
-    "workspace_client", "dashboard_id", "display_name", "quality_gates"
+    "workspace_client", "dashboard_id", "display_name", "quality_gates", "expected"
 ]:
     raise RuntimeError(
         "DASHBOARD_HELPER_CONTRACT_ERROR: expected "
-        "validate_dashboard_from_api(workspace_client, dashboard_id, display_name, quality_gates=...)"
+        "validate_dashboard_from_api(workspace_client, dashboard_id, display_name, quality_gates=..., expected=...)"
     )
 if (
     any(
@@ -599,7 +601,6 @@ if (
     )
     or _validator_parameters[3].kind
     not in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
-    or _validator_parameters[3].default is inspect.Parameter.empty
 ):
     raise RuntimeError(
         "DASHBOARD_HELPER_CONTRACT_ERROR: incompatible canonical dashboard validator signature"
@@ -608,7 +609,7 @@ if (
 _sentinel = object()
 try:
     _validator_signature.bind(
-        _sentinel, _sentinel, _sentinel, quality_gates=_sentinel
+        _sentinel, _sentinel, _sentinel, quality_gates=_sentinel, expected=_sentinel
     )
 except TypeError as exc:
     raise RuntimeError(
@@ -990,6 +991,10 @@ _require_count_contract(
     and set(deployment_inputs_by_dashboard) == set(expected_readback_counts_by_dashboard),
     "deployment-input inventory does not equal the validated dashboard design inventory",
 )
+# `store` is the attested run_contract.WorkspaceStore(w).
+# KPI context IDs come from the validated design; they must identify real compiled widgets.
+expected_contracts = {}
+dashboard_helpers_module.configure_runtime(w, gate_checks_module, store, expected_contracts)
 for display_name in sorted(expected_readback_counts_by_dashboard):
     deployment_input = deployment_inputs_by_dashboard[display_name]
     _require_count_contract(
@@ -998,6 +1003,13 @@ for display_name in sorted(expected_readback_counts_by_dashboard):
         f"invalid deployment inputs for {display_name!r}",
     )
     expected_readback_counts = expected_readback_counts_by_dashboard[display_name]
+    expected_contracts[display_name] = {
+        "workspace_host": run_context["runtime"]["workspace_host"],
+        "warehouse_id": warehouse_id,
+        "serialized_dashboard": dashboard_helpers_module.build_serialized_dashboard(
+            deployment_input["datasets"], deployment_input["pages"], deployment_input["filter_dimensions"]),
+        "primary_kpi_contexts": primary_kpi_contexts_by_dashboard[display_name],
+    }
     result = deploy_dashboard(
         display_name,
         warehouse_id,
@@ -1014,7 +1026,7 @@ for display_name in sorted(expected_readback_counts_by_dashboard):
             f"POST_DEPLOY_DASHBOARD: deployment returned no identity for {display_name}"
         )
     api_validation = validate_dashboard_from_api(
-        w, result["dashboard_id"], display_name, quality_gates=quality_gates
+        w, result["dashboard_id"], display_name, quality_gates=quality_gates, expected=expected_contracts[display_name]
     )
 
     _require_dashboard_readback(
@@ -1162,7 +1174,7 @@ Do not bypass `MEASURE()` with raw-table calculations merely to make a visualiza
 
 1. The dashboard has been created via the Lakeview API (you have a `dashboard_id`)
 2. The dashboard has been published via `POST /api/2.0/lakeview/dashboards/{id}/published`
-3. `validate_dashboard_from_api(w, dashboard_id, name, quality_gates=quality_gates)` from the attested `gate_checks.py` has been called and returned the complete PASS mapping required below
+3. `validate_dashboard_from_api(w, dashboard_id, name, quality_gates=quality_gates, expected=expected)` from the attested `gate_checks.py` has been called and returned the complete PASS mapping required below
 4. The API readback confirmed every frozen Dashboard structural gate, exact page contract, and the
    complete `PASS|WARN` evaluation of all frozen quality targets
 5. Every filter widget's `spec.encodings.fields[]` includes BOTH:
@@ -2832,7 +2844,19 @@ Do NOT catch and suppress `GateCheckError`. If it fires, the dashboard is incomp
 
 ### Canonical API-readback result attestation
 
-For every dashboard, the only accepted post-deploy validator is the attested `gate_checks_module.validate_dashboard_from_api`. Its canonical signature is `validate_dashboard_from_api(workspace_client, dashboard_id, display_name, quality_gates=...)`; call it with the bound `WorkspaceClient`, exact returned dashboard ID, exact handoff display name, and frozen quality gates. Its return value MUST be a mapping and MUST attest all of the following before any validation artifact or successful manifest is accepted:
+The `expected` argument is required and contains the frozen `workspace_host`,
+`warehouse_id`, exact compiled `serialized_dashboard`, and `primary_kpi_contexts`
+(mapping every primary KPI ID to its duplicate-free compiled widget IDs). Assemble
+this from validated design/compiler output before any API call. In the executable
+example, bind `primary_kpi_contexts_by_dashboard` from those design mappings.
+Configure the attested builder with `configure_runtime(w, gate_checks_module, store,
+expected_contracts)` before deployment. No ambient helper/client import is permitted.
+The release-selected notebook takes `RUN_CONTEXT_PATH`, `RUN_CONTRACT_PATH`, and
+`RUN_CONTRACT_SHA256` in addition to its existing placeholders; resolve these from
+Step 0. Both validator keyword arguments are mandatory.
+
+
+For every dashboard, the only accepted post-deploy validator is the attested `gate_checks_module.validate_dashboard_from_api`. Its canonical signature is `validate_dashboard_from_api(workspace_client, dashboard_id, display_name, quality_gates=..., expected=...)`; call it with the bound `WorkspaceClient`, exact returned dashboard ID, exact handoff display name, and frozen quality gates. Its return value MUST be a mapping and MUST attest all of the following before any validation artifact or successful manifest is accepted:
 
 - `status: PASS`, `source: api_readback`, `structural_status: PASS`, and `page_contract_status: PASS`;
 - `quality_target_status: PASS|WARN`, complete `quality_target_results`, and the exact derived pair

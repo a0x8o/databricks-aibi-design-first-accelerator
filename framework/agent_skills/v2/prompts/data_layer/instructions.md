@@ -1,5 +1,7 @@
 # Create Data Layer
 
+> **Transport:** apply the frozen `shared/agent_transport.md` contract. Tool names are portable operations; App/Lakebase integration is optional. Runtime paths come only from `contracts/release.yaml`.
+
 > **Always load for this stage:** `{AGENT_SKILLS_DIR}/prompts/shared/global_guardrails.md`, `{AGENT_SKILLS_DIR}/prompts/data_layer/validation.md`, `{AGENT_SKILLS_DIR}/prompts/data_layer/guardrails.md`, `{AGENT_SKILLS_DIR}/prompts/shared/state_contract.md`, `{AGENT_SKILLS_DIR}/prompts/shared/sql_generation_rules.md`.
 > **Failure-only:** authenticate `run_context.inputs.stage_runbooks.create_data_layer` and load only the matching section of `{AGENT_SKILLS_DIR}/prompts/data_layer/runbook.md` after a classified failure. Never load the runbook on the normal success path.
 

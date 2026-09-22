@@ -1,18 +1,35 @@
 # State & Checkpoint Contract
 
+## Portable transport precedence
+
+`shared/agent_transport.md` governs host integration. In v2, freeze
+`runtime.state_store: workspace_only` in every host. The registry, run context,
+phase artifacts, and canonical manifest are authoritative workspace state. All
+App/Lakebase/event-bridge sections below describe optional telemetry adapters only;
+their absence or failure cannot gate a stage, resume, or lifecycle transaction.
+Apply workspace parity and checkpoint checks in every agent. `created_by` is a
+stable nonempty owner string, not a closed app/genie_code enum. Lifecycle writes
+use the release-selected `run_contract` helper and its cooperative lock.
+
+For a phase that consumes handoff coordinates before auto Metric View planning,
+fingerprint only the canonical immutable handoff projection excluding
+`metric_view_fqns`. Record this as CANONICAL_JSON with locator
+`<step_handoff_path>#immutable_coordinates`. The plan phase fingerprints its final
+handoff output; later identity consumers fingerprint the complete handoff. This
+prevents the authorized auto-planning update from invalidating the data layer.
+
 ## Purpose
 
 This cross-cutting contract defines how pipeline state is persisted, recovered, and
 resumed. It applies uniformly to ALL pipeline steps (01–05) and governs how `report_progress`
-calls translate into durable checkpoints in Lakebase.
+calls follow durable workspace checkpoints in every host.
 
 The system provides two guarantees after every required persistence write is acknowledged:
 
 1. **Durability** — Every reusable phase first atomically persists and re-reads its exact
    fingerprinted record in `run_context.yaml`, because deterministic notebooks consume that file
-   in both execution modes. In App mode, the same checkpoint becomes durable only after Lakebase
-   also acknowledges and returns the matching phase row. In Genie Code, the rendered progress call
-   is not persistence; the verified `run_context.yaml` write is the acknowledgement.
+   in every host. The verified `run_context.yaml` write is the acknowledgement;
+   a rendered progress call or optional telemetry write is not checkpoint persistence.
 
 2. **Resumability** — On restart, the pipeline reads durable checkpoint records and provides
    `RESUME_CONTEXT` to the LLM, which recomputes dependencies and skips only current `VALID`
@@ -28,7 +45,7 @@ business meaning, physical schema, or deployed asset content.
 Apply the claim-specific hierarchy in `{AGENT_SKILLS_DIR}/prompts/shared/global_guardrails.md` **G-3: Canonical
 Authority Hierarchy** whenever a checkpoint or artifact is used:
 
-- Lakebase is authoritative for persisted run and checkpoint records.
+- The selected workspace contracts are authoritative for lifecycle and checkpoint records.
 - `run_context.yaml` is authoritative for the resolved configuration of that run.
 - `step_handoff.yaml` is authoritative for the exact resolved identities it contains.
 - Current catalog inspection is authoritative for deployed tables, columns, types, and
@@ -51,7 +68,7 @@ others:
 |---|---|
 | Version allocation, execution owner (`created_by`), selected `run_id`, and exact `run_context_path` | The exact registry entry selected by the shared resolver |
 | Frozen run configuration and mutable phase envelope | The registry-selected `run_context.yaml` |
-| App checkpoint persistence and current App run status | Lakebase record for that exact `run_id` |
+| Optional App telemetry | Observational mirror; never resume or lifecycle authority |
 | Terminal orchestrator outcome, step results, and evidence locators | Canonical `{output_folder}/run_manifest.json` written by the master |
 | Deployed object existence/content | Current catalog or official API readback, never a lifecycle record |
 
@@ -63,29 +80,16 @@ After a run contract exists, the canonical lifecycle tuple is:
 ```
 
 Require exact parity for every tuple field carried by the selected registry entry,
-`run_context.yaml`, canonical final manifest once created, and App Lakebase row. Normalize
+`run_context.yaml`, and canonical final manifest once created. Normalize
 only the two path fields before comparison. A record may be absent only before its defined
-creation point; Lakebase is intentionally absent for Genie Code. Do not choose one record
+creation point; optional telemetry is excluded from this tuple. Do not choose one record
 and rewrite the others silently.
 
-Use these lifecycle mappings:
-
-| Run condition | Registry | `run_context.yaml` | Final manifest | Lakebase (App only) |
-|---|---|---|---|---|
-| Active | `running` | `running` | absent or explicitly non-terminal | `running` |
-| Successful terminal outcome | `completed` | `completed` | `completed` | `completed` |
-| Usable partial terminal outcome | `partial_success` | `partial_success` | `partial_success` | `partial_success` |
-| Failed/cancelled after contract creation | `failed` | `failed` | `failed` | `failed` |
-
-In Genie Code there is intentionally no Lakebase record. Its absence is not drift, but the
-registry, run context, and final manifest still must obey the same identity and lifecycle
-mapping. In App mode, a missing or contradictory Lakebase row is
-`RUN_LIFECYCLE_AUTHORITY_ERROR` and blocks resume/finalization until the App owner
-reconciles it.
-
-If the App platform separately exposes a native `cancelled` event/state, retain that value only in
-a non-lifecycle diagnostic field. The canonical Lakebase lifecycle `status` used in the tuple is
-`failed`, so exact parity and a later authenticated retry transition are unambiguous.
+Use the same status in registry, run context, and terminal manifest: `running`
+while active; `completed`, `partial_success`, or `failed` when terminal. A final
+manifest is absent before terminal commit. Cancellation after contract creation is
+`failed`; native UI cancellation labels remain optional diagnostics. Lakebase absence,
+lag, or failure never blocks a workspace checkpoint or terminal reconciliation.
 
 Every lifecycle mutation uses the exact resolver-returned path frozen byte-for-byte as
 `run_context.registry_path`; it is an immutable locator and is never reconstructed. Under the
@@ -146,7 +150,7 @@ cannot complete or roll back to the exact failed tuple, no phase may resume.
 
 A `report_progress` call with `status: "completed"` becomes a **DURABLE CHECKPOINT** only after the environment-specific persistence acknowledgement described above. Never announce durable completion before that acknowledgement. A durable completion is reusable only while its fingerprinted checkpoint remains `VALID`; durability alone never authorizes a skip.
 
-The system persists to Lakebase:
+The workspace checkpoint records contain (an optional telemetry adapter may mirror these):
 
 ```text
 run_id, step_name, phase_id, phase_name, status, current_task,
@@ -327,20 +331,16 @@ starting any dependent phase or notebook:
 3. Require exactly one matching record, exact field/type/value equality with the intended record,
    and successful frozen-run digest recomputation. A PASS artifact with a missing record is not a
    completed phase.
-4. Emit the canonical structured `report_progress(status="completed")` object. In App mode, the
-   event bridge schema-validates it, passes a native object to `persist_phase_update`, waits for
-   the Lakebase commit, then reads back the exact `(run_id, step, phase_id)` row and requires
-   checkpoint/fingerprint equality. In Genie Code, no Lakebase call is made.
+4. Emit the canonical structured `report_progress(status="completed")` object after
+   the workspace commit. An optional telemetry adapter may mirror this event; its
+   availability and acknowledgement do not affect checkpoint validity.
 5. Immediately before invoking a dependent consumer, re-read `run_context.yaml` again and require
    that the producer record remains the one exact current `VALID` record and still passes its
    phase-specific gate.
 
 Do not acknowledge completion or invoke a dependent when any write, readback, serialization,
 non-null, uniqueness, or parity check fails. Classify that failure as
-`CHECKPOINT_PERSISTENCE_ERROR`. In App mode, a Lakebase failure after the workspace commit leaves
-the phase unacknowledged: retry only the idempotent Lakebase persistence/readback within the
-configured state-store retry policy. Do not rerun a successful deployment and do not launch the
-dependent phase while the two stores disagree.
+`CHECKPOINT_PERSISTENCE_ERROR`. Telemetry failure is cosmetic after a verified workspace commit.
 
 On resume, a producer artifact and its authoritative live readback may prove that the owned work
 passed while exactly zero matching phase records prove that its checkpoint write was missed. In
@@ -435,136 +435,16 @@ Phases are the **resume and invalidation unit**. Steps are the **restart unit**.
 
 ## 2. Persistence Architecture
 
-### Write Path (every event)
+The master uses the release-selected WorkspaceStore and workspace lifecycle lock.
+Persist phase records before progress events; verify frozen inputs and current
+readbacks before reuse. In-memory App state is only a UI cache. Browser refresh or
+worker replacement must resolve through the master rather than infer completion.
 
-```text
-LLM calls report_progress / tool
-       │
-       ▼
-agent_event_bridge (pipeline.py)
-       │ emits phase_update / tool_completed / tool_failed
-       ▼
-pipeline_routes.py event_callback
-       │
-       ├──► In-memory _runs dict       (fast path — serves status polling)
-       │
-       └──► StateStore.persist_*()     (durable path — Lakebase write-through)
-            │
-            ├── upsert_phase()         (phases table — rich fields)
-            ├── append_tool_call()     (tool_calls table)
-            └── update_run_status()    (runs table — progress_pct, current_step)
-```
+## 3. Optional telemetry
 
-### Read Path (on refresh / recovery)
-
-```text
-Browser refreshes → GET /api/pipeline/run/<run_id>/status
-       │
-       ▼
-┌─────────────────────────────────────────┐
-│  run_id in _runs (in-memory)?           │
-│       │                                 │
-│  YES ──► Return from memory (fast)      │
-│       │                                 │
-│  NO  ──► Query Lakebase:                │
-│           SELECT * FROM runs            │
-│           + steps + phases + tool_calls  │
-│           WHERE run_id = ?              │
-│              │                           │
-│         Found? ── YES ──► Hydrate _runs │
-│              │             Return        │
-│         NO ──► Return 404               │
-└─────────────────────────────────────────┘
-```
-
-### Multi-Worker Safety
-
-With `workers > 1`, Lakebase is the **sole source of truth for run lifecycle and
-checkpoint records**. It is not the source of truth for domain semantics, catalog state,
-or deployed API state. In-memory `_runs` is a per-worker cache that may be stale. The
-status endpoint ALWAYS falls back to Lakebase when the in-memory cache misses.
-
-### Lakebase Availability
-
-```text
-At pipeline start:
-  Lakebase unavailable → ❌ EXECUTION HALTED (state persistence required)
-
-Mid-run:
-  Lakebase write fails → Retry with exponential backoff (3 attempts)
-  3 consecutive failures → ❌ EXECUTION HALTED
-```
-
----
-
-## 3. Lakebase Schema
-
-### Existing Tables (enhanced)
-
-```sql
--- runs: add progress_pct, current_step, run_manifest
-ALTER TABLE runs ADD COLUMN IF NOT EXISTS progress_pct INT DEFAULT 0;
-ALTER TABLE runs ADD COLUMN IF NOT EXISTS current_step TEXT;
-ALTER TABLE runs ADD COLUMN IF NOT EXISTS run_manifest JSONB;
-ALTER TABLE runs ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
-
--- phases: add rich report_progress fields
-ALTER TABLE phases ADD COLUMN IF NOT EXISTS phase_id TEXT;
-ALTER TABLE phases ADD COLUMN IF NOT EXISTS current_task TEXT;
-ALTER TABLE phases ADD COLUMN IF NOT EXISTS progress_pct INT DEFAULT 0;
-ALTER TABLE phases ADD COLUMN IF NOT EXISTS stats JSONB;
-ALTER TABLE phases ADD COLUMN IF NOT EXISTS happenings JSONB;
-ALTER TABLE phases ADD COLUMN IF NOT EXISTS findings JSONB;
-ALTER TABLE phases ADD COLUMN IF NOT EXISTS checkpoint_contract_version INT;
-ALTER TABLE phases ADD COLUMN IF NOT EXISTS checkpoint_status TEXT;
-ALTER TABLE phases ADD COLUMN IF NOT EXISTS producer_prompt_path TEXT;
-ALTER TABLE phases ADD COLUMN IF NOT EXISTS producer_prompt_version INT;
-ALTER TABLE phases ADD COLUMN IF NOT EXISTS producer_prompt_sha256 TEXT;
-ALTER TABLE phases ADD COLUMN IF NOT EXISTS producer_bundle_sha256 TEXT;
-ALTER TABLE phases ADD COLUMN IF NOT EXISTS frozen_run_contract_sha256 TEXT;
-ALTER TABLE phases ADD COLUMN IF NOT EXISTS input_fingerprints JSONB;
-ALTER TABLE phases ADD COLUMN IF NOT EXISTS output_fingerprints JSONB;
-ALTER TABLE phases ADD COLUMN IF NOT EXISTS invalidated_at TIMESTAMPTZ;
-ALTER TABLE phases ADD COLUMN IF NOT EXISTS invalidation_reason TEXT;
-ALTER TABLE phases ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
-
--- steps: add duration_s
-ALTER TABLE steps ADD COLUMN IF NOT EXISTS duration_s FLOAT;
-ALTER TABLE steps ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
-```
-
-### New Table: tool_calls
-
-```sql
-CREATE TABLE IF NOT EXISTS tool_calls (
-    id           BIGSERIAL PRIMARY KEY,
-    run_id       TEXT NOT NULL REFERENCES runs(run_id),
-    step_name    TEXT NOT NULL,
-    tool_name    TEXT NOT NULL,
-    status       TEXT NOT NULL DEFAULT 'running',
-    args_summary TEXT,
-    error        TEXT,
-    duration_ms  INT,
-    started_at   TIMESTAMPTZ DEFAULT now(),
-    completed_at TIMESTAMPTZ
-);
-
-CREATE INDEX IF NOT EXISTS idx_tool_calls_run_step
-    ON tool_calls(run_id, step_name, started_at DESC);
-```
-
-### TTL Cleanup
-
-Tool calls and events older than 30 days are eligible for cleanup:
-
-```sql
-DELETE FROM tool_calls WHERE started_at < NOW() - INTERVAL '30 days';
-DELETE FROM events WHERE created_at < NOW() - INTERVAL '30 days';
-```
-
-This can be run as a scheduled job or triggered from the Admin page.
-
----
+A host may mirror committed progress into Lakebase or another event store. Mirror
+failures are diagnostic only. No table schema, HTTP endpoint, or provisioning step
+is required by this portable prompt chain.
 
 ## 4. Resume Contract (LLM Behavior)
 
@@ -928,18 +808,9 @@ On resume: authenticate state, recompute fingerprints, then replay VALID or inva
 ## 8. Genie Code Compatibility
 
 The artifact-as-state contract works **identically** in App mode and Genie Code.
-The difference is only WHERE state is persisted:
-
-| Concern | App Mode | Genie Code |
-|---------|----------|------------|
-| run_id generation | `pipeline_routes.py` generates UUID | LLM generates UUID via `execute_python(uuid4())` |
-| State storage | Lakebase (run/checkpoints) + exact registry/run workspace contracts | Exact registry/run workspace contracts; no Lakebase |
-| Resume trigger | `RESUME_CONTEXT` plus exact resolver-selected registry/run-context paths | Exact resolver-selected registry/run-context paths |
-| Progress reporting | `report_progress` → event_callback → Lakebase | `report_progress` → rendered inline (no persistence) |
-| Phase verification | Same fingerprint gate, phase-specific contract, and current readbacks | Same fingerprint gate, phase-specific contract, and current readbacks |
-
-**In Genie Code, there is no Lakebase, no HTTP endpoints, no background threads.**
-Everything is prompt-driven. The LLM IS the runtime.
+Every host persists the same workspace contracts and uses the same resume gates.
+Native progress tools are optional; a transcript event is sufficient after verified
+workspace persistence. The master remains the orchestrator in every host.
 
 ### run_context.yaml — The Genie Code State File
 
@@ -1054,7 +925,7 @@ multiple Genie Code conversations.
 
 ### What report_progress Does in Genie Code
 
-In App mode, `report_progress` is intercepted by the event_callback and persisted to Lakebase.
+In App mode, `report_progress` may update the UI after the workspace checkpoint commit.
 In Genie Code, `report_progress` has no backend listener — but the LLM still calls it because:
 
 1. It serves as a **self-structuring checkpoint** (forces the LLM to think in phases)
@@ -1113,59 +984,15 @@ The resolution order on any run start:
 
 ---
 
-## 9. Frontend State Persistence
+## 9. Optional frontend state
 
-The browser persists `run_id` across refresh:
+A frontend may retain a run locator and display committed progress. The master
+resolves and authenticates workspace state after refresh or restart.
 
-```javascript
-// On pipeline start:
-history.replaceState(null, '', `?run_id=${runId}`);
-localStorage.setItem('last_run_id', runId);
+## 10. Host integration
 
-// On page load:
-const params = new URLSearchParams(window.location.search);
-const savedRunId = params.get('run_id') || localStorage.getItem('last_run_id');
-if (savedRunId) { currentRunId = savedRunId; startPolling(); }
-```
-
-On refresh, the poll hits the status endpoint → backend checks in-memory first,
-then falls back to Lakebase → returns full state → UI hydrates normally.
-
----
-
-## 10. Implementation Checklist
-
-### Backend (pipeline_routes.py + state_store.py)
-
-- [ ] Enhance `phases` table DDL with progress, fingerprint, producer, status, and invalidation columns
-- [ ] Create `tool_calls` table DDL
-- [ ] StateStore: `persist_phase_update(run_id, step, phase_data)` — schema-validates and persists every phase event
-- [ ] StateStore: atomically mark a phase and all graph dependents `STALE`
-- [ ] Resume loader: recompute frozen-run, producer-bundle, input, output, and readback fingerprints
-- [ ] StateStore: `persist_tool_call(run_id, step, tool_data)` — called on tool_started/completed/failed
-- [ ] StateStore: `load_run_full(run_id)` — returns runs + steps + phases + tool_calls (for recovery)
-- [ ] Status endpoint: fallback to `load_run_full()` when `_runs[run_id]` is missing
-- [ ] Wire event_callback: after in-memory update, await/confirm `state_store.persist_*()` before acknowledging a completed checkpoint
-- [ ] Pipeline start: block if `health_check()` fails
-
-### Frontend (pipeline_monitor.html)
-
-- [ ] Store `run_id` in URL query param on pipeline start
-- [ ] On page load: read `run_id` from URL → start polling immediately
-- [ ] On poll response: hydrate STEPS, substeps, activities from server state
-
-### Setup (setup_lakebase.py)
-
-- [ ] Add ALTER TABLE statements for all enhanced progress and checkpoint columns
-- [ ] Add CREATE TABLE for tool_calls
-- [ ] Add index on tool_calls(run_id, step_name, started_at DESC)
-
-### Prompts (cross-cutting)
-
-- [ ] Reference this contract from 00_master_prompt.md system message injection
-- [ ] agent_loop.py: inject RESUME_CONTEXT when resume_from is provided
-
----
+Invoke the same master prompt with the portable transport contract. Do not preselect
+stages by file existence or mutate lifecycle records in a host event callback.
 
 ## 11. Critical Tool Failure Contract
 
@@ -1213,10 +1040,10 @@ critical-failure rules.
 4. **DO** call `report_step_complete(status="failed", summary="Critical failure in {tool}: {error}")` 
 5. **DO** invoke the master-owned all-store terminal-failure transaction for the exact run: write
    the canonical failed final manifest, update the selected `run_context.yaml`, update the exact
-   registry entry, and update the exact App Lakebase row when configured; then re-read every
+   registry entry; then re-read every workspace
    participating store and require the full lifecycle tuple to agree on `failed`. The progress and
    step-complete calls are failure inputs, not a committed terminal transition by themselves. Never
-   write only `run_context.status` or only Lakebase status; do not alter frozen resolved configuration.
+   write only `run_context.status` or only registry status; do not alter frozen resolved configuration.
 
 In App mode, the failed progress/step calls persist phase/step failure evidence only; they MUST NOT
 change the top-level Lakebase run lifecycle status ahead of the all-store terminal transaction.
@@ -1229,7 +1056,7 @@ self-enforce by following this contract.
 
 - `read_file` returning "file not found" (legitimate check-before-create)
 - `execute_sql` with SELECT/SHOW/DESCRIBE (informational queries)
-- Display/reporting failure is cosmetic only in Genie Code when the corresponding `run_context.yaml` checkpoint write succeeds. A failed Lakebase checkpoint write in App mode, or a failed `run_context.yaml` write in Genie Code, is state-critical.
+- Display/telemetry failure is cosmetic after the verified workspace checkpoint commit. A failed workspace checkpoint write is state-critical in every host.
 - `describe_table` failing (table may not exist yet)
 
 For non-critical failures: retry once, then adapt or skip.
@@ -1238,12 +1065,12 @@ For non-critical failures: retry once, then adapt or skip.
 
 ## 12. Non-Negotiable Rules
 
-1. **A completed checkpoint is durable only after acknowledged environment-specific persistence.** The progress call alone is insufficient in Genie Code.
+1. **A completed checkpoint requires verified workspace persistence.** A progress call alone is insufficient in every host.
 2. **Existence is not freshness.** Skip only a current `VALID` record whose complete fingerprint and phase-specific gates pass.
 3. **Invalidate transitively.** A missing, incompatible, or mismatched dependency makes the owning phase and every graph-dependent phase `STALE` before regeneration.
-4. **Lakebase is the source of truth for run lifecycle and checkpoint records.**
+4. **Workspace contracts govern lifecycle and checkpoint records.**
    In-memory state is a cache; domain and deployed facts follow G-3.
-5. **Block on Lakebase unavailability at start.** Mid-run: retry 3x then halt.
+5. **Block on required workspace persistence failure.** Optional telemetry never blocks execution.
 6. **Same behavior in App and Genie Code.** State is environment-agnostic.
 7. **Tool calls are persisted for debuggability.** All calls, not just failures.
 8. **TTL cleanup at 30 days.** Tool calls and events are transient diagnostic data.
@@ -1251,7 +1078,7 @@ For non-critical failures: retry once, then adapt or skip.
 10. **run_id survives browser refresh.** URL query param is the primary mechanism.
 11. **Critical tool failures halt immediately.** See Section 11 above.
 12. **Lifecycle identity is reconciled before resume or terminal reporting.** Registry,
-    run context, final manifest, and App Lakebase state retain their field-scoped roles.
+    run context, and final manifest retain their field-scoped roles.
 13. **`abandoned` is read-only legacy compatibility recognized by the shared resolver only
     for a pre-contract orphan.** No current writer creates it; contract-bound unsuccessful
     runs use `failed`.

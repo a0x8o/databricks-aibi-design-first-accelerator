@@ -417,6 +417,10 @@ TOOL_DEFINITIONS = [
                         "type": "string",
                         "description": "Identifier for the phase (e.g., 'parse_erd', 'build_semantic_model', 'generate_ddl', 'generate_synthetic_data', 'validate_data')."
                     },
+                    "step_name": {
+                        "type": "string",
+                        "description": "Owning pipeline stage, required for master runs (e.g. create_data_layer, create_metric_views, create_dashboards, create_genie_space, cross_validation, generate_documentation)."
+                    },
                     "phase_name": {
                         "type": "string",
                         "description": "Human-readable name (e.g., 'Parse ERD', 'Build Semantic Model')."

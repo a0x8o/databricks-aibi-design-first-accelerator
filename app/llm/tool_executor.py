@@ -435,6 +435,7 @@ class ToolExecutor:
         import json
         progress = {
             "__progress_event__": True,  # Marker for agent_event_bridge
+            "step_name": args.get("step_name"),
             "phase_id": args.get("phase_id", ""),
             "phase_name": args.get("phase_name", ""),
             "status": args.get("status", "update"),
@@ -791,4 +792,3 @@ class ToolExecutor:
             return f"SUCCESS: Removed {path}"
         except Exception as e:
             return f"ERROR removing path: {str(e)}"
-

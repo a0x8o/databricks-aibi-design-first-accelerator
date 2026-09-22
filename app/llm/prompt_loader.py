@@ -49,6 +49,11 @@ _V2_STEP_PROMPT_FILES = {
     "generate_documentation": "prompts/documentation/instructions.md",
 }
 _V2_SUPPLEMENT_FILES = {
+    "master": [
+        "prompts/shared/agent_transport.md",
+        "prompts/shared/global_guardrails.md",
+        "prompts/shared/state_contract.md",
+    ],
     "create_data_layer": [
         "prompts/shared/global_guardrails.md",
         "prompts/data_layer/guardrails.md",
@@ -250,7 +255,7 @@ class PromptLoader:
 
             # Agent skills paths (version-resolved, so prompts never hardcode v1/v2)
             "AGENT_SKILLS_VERSION": version,
-            "AGENT_SKILLS_DIR": f"framework/agent_skills/{version}",
+            "AGENT_SKILLS_DIR": f"{self._root}/agent_skills/{version}",
 
             # Workspace paths
             "workspace.output_folder": config.output_folder,

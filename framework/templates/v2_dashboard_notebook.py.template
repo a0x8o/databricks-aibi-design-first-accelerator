@@ -1,0 +1,540 @@
+# Databricks notebook source
+# DBTITLE 1,Dashboard Deployment Tool
+# MAGIC %md
+# MAGIC # Dashboard Deployment — {{DOMAIN_NAME}}
+# MAGIC
+# MAGIC This notebook is a **dashboard compiler**: it reads a structured `dashboard_design.yaml`
+# MAGIC spec and compiles it into deployed, validated Lakeview dashboards.
+# MAGIC
+# MAGIC ## Architecture
+# MAGIC The LLM produces the design spec (WHAT to build). This template handles deployment (HOW to build it safely).
+# MAGIC All guardrails are in the code path — they cannot be skipped.
+# MAGIC
+# MAGIC ## Notebook Structure
+# MAGIC | Cell | Purpose | Action |
+# MAGIC |---|---|---|
+# MAGIC | **Cell 1** | Configuration | Catalog, schema, warehouse, paths |
+# MAGIC | **Cell 2** | Import helpers + gate_checks | Load template functions (VERBATIM) |
+# MAGIC | **Cell 3** | Schema discovery | DESCRIBE all metric views -> column registry |
+# MAGIC | **Cell 4** | Read + validate design spec | Parse dashboard_design.yaml, validate structure |
+# MAGIC | **Cell 5** | Build datasets | Generate SQL from design spec + described columns |
+# MAGIC | **Cell 6** | Build widgets + pages | Compile widgets using ONLY template builders |
+# MAGIC | **Cell 7** | Deploy + validate | deploy_dashboard() with pre/post-deploy gates |
+# MAGIC | **Cell 8** | Write manifests | Write dashboard manifests with api_readback source |
+# MAGIC
+# MAGIC ## How to Use
+# MAGIC 1. LLM fills Cell 1 (config) and writes `dashboard_design.yaml` to OUTPUT_FOLDER
+# MAGIC 2. Cells 2-8 are copied VERBATIM from this template
+# MAGIC 3. Run all cells — the template handles everything else
+# MAGIC
+# MAGIC ## PYTHON COMPATIBILITY (Python 3.11 — serverless compute):
+# MAGIC DO NOT use backslashes inside f-string expressions.
+# MAGIC Use a variable instead: sep = chr(9472) * 40; f"{sep}"
+
+# COMMAND ----------
+
+# DBTITLE 1,Configuration
+# =============================================================================
+# CONFIGURATION — LLM fills these values from accelerator.yaml + step_handoff.yaml
+# =============================================================================
+
+CATALOG = "{{CATALOG}}"
+SCHEMA = "{{SCHEMA}}"
+VERSION_SUFFIX = "{{VERSION_SUFFIX}}"
+WAREHOUSE_ID = "{{WAREHOUSE_ID}}"
+PARENT_PATH = "{{PARENT_PATH}}"
+OUTPUT_FOLDER = "{{OUTPUT_FOLDER}}"
+DEPLOY_ROOT = "{{DEPLOY_ROOT}}"
+
+# Metric view FQNs — from step_handoff.yaml metric_view_fqns
+METRIC_VIEW_FQNS = {{METRIC_VIEW_FQNS}}
+
+# Quality gates — from accelerator.yaml
+QUALITY_GATES = {{QUALITY_GATES}}
+
+print(f"Catalog:    {CATALOG}")
+print(f"Schema:     {SCHEMA}")
+print(f"Version:    {VERSION_SUFFIX}")
+print(f"Warehouse:  {WAREHOUSE_ID}")
+print(f"Output:     {OUTPUT_FOLDER}")
+print(f"Metric Views: {len(METRIC_VIEW_FQNS)}")
+for fqn in METRIC_VIEW_FQNS:
+    print(f"  - {fqn}")
+
+# COMMAND ----------
+
+# DBTITLE 1,Import Helpers + Gate Checks (VERBATIM — do not modify)
+# =============================================================================
+# IMPORT HELPERS — COPY THIS CELL EXACTLY FROM TEMPLATE
+# The helpers template provides ALL widget builders, dataset builders, and
+# deployment functions. gate_checks.py provides pre/post-deploy validation.
+# =============================================================================
+
+import json
+import os
+import re
+import sys
+import yaml
+from pathlib import Path
+
+# Portable bootstrap: only the release-pinned runtime is staged initially.
+import hashlib
+import importlib.util
+import tempfile
+from pathlib import Path
+from databricks.sdk import WorkspaceClient
+w = WorkspaceClient()
+RUN_CONTEXT_PATH = "{{RUN_CONTEXT_PATH}}"
+RUN_CONTRACT_PATH = "{{RUN_CONTRACT_PATH}}"
+RUN_CONTRACT_SHA256 = "{{RUN_CONTRACT_SHA256}}"
+with w.workspace.download(RUN_CONTRACT_PATH) as _source:
+    _runtime_bytes = _source.read()
+if hashlib.sha256(_runtime_bytes).hexdigest() != RUN_CONTRACT_SHA256:
+    raise RuntimeError("HELPER_CONTRACT_ERROR: lifecycle runtime hash mismatch")
+_runtime_file = Path(tempfile.mkdtemp(prefix="aibi_runtime_")) / "run_contract.py"
+_runtime_file.write_bytes(_runtime_bytes)
+if hashlib.sha256(_runtime_file.read_bytes()).hexdigest() != RUN_CONTRACT_SHA256:
+    raise RuntimeError("HELPER_CONTRACT_ERROR: staged lifecycle runtime hash mismatch")
+_runtime_spec = importlib.util.spec_from_file_location("aibi_runtime_" + RUN_CONTRACT_SHA256, _runtime_file)
+runtime = importlib.util.module_from_spec(_runtime_spec)
+_runtime_spec.loader.exec_module(runtime)
+store = runtime.WorkspaceStore(w)
+run_context = runtime.authenticate_context(store, RUN_CONTEXT_PATH)
+if w.config.host.rstrip("/") != run_context["runtime"]["workspace_host"].rstrip("/"):
+    raise RuntimeError("HANDOFF_AUTHORITY_ERROR: workspace host mismatch")
+gate_checks_module = runtime.load_attested(store, run_context["templates"]["gate_checks"])
+if gate_checks_module.CONTRACT_VERSION != "V2_PORTABLE_1":
+    raise RuntimeError("HELPER_CONTRACT_ERROR: unsupported gate runtime")
+GateCheckError = gate_checks_module.GateCheckError
+
+handoff = runtime.decode(store.read(run_context["output_folder"] + "/step_handoff.yaml"))
+if (OUTPUT_FOLDER != run_context["output_folder"] or QUALITY_GATES != run_context["quality_gates"]
+        or WAREHOUSE_ID != handoff["warehouse_id"] or PARENT_PATH != handoff["parent_path"]
+        or sorted(METRIC_VIEW_FQNS) != sorted(v["sql_fqn"] for v in handoff["metric_view_fqns"])):
+    raise RuntimeError("HANDOFF_AUTHORITY_ERROR: notebook placeholders disagree with frozen run")
+helpers = runtime.load_attested(store, run_context["templates"]["lakeview_dashboard_helpers"])
+EXPECTED_BY_NAME = {}
+helpers.configure_runtime(w, gate_checks_module, store, EXPECTED_BY_NAME)
+for _name in ("describe_metric_view", "validate_column_refs", "build_dataset", "build_validated_dataset",
+              "build_text_widget", "build_counter", "build_bar_chart", "build_line_chart",
+              "build_filter_widget", "build_filters_page", "build_canvas_page", "build_serialized_dashboard",
+              "deploy_dashboard", "validate_dataset_sql"):
+    globals()[_name] = getattr(helpers, _name)
+# COMMAND ----------
+
+# DBTITLE 1,Schema Discovery — DESCRIBE All Metric Views (DETERMINISM GATE)
+# =============================================================================
+# DESCRIBE every metric view to get ACTUAL column names.
+# This is the SINGLE SOURCE OF TRUTH for all column references.
+# Dataset SQL and widget field names MUST use these names, not spec text.
+# =============================================================================
+
+COLUMN_REGISTRY = {}  # {fqn: {col_name: {type, is_dimension, is_measure}}}
+
+for fqn in METRIC_VIEW_FQNS:
+    print(f"Describing {fqn}...")
+    cols = describe_metric_view(fqn, WAREHOUSE_ID)
+    if not cols:
+        raise RuntimeError(
+            f"GATE FAILURE: DESCRIBE returned 0 columns for {fqn}. "
+            f"Verify the metric view exists: SHOW VIEWS IN {CATALOG}.{SCHEMA}"
+        )
+    COLUMN_REGISTRY[fqn] = cols
+
+separator = chr(9472) * 50
+print(f"\n{separator}")
+print(f"Column Registry: {len(COLUMN_REGISTRY)} metric view(s) described")
+for fqn, cols in COLUMN_REGISTRY.items():
+    dims = [k for k, v in cols.items() if v['is_dimension']]
+    measures = [k for k, v in cols.items() if v['is_measure']]
+    print(f"  {fqn}: {len(dims)} dimensions, {len(measures)} measures")
+
+# COMMAND ----------
+
+# DBTITLE 1,Read + Validate Dashboard Design Spec
+# =============================================================================
+# READ dashboard_design.yaml — the structured spec produced by the LLM.
+# VALIDATE its structure before proceeding.
+# =============================================================================
+
+design_path = f"{OUTPUT_FOLDER}/dashboards/dashboard_design.yaml"
+design = runtime.decode(store.read(design_path))
+
+assert "dashboards" in design, f"dashboard_design.yaml missing 'dashboards' key at {design_path}"
+assert len(design["dashboards"]) > 0, "dashboard_design.yaml has 0 dashboards"
+
+# Validate each dashboard spec
+for db_spec in design["dashboards"]:
+    name = db_spec.get("name", "UNNAMED")
+    assert "name" in db_spec, f"Dashboard spec missing 'name'"
+    assert "metric_view" in db_spec or "metric_views" in db_spec, \
+        f"Dashboard '{name}' must specify 'metric_view' (single) or 'metric_views' (list)"
+    assert "pages" in db_spec and len(db_spec["pages"]) > 0, \
+        f"Dashboard '{name}' must have at least 1 page"
+    assert "filter_dimensions" in db_spec and len(db_spec["filter_dimensions"]) > 0, \
+        f"Dashboard '{name}' must have at least 1 filter dimension"
+
+    if "primary_kpi_contexts" not in db_spec:
+        raise RuntimeError("Dashboard design missing primary_kpi_contexts")
+    if len({p["id"] for p in db_spec["pages"]}) != len(db_spec["pages"]):
+        raise RuntimeError("Duplicate canvas page IDs")
+    expected_pages = db_spec["page_contract"]["expected_page_ids"]
+    if sorted(expected_pages) != sorted(p["id"] for p in db_spec["pages"]):
+        raise RuntimeError("Dashboard page inventory differs from KPI page contract")
+    # Validate each page has widgets
+    for page in db_spec["pages"]:
+        assert "title" in page, f"Page in '{name}' missing 'title'"
+        assert "widgets" in page and len(page["widgets"]) > 0, \
+            f"Page '{page.get('title', '?')}' in '{name}' has 0 widgets"
+
+        # Validate each widget has required fields
+        for w in page["widgets"]:
+            w.setdefault("type", w.get("visualization"))
+            if "dimension" not in w and len(w.get("dimensions", [])) == 1:
+                w["dimension"] = w["dimensions"][0]
+            assert "id" in w, "Widget missing stable id"
+            assert "type" in w, f"Widget in page '{page['title']}' missing 'type'"
+            assert w["type"] in ("counter", "bar", "line", "text"), \
+                f"Unknown widget type '{w['type']}' — must be counter, bar, line, or text"
+            if w["type"] != "text":
+                assert "measure" in w, f"Widget '{w.get('title', '?')}' missing 'measure'"
+                assert "title" in w, f"Widget missing 'title'"
+
+print(f"Design spec validated: {len(design['dashboards'])} dashboard(s)")
+for db_spec in design["dashboards"]:
+    print(f"  {db_spec['name']}: {len(db_spec['pages'])} pages, {len(db_spec['filter_dimensions'])} filters")
+    for page in db_spec["pages"]:
+        print(f"    - {page['title']}: {len(page['widgets'])} widgets")
+
+# COMMAND ----------
+
+# DBTITLE 1,Build Datasets from Design Spec + Column Registry
+# =============================================================================
+# BUILD DATASETS — generates SQL using ONLY described column names.
+# Each dashboard gets one dataset per metric view it references.
+# =============================================================================
+
+def build_mv_dataset(mv_fqn, dataset_name):
+    """Build a dataset for a metric view.
+
+    Metric views require MEASURE() wrapping for measure columns and GROUP BY
+    for all dimensions. Lakeview executes dataset SQL as-is, so SELECT * FROM
+    metric_view fails with METRIC_VIEW_MISSING_MEASURE_FUNCTION.
+
+    This function uses COLUMN_REGISTRY (from describe_metric_view) to build
+    the correct SQL: dimensions selected directly, measures wrapped in MEASURE(),
+    with GROUP BY on all dimensions."""
+    cols = COLUMN_REGISTRY[mv_fqn]
+    dims = sorted(k for k, v in cols.items() if v.get('is_dimension'))
+    measures = sorted(k for k, v in cols.items() if v.get('is_measure'))
+
+    select_parts = [f"`{d}`" for d in dims]
+    select_parts += [f"MEASURE(`{m}`) AS `{m}`" for m in measures]
+    col_list = ", ".join(select_parts)
+    group_list = ", ".join(f"`{d}`" for d in dims)
+    sql = f"SELECT {col_list} FROM {mv_fqn}" + (f" GROUP BY {group_list}" if dims else "")
+    return build_dataset(dataset_name, sql)
+
+
+def resolve_metric_views(db_spec):
+    """Resolve metric_view or metric_views from the design spec."""
+    if "metric_views" in db_spec:
+        mvs = db_spec["metric_views"]
+    else:
+        mvs = [db_spec["metric_view"]]
+    if not mvs or len(mvs) != len(set(mvs)) or not set(mvs) <= set(METRIC_VIEW_FQNS):
+        raise RuntimeError("HANDOFF_AUTHORITY_ERROR: use exact duplicate-free handoff FQNs")
+    return mvs
+
+
+# Build datasets for each dashboard
+DASHBOARD_DATASETS = {}  # {dashboard_name: [dataset_dicts]}
+DASHBOARD_MV_MAP = {}    # {dashboard_name: {dataset_name: mv_fqn}}
+
+for db_spec in design["dashboards"]:
+    db_name = db_spec["name"]
+    mv_fqns = resolve_metric_views(db_spec)
+    datasets = []
+    mv_map = {}
+
+    for i, mv_fqn in enumerate(mv_fqns):
+        mv_short = mv_fqn.replace("`", "").split(".")[-1]
+        ds_name = f"ds_{mv_short}" if len(mv_fqns) > 1 else "ds_main"
+
+        print(f"Building dataset '{ds_name}' from {mv_fqn}...")
+        ds = build_mv_dataset(mv_fqn, ds_name)
+        datasets.append(ds)
+        mv_map[ds_name] = mv_fqn
+
+    DASHBOARD_DATASETS[db_name] = datasets
+    DASHBOARD_MV_MAP[db_name] = mv_map
+    print(f"  {db_name}: {len(datasets)} dataset(s) built and validated")
+
+# COMMAND ----------
+
+# DBTITLE 1,Build Widgets + Pages from Design Spec
+# =============================================================================
+# COMPILE WIDGETS — uses ONLY template builder functions.
+# Widget field names are validated against COLUMN_REGISTRY.
+# Layout positions are auto-calculated.
+# =============================================================================
+
+WIDGET_BUILDERS = {
+    "counter": build_counter,
+    "bar": build_bar_chart,
+    "line": build_line_chart,
+}
+
+
+def find_dataset_for_column(col_name, mv_map):
+    """Find which dataset contains a given column.
+    Returns (dataset_name, mv_fqn) or raises if not found."""
+    for ds_name, mv_fqn in mv_map.items():
+        if col_name in COLUMN_REGISTRY.get(mv_fqn, {}):
+            return ds_name, mv_fqn
+    all_cols = {}
+    for fqn, cols in COLUMN_REGISTRY.items():
+        for c in cols:
+            all_cols[c] = fqn
+    raise AssertionError(
+        f"Column '{col_name}' not found in any metric view. "
+        f"Available columns: {sorted(all_cols.keys())}"
+    )
+
+
+def build_widget_from_spec(w_spec, mv_map, widget_idx):
+    """Compile a single widget spec dict into a Lakeview widget dict.
+    Validates all column references against COLUMN_REGISTRY."""
+    w_type = w_spec.get("type", w_spec.get("visualization"))
+
+    if w_type == "text":
+        return build_text_widget(
+            name=w_spec["id"],
+            markdown=w_spec.get("content", w_spec.get("title", "")),
+            position=w_spec.get("position", {"x": 0, "y": 0, "width": 6, "height": 1}),
+        )
+
+    measure = w_spec["measure"]
+    title = w_spec["title"]
+    agg = w_spec.get("agg", "SUM")
+    slug = re.sub(r'[^a-zA-Z0-9_-]', '', measure.replace(' ', '-').replace('_', '-'))[:20]
+    safe_name = w_spec["id"]
+
+    # Find which dataset/metric view has this measure
+    ds_name, mv_fqn = find_dataset_for_column(measure, mv_map)
+    validate_column_refs(COLUMN_REGISTRY[mv_fqn], [measure], f"widget '{title}'")
+
+    if w_type == "counter":
+        display = w_spec.get("display_name", title)
+        return build_counter(
+            name=safe_name, dataset_name=ds_name,
+            field_name=measure, display_name=display,
+            title=title, agg=agg,
+        )
+
+    elif w_type in ("bar", "line"):
+        dimension = w_spec.get("dimension")
+        assert dimension, f"Widget '{title}' (type={w_type}) must specify 'dimension'"
+        validate_column_refs(COLUMN_REGISTRY[mv_fqn], [dimension], f"widget '{title}' dimension")
+        y_display = w_spec.get("y_display", title)
+        builder = WIDGET_BUILDERS[w_type]
+        return builder(
+            name=safe_name, dataset_name=ds_name,
+            x_field=dimension, y_field=measure,
+            y_display=y_display, title=title, agg=agg,
+        )
+
+    raise ValueError(f"Unknown widget type: {w_type}")
+
+
+def auto_layout(widgets, cols=6):
+    """Auto-calculate layout positions for a list of widgets.
+    Counters get width=2, charts get width=3, text gets width=6."""
+    laid_out = []
+    x, y = 0, 0
+    for w in widgets:
+        w_type = w.get("widget", {}).get("spec", {}).get("widgetType", "")
+        if "multilineTextboxSpec" in w.get("widget", {}):
+            width, height = 6, 1
+        elif w_type == "counter":
+            width, height = 2, 3
+        elif w_type in ("bar", "line"):
+            width, height = 3, 5
+        else:
+            width, height = 3, 5
+
+        if x + width > cols:
+            x = 0
+            y += height
+
+        if "position" in w:
+            w["position"] = {"x": x, "y": y, "width": width, "height": height}
+        x += width
+        laid_out.append(w)
+    return laid_out
+
+
+# Build all pages for each dashboard
+DASHBOARD_PAGES = {}  # {dashboard_name: [page_dicts]}
+
+for db_spec in design["dashboards"]:
+    db_name = db_spec["name"]
+    mv_map = DASHBOARD_MV_MAP[db_name]
+    pages = []
+
+    # 1. Build filter page FIRST (uses first dataset)
+    first_ds_name = list(mv_map.keys())[0]
+    first_mv_fqn = mv_map[first_ds_name]
+    filter_dims = []
+    for fd in db_spec["filter_dimensions"]:
+        field_name = fd if isinstance(fd, str) else fd["field_name"]
+        display_name = field_name.replace("_", " ").title() if isinstance(fd, str) else fd.get("display_name", field_name)
+        col_info = COLUMN_REGISTRY.get(first_mv_fqn, {}).get(field_name, {})
+        col_type = col_info.get("type", "").lower()
+        widget_type = "filter-date-range-picker" if col_type in ("date", "timestamp") else "filter-multi-select"
+        filter_dims.append({"field_name": field_name, "display_name": display_name, "widget_type": widget_type})
+
+    filter_field_names = [fd["field_name"] for fd in filter_dims]
+    validate_column_refs(COLUMN_REGISTRY[first_mv_fqn], filter_field_names, f"{db_name} filters")
+
+    filter_page = build_filters_page(first_ds_name, filter_dims)
+    pages.append(filter_page)
+    print(f"{db_name}: Filter page built with {len(filter_dims)} filters")
+
+    # 2. Build canvas pages
+    for page_spec in db_spec["pages"]:
+        page_title = page_spec["title"]
+        page_name = page_spec["id"]
+
+        widgets = []
+        for w_idx, w_spec in enumerate(page_spec["widgets"]):
+            try:
+                widget = build_widget_from_spec(w_spec, mv_map, w_idx)
+                widgets.append(widget)
+            except (AssertionError, ValueError) as e:
+                raise RuntimeError(f"Widget compilation failed: {w_spec.get('title', '?')}: {e}") from e
+
+        widgets = auto_layout(widgets)
+        canvas_page = build_canvas_page(page_name, page_title, widgets)
+        pages.append(canvas_page)
+        print(f"  Page '{page_title}': {len(widgets)} widgets")
+
+    DASHBOARD_PAGES[db_name] = pages
+    total_widgets = sum(len(p.get("layout", [])) for p in pages if p.get("pageType") == "PAGE_TYPE_CANVAS")
+    print(f"  {db_name} total: {len(pages)} pages, {total_widgets} canvas widgets")
+
+# COMMAND ----------
+
+# DBTITLE 1,Deploy Dashboards (Pre-Deploy Gates + Create + Publish + Readback)
+# =============================================================================
+# DEPLOY — uses deploy_dashboard() which enforces:
+#   - PRE-DEPLOY: artifact checks, widget counts, filter page validation
+#   - CREATE/UPDATE: idempotent (updates existing dashboard with same name)
+#   - PUBLISH: warehouse binding
+#   - POST-DEPLOY: API readback validates deployed content matches intent
+# =============================================================================
+
+DEPLOY_RESULTS = {}
+
+# Workspace directories are created by the store when writing artifacts.
+
+for db_spec in design["dashboards"]:
+    db_name = db_spec["name"]
+    datasets = DASHBOARD_DATASETS[db_name]
+    pages = DASHBOARD_PAGES[db_name]
+    filter_field_names = [
+        fd if isinstance(fd, str) else fd["field_name"]
+        for fd in db_spec["filter_dimensions"]
+    ]
+
+    separator = "=" * 60
+    print(f"\n{separator}")
+    print(f"Deploying: {db_name}")
+    print(separator)
+
+    EXPECTED_BY_NAME[db_name] = {
+        "workspace_host": run_context["runtime"]["workspace_host"],
+        "warehouse_id": WAREHOUSE_ID,
+        "serialized_dashboard": build_serialized_dashboard(datasets, pages, filter_field_names),
+        "primary_kpi_contexts": db_spec["primary_kpi_contexts"],
+    }
+    store.write(f"{OUTPUT_FOLDER}/dashboards/{db_name}_expected.json", runtime.encode(EXPECTED_BY_NAME[db_name]))
+    result = deploy_dashboard(
+        display_name=db_name,
+        warehouse_id=WAREHOUSE_ID,
+        parent_path=PARENT_PATH,
+        datasets=datasets,
+        pages=pages,
+        filter_dimensions=filter_field_names,
+        required_artifacts=[design_path],
+        quality_gates=QUALITY_GATES,
+        output_folder=OUTPUT_FOLDER,
+    )
+
+    DEPLOY_RESULTS[db_name] = result
+    print(f"  {db_name}: deployed as {result['dashboard_id']}")
+
+print(f"\n{'=' * 60}")
+print(f"All {len(DEPLOY_RESULTS)} dashboard(s) deployed successfully")
+
+# COMMAND ----------
+
+# DBTITLE 1,Write Dashboard Manifests
+# =============================================================================
+# WRITE MANIFESTS — records deployment results with api_readback validation.
+# =============================================================================
+
+for db_spec in design["dashboards"]:
+    db_name = db_spec["name"]
+    result = DEPLOY_RESULTS[db_name]
+    pages = DASHBOARD_PAGES[db_name]
+
+    canvas_pages = [p for p in pages if p.get("pageType") == "PAGE_TYPE_CANVAS"]
+    filter_pages = [p for p in pages if p.get("pageType") == "PAGE_TYPE_GLOBAL_FILTERS"]
+    total_canvas_widgets = sum(len(p.get("layout", [])) for p in canvas_pages)
+    total_filters = sum(len(p.get("layout", [])) for p in filter_pages)
+
+    # Compute hash chain for idempotency proof
+    import hashlib
+    design_raw = json.dumps(db_spec, sort_keys=True)
+    source_hash = hashlib.sha256(design_raw.encode()).hexdigest()
+    deployed_raw = json.dumps({
+        "dashboard_id": result["dashboard_id"],
+        "pages": len(pages),
+        "widgets": total_canvas_widgets,
+        "filters": total_filters,
+    }, sort_keys=True)
+    readback_hash = hashlib.sha256(deployed_raw.encode()).hexdigest()
+
+    manifest = {
+        "dashboard_id": result["dashboard_id"],
+        "display_name": db_name,
+        "path": result.get("path", f"/dashboardsv3/{result['dashboard_id']}"),
+        "published": result.get("published", True),
+        "validation_source": "api_readback",
+        "source_hash": source_hash,
+        "readback_hash": readback_hash,
+        "state_comparison": "match",
+        "total_pages": len(pages),
+        "canvas_pages": len(canvas_pages),
+        "filter_pages": len(filter_pages),
+        "total_canvas_widgets": total_canvas_widgets,
+        "total_filters": total_filters,
+        "datasets": [ds["name"] for ds in DASHBOARD_DATASETS[db_name]],
+        "metric_views": list(DASHBOARD_MV_MAP[db_name].values()),
+    }
+
+    manifest_name = db_name
+    manifest_path = f"{OUTPUT_FOLDER}/dashboards/{manifest_name}_dashboard_manifest.json"
+    manifest.update(run_id=run_context["run_id"], stage_status=result["validation"]["stage_status"],
+                    readback_hash=result["validation"]["readback_sha256"])
+    store.write(manifest_path, runtime.encode(manifest))
+    print(f"Manifest written: {manifest_path}")
+
+# Deployment locators belong in manifests; immutable design bytes are preserved.
+
+separator = chr(9472) * 50
+print(f"\n{separator}")
+print("Dashboard deployment complete.")
+for db_name, result in DEPLOY_RESULTS.items():
+    print(f"  {db_name}: {result['dashboard_id']}")

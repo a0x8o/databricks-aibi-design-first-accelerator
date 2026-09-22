@@ -836,6 +836,16 @@ async function pollStatus(){
             return;
         }
         const d=await r.json();
+        let persistenceNotice=document.getElementById('persistence-notice');
+        if(!persistenceNotice){
+            persistenceNotice=document.createElement('div');
+            persistenceNotice.id='persistence-notice';
+            persistenceNotice.setAttribute('role','status');
+            persistenceNotice.style.cssText='padding:12px;background:#fff3cd;color:#664d03;';
+            document.body.prepend(persistenceNotice);
+        }
+        persistenceNotice.textContent=d.persistence_warning||'';
+        persistenceNotice.hidden=!d.persistence_warning;
         console.log('[POLL] Status:', d.status, 'Steps:', d.steps?.length||0, 'Phases:', d.steps?.reduce((n,s)=>n+(s.phases?.length||0),0)||0);
 
         // Hydrate footer metadata bar from poll response (fills in values
@@ -979,8 +989,8 @@ async function pollStatus(){
         renderSteps(); renderAccordion(); renderTab();
 
         // Stop polling and timer on terminal state
-        if(['completed','failed','cancelled'].includes(d.status)){
-            clearInterval(pollInterval); pollInterval=null;
+        if(['completed','partial_success','failed','cancelled'].includes(d.status)){
+            if(!d.persistence_warning){ clearInterval(pollInterval); pollInterval=null; }
             if(timerInterval){ clearInterval(timerInterval); timerInterval=null; }
             // Show Duration (hidden during run) with final value; freeze Elapsed
             const finalSecs=d.duration_s || Math.max(0, Math.floor((Date.now()-startTime)/1000));

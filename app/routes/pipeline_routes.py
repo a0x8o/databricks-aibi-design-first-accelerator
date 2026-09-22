@@ -358,6 +358,8 @@ def _run_pipeline_background(run_id: str, domain: str, steps: list, run_mode: st
     from services.state_store import StateStore
 
     run = _runs[run_id]
+    app_mirror = None
+    app_execution = None
 
     def event_callback(event):
         """Callback receives PipelineEvents, updates run state + pushes to SSE queue."""
@@ -598,17 +600,6 @@ def _run_pipeline_background(run_id: str, domain: str, steps: list, run_mode: st
         services = _get_services(user_token=user_token or None)
         llm_client = _get_llm_client()
 
-        # Initialize state store (Lakebase Data API)
-        run_store = _get_state_store()
-        if not run_store:
-            run['status'] = 'failed'
-            run['error'] = 'Lakebase not provisioned. Run Setup Infrastructure from Admin page.'
-            q = _event_queues.get(run_id)
-            if q:
-                q.put({"type": "pipeline_completed", "status": "failed",
-                       "error": run['error'], "timestamp": datetime.utcnow().isoformat()})
-            return
-
         # Load config per master prompt Step 0:
         # - Read accelerator.yaml from EXAMPLE_DIR
         # - Read databricks.yml for sql_warehouse_id
@@ -620,6 +611,71 @@ def _run_pipeline_background(run_id: str, domain: str, steps: list, run_mode: st
         loader = ConfigLoader(services["workspace"])
         config = loader.load(domain, workspace_root, warehouse_id,
                              workspace_root=workspace_root)
+
+        # v2 is master-led. Lakebase mirrors App state only; it never allocates
+        # versions or writes the portable lifecycle manifest.
+        if agent_skills_version:
+            config.agent_skills_version = agent_skills_version
+        if config.agent_skills_version == 'v2':
+            from orchestrator.master_agent import MasterAgentHost
+            from orchestrator.app_state import AppStateMirror
+            run_store = _get_state_store()
+            if not run_store:
+                raise RuntimeError('Lakebase is required for durable App tracking. Genie Code can run v2 without it.')
+            app_execution = run_store.open_app_execution(run_id)
+            journal_path = config.example_dir + '/app_runs/' + run_id + '.json'
+            if not run_store.get_run(run_id):
+                run_store.create_run(run_id, domain, run_mode=run_mode, config_json={
+                    'agent_skills_version': 'v2', 'app_journal_path': journal_path})
+            run['agent_skills_version'] = 'v2'
+            run['step_data']['load_configuration']['status'] = 'completed'
+            run['requested_steps'] = steps
+            run['app_journal_path'] = journal_path
+            app_mirror = AppStateMirror(services['workspace'], run_store, run, journal_path)
+            app_mirror.save()
+            host = MasterAgentHost(config, services, llm_client)
+            _runners[run_id] = host
+            def master_event(event_type, data):
+                # A lost ownership session stops this host before another tool call.
+                cursor = app_execution.cursor()
+                cursor.execute('SELECT 1')
+                app_execution.commit()
+                run['status'] = 'running'
+                app_mirror.event(event_type, data)
+                event_queue = _event_queues.get(run_id)
+                if event_queue:
+                    event_queue.put({'type': event_type, **data,
+                        'timestamp': datetime.utcnow().isoformat()})
+            result = host.run(domain=domain, run_id=run_id, version_mode=version_mode,
+                              version_override=version_override, steps=steps, run_mode=run_mode,
+                              callback=master_event)
+            manifest = result['manifest']
+            run.update(status=result['status'], error=result['error'], duration_s=result['duration_s'],
+                       canonical_run_id=manifest['run_id'], version=manifest['version'],
+                       output_folder=manifest['output_folder'], progress_pct=100,
+                       completed_at=datetime.utcnow().isoformat())
+            run['run_manifest'] = manifest
+            run['run_context_path'] = manifest['run_context_path']
+            status_map = {'PASS': 'completed', 'PARTIAL_SUCCESS': 'partial_success',
+                          'FAIL': 'failed', 'SKIPPED': 'skipped'}
+            for item in manifest.get('steps', []):
+                step = item['step_name']
+                info = run['step_data'].setdefault(step, {'step_name': step, 'phases': []})
+                info.update(status=status_map.get(item['status'], 'failed'),
+                            duration_s=item.get('duration_s'), error=item.get('error'))
+            run['steps_completed'] = [s for s, info in run['step_data'].items() if info.get('status') == 'completed']
+            app_mirror.save()
+            event_queue = _event_queues.get(run_id)
+            if event_queue:
+                event_queue.put({'type': 'pipeline_completed', 'status': run['status'],
+                    'error': run['error'], 'duration_s': run['duration_s'],
+                    'timestamp': run['completed_at']})
+            return
+
+        # Legacy v1 UI persistence remains separate from portable v2 execution.
+        run_store = _get_state_store()
+        if not run_store:
+            raise RuntimeError('Lakebase not provisioned for the legacy v1 pipeline.')
 
         # Handle versioning
         # Schema comes from accelerator.yaml (single source of truth).
@@ -810,12 +866,20 @@ def _run_pipeline_background(run_id: str, domain: str, steps: list, run_mode: st
         logger.exception(f"Pipeline background execution failed: {e}")
         run['status'] = 'failed'
         run['error'] = str(e)
+        if app_mirror is not None:
+            try:
+                app_mirror.save()
+            except Exception as persist_error:
+                run['persistence_warning'] = str(persist_error)
+                logger.exception('Failed to persist App failure snapshot')
         # Notify SSE
         q = _event_queues.get(run_id)
         if q:
             q.put({"type": "pipeline_completed", "status": "failed",
                    "error": str(e), "timestamp": datetime.utcnow().isoformat()})
     finally:
+        if app_execution is not None:
+            app_execution.close()
         # Cleanup runner reference
         _runners.pop(run_id, None)
         # Signal SSE stream end
@@ -955,6 +1019,22 @@ def cancel_run(run_id):
     The background thread will notice the cancelled status and stop gracefully.
     """
     run = _runs.get(run_id)
+    if run_id not in _runners:
+        store = _get_state_store()
+        record = store.get_run(run_id) if store else None
+        if record and record.get('agent_skills_version') == 'v2':
+            if store.app_execution_active(run_id):
+                return jsonify({'error': {'type': 'Conflict',
+                    'message': 'This run is executing on another worker; cancellation was not applied.'}}), 409
+            from orchestrator.app_state import recover_snapshot, AppStateMirror
+            workspace = _get_services()['workspace']
+            run = recover_snapshot(workspace, store, record)
+            if run.get('status') in ('completed', 'partial_success'):
+                return jsonify({'error': {'type': 'Conflict', 'message': 'Run is already complete.'}}), 409
+            run['status'] = 'cancelled'
+            AppStateMirror(workspace, store, run, run['app_journal_path']).save()
+            _runs[run_id] = run
+            return jsonify({'run_id': run_id, 'status': 'cancelled'})
     if not run:
         # Zombie scenario: run exists in Lakebase but not in memory.
         # Allow cancel (just update Lakebase status directly).
@@ -1102,10 +1182,17 @@ def get_run_status(run_id):
             try:
                 recovered = run_store.load_run_full(run_id)
                 if recovered:
+                    if recovered.get('agent_skills_version') == 'v2':
+                        from orchestrator.app_state import recover_snapshot
+                        record = run_store.get_run(run_id)
+                        try:
+                            recovered = recover_snapshot(_get_services()['workspace'], run_store, record) or recovered
+                        except Exception as replay_error:
+                            recovered['persistence_warning'] = f'Workspace replay unavailable: {replay_error}'
                     # Zombie detection: if Lakebase says 'running' but there's
                     # no active thread (app restarted), mark as failed so the
                     # UI shows the "Resume All" button.
-                    if recovered.get('status') == 'running':
+                    if recovered.get('status') == 'running' and recovered.get('agent_skills_version') != 'v2':
                         recovered['status'] = 'failed'
                         recovered['error'] = 'Interrupted: app restarted during execution'
                         # Persist to Lakebase so rerun endpoint also sees 'failed'
@@ -1123,6 +1210,18 @@ def get_run_status(run_id):
 
     if not run:
         return jsonify({"error": "Run not found"}), 404
+
+    if run.get('agent_skills_version') == 'v2' and (run_id not in _runners or run.get('persistence_warning')):
+        try:
+            from orchestrator.app_state import recover_snapshot
+            store = _get_state_store()
+            recovered = recover_snapshot(_get_services()['workspace'], store, store.get_run(run_id))
+            if recovered:
+                run.update(recovered)
+                if not recovered.get('persistence_warning'):
+                    run.pop('persistence_warning', None)
+        except Exception as replay_error:
+            logger.warning('App mirror replay pending: %s', replay_error)
 
     # Build step list with phases and tool_calls
     steps = []
@@ -1194,6 +1293,7 @@ def get_run_status(run_id):
         "duration_s": duration_s,
         "started_at": started_at,
         "error": run.get('error'),
+        "persistence_warning": run.get('persistence_warning'),
         "domain": run.get('domain'),
         "version": run.get('version'),
         "version_suffix": run.get('version_suffix', ''),
@@ -1420,6 +1520,30 @@ def rerun_from_failure(run_id):
     original_run = run_store.get_run(run_id)
     if not original_run:
         return jsonify({'error': {'type': 'NotFound', 'message': f'Run {run_id} not found'}}), 404
+
+    if original_run.get('agent_skills_version') == 'v2':
+        from orchestrator.app_state import recover_snapshot
+        try:
+            recovered = recover_snapshot(_get_services()['workspace'], run_store, original_run)
+            original_run = recovered or original_run
+        except Exception as exc:
+            return jsonify({'error': {'type': 'RecoveryError', 'message': str(exc)}}), 503
+        if run_id in _runners or original_run.get('status') not in ('failed', 'cancelled'):
+            return jsonify({'error': {'type': 'ValidationError',
+                'message': 'Retry requires a stopped, failed or cancelled App run. A cache miss does not prove the execution stopped.'}}), 409
+        if not original_run.get('version'):
+            return jsonify({'error': {'type': 'RecoveryError',
+                'message': 'No verified version locator was saved. Start a fresh master run; do not guess which version to retry.'}}), 409
+        _runs[run_id] = {**original_run, 'status': 'started', 'error': None}
+        _event_queues[run_id] = queue.Queue()
+        thread = threading.Thread(target=_run_pipeline_background,
+            args=(run_id, original_run['domain'], original_run.get('requested_steps'),
+                  'versioned', original_run.get('version'),
+                  request.headers.get('X-Forwarded-Access-Token', '')),
+            kwargs={'version_mode': 'retry', 'agent_skills_version': 'v2'}, daemon=True)
+        thread.start()
+        return jsonify({'run_id': run_id, 'status': 'started',
+                        'resume_from': 'master_checkpoint_validation'}), 202
 
     run_status = original_run.get('status')
     # Allow rerun if failed/cancelled, OR if 'running' but no active thread

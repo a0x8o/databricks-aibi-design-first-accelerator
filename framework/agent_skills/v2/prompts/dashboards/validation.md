@@ -171,6 +171,8 @@ dashboards:
       expected_page_ids: [overview]
       actual_page_ids: [overview]
       structural_status: PASS
+    primary_kpi_contexts: {KPI_001: [total_claims]} # exact compiled widget IDs
+    filter_dimensions: [claim_type, service_date] # compiler input, same filters below
     filters:
       - dimension: claim_type
         filter_type: multi-select
@@ -187,22 +189,28 @@ dashboards:
         page_type: CANVAS
         widgets:
           - id: total_claims
+            type: counter
             visualization: counter # counter, bar, line, or text
             measure: total_claims  # column name from DESCRIBE output
             title: Total Claims
             display_name: Claims   # optional: counter label
             agg: SUM               # optional: SUM (default) or AVG
           - id: paid_by_type
+            type: bar
+            dimension: claim_type
             visualization: bar
             measure: total_paid_amount
             dimensions: [claim_type]
             title: Paid Amount by Type
           - id: paid_trend
+            type: line
+            dimension: service_date
             visualization: line
             measure: total_paid_amount
             dimensions: [service_date]
             title: Paid Amount Trend
           - id: section_header
+            type: text
             visualization: text
             content: "## Section Header"
     quality_target_evaluation:

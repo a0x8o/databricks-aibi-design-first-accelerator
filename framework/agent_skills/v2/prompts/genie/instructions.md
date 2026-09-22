@@ -1,5 +1,7 @@
 # Create Genie Space
 
+> **Transport:** apply the frozen `shared/agent_transport.md` contract. Tool names are portable operations; App/Lakebase integration is optional. Runtime paths come only from `contracts/release.yaml`.
+
 > **Always load for this stage:** `{AGENT_SKILLS_DIR}/prompts/shared/global_guardrails.md`, `{AGENT_SKILLS_DIR}/prompts/genie/validation.md`, `{AGENT_SKILLS_DIR}/prompts/genie/guardrails.md`, `{AGENT_SKILLS_DIR}/prompts/shared/state_contract.md`, `{AGENT_SKILLS_DIR}/prompts/shared/sql_generation_rules.md`.
 > **Failure-only:** authenticate `run_context.inputs.stage_runbooks.create_genie_space` and load only the matching section of `{AGENT_SKILLS_DIR}/prompts/genie/runbook.md` after a classified failure. Never load the runbook on the normal success path.
 
@@ -269,7 +271,7 @@ PHASE D — BUILD & DEPLOY NOTEBOOK (Steps 9-13)
         - PRE-DEPLOY: run_genie_predeploy_gates() verifies description,
           instructions, tables, questions, and example SQLs are all populated.
           Raises GateCheckError if ANY content is missing — API call is blocked.
-        - POST-DEPLOY: validate_genie_from_api(workspace_client, space_id, title, validation=...)
+        - POST-DEPLOY: validate_genie_from_api(workspace_client, space_id, title, validation=..., expected=...)
           reads the space back from
           the API and verifies the deployed content matches.
   14. Require the template to verify the exact raw bytes at `GATE_CHECKS_PATH` against
@@ -560,7 +562,7 @@ A Genie manifest records a validated deployment attempt and provides the `space_
 **NEVER write the canonical `{genie_title}_manifest.json` unless ALL of these are true:**
 
 1. The Genie space has been created/updated via `POST /api/2.0/genie/spaces` with a FULL `serialized_space` payload
-2. `validate_genie_from_api(workspace_client, space_id, title, validation=...)` from the digest-attested `gate_checks.py` has been called and returned a mapping with `status: PASS`, `source: api_readback`, `workspace_host_binding: PASS`, exact `space_id`/`title`, and the canonical `readback_counts`; the persisted validation artifact separately records `overall_status: PASS`
+2. `validate_genie_from_api(workspace_client, space_id, title, validation=..., expected=...)` from the digest-attested `gate_checks.py` has been called and returned a mapping with `status: PASS`, `source: api_readback`, `workspace_host_binding: PASS`, exact `space_id`/`title`, and the canonical `readback_counts`; the persisted validation artifact separately records `overall_status: PASS`
 3. The API readback confirmed all frozen `run_context.validation` minima and exact normalized set equality for every expected Metric View attachment
 4. The manifest includes `validation_source: api_readback`
 5. The manifest's `sample_questions_count`, `example_sqls_count`, `benchmarks_count` come from the **API readback** result, NOT from counting Python variables
@@ -1783,9 +1785,12 @@ by calling the `deploy_from_template` tool:
 
 ```
 deploy_from_template(
-  template_path = run_context["templates"]["genie_notebook"],
+  template_path = run_context["templates"]["genie_notebook"]["path"],
   output_path  = "{OUTPUT_FOLDER}/genie_space/{run_context.assets.genie.notebook_name}",
   placeholders = {
+    "RUN_CONTEXT_PATH": "<exact supplied run_context_path>",
+    "RUN_CONTRACT_PATH": "<run_context.templates.run_contract.path>",
+    "RUN_CONTRACT_SHA256": "<run_context.templates.run_contract.sha256>",
     "DOMAIN_NAME": "...",
     "SPACE_TITLE": "...",
     "SPACE_DESCRIPTION": "...",
@@ -2130,8 +2135,14 @@ The normalized GET readback is authoritative for the deployed Genie identity and
 The desired configuration, request payload, POST/PATCH response, and manifest remain intent or evidence. None may override the GET readback. Do not assume the request payload was stored exactly as intended.
 
 The digest-attested helper is the canonical implementation of this GET and comparison. Call
-`validate_genie_from_api(workspace_client, space_id, title, validation=...)` with the exact
-frozen-host-bound SDK/API client and frozen validation thresholds; do not pass an unbound client
+`validate_genie_from_api(workspace_client, space_id, title, validation=..., expected=...)` with the exact
+frozen-host-bound SDK/API client and frozen validation thresholds. `expected` contains
+`workspace_host`, `warehouse_id`, the validated `serialized_space` mapping, and the
+complete quoted handoff `metric_view_fqns` list. The runtime compares semantic content,
+allowing API-generated IDs and the documented tables/metric_views response alias.
+Record its `readback_sha256` in benchmark evidence with run_id, space_id, passed, total,
+and per-question execution evidence, so the sweep rejects benchmarks for changed content;
+ do not pass an unbound client
 or reconstruct the host. The returned value MUST
 be a mapping and MUST prove all of the following before it can be used:
 

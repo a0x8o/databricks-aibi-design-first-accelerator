@@ -1,0 +1,25 @@
+schema_version: 1
+release: v2-portable-1
+# Every path is relative to REPO_ROOT. Resolve once, verify existence and record
+# raw SHA-256 in run_context. Never choose a same-named file by directory search.
+helpers:
+  run_contract: framework/shared/run_contract.py
+  gate_checks: framework/templates/v2_gate_checks.py
+  erd_validation_utils: framework/templates/erd_validation_utils.py
+  lakeview_dashboard_helpers: framework/templates/v2_lakeview_dashboard_helpers.py
+templates:
+  ddl_notebook: framework/templates/ddl_notebook.py.template
+  dbldatagen_notebook: framework/templates/dbldatagen_notebook.py.template
+  metric_view_notebook: framework/templates/metric_view_notebook.py.template
+  dashboard_notebook: framework/templates/v2_dashboard_notebook.py.template
+  genie_notebook: framework/templates/v2_genie_space_notebook.py.template
+  metric_view_yaml_header: framework/templates/metric_view_yaml.header.yaml
+inputs:
+  best_practices: framework/inputs/best_practices.md
+  live_schema_discovery: framework/inputs/live_schema_discovery.md
+  lakeview_dashboard_api: framework/inputs/lakeview_dashboard_api.md
+  genie_space_configuration: framework/inputs/genie_space_configuration.md
+  workspace_file_io: framework/inputs/workspace_file_io.md
+  metric_view_capabilities: framework/agent_skills/v2/contracts/metric_view_capabilities.yaml
+  genie_quality_contract: framework/agent_skills/v2/contracts/genie_quality_contract.yaml
+  datatype_resolution_policy: framework/agent_skills/v2/contracts/datatype_resolution_policy.yaml
