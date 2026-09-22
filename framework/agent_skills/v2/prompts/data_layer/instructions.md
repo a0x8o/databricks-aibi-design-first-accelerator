@@ -911,6 +911,13 @@ This recovery writes orchestration state only; it never reruns DDL or reconcilia
 `STALE`, malformed, conflicting, or still-uncommittable record remains
 `CHECKPOINT_PERSISTENCE_ERROR` and cannot admit synthetic writes.
 
+If this missing-only recovery finds that `checkpointing.frozen_run_contract_sha256` differs from
+the deterministic digest of the current immutable envelope, it may repair the stored digest only
+when `phases_completed` is exactly empty and all artifact, identity, inventory, hash, fresh-readback,
+and empty-target gates have already passed. Atomically persist the corrected envelope together with
+the first recovered phase record and re-read both. Once any phase record exists, a frozen-digest
+mismatch is immutable authority conflict and still halts.
+
 **Algorithm:**
 
 ```text

@@ -477,10 +477,20 @@ if len(phase_records) == 0:
         frozen_document.pop(mutable_key, None)
     frozen_document.get("checkpointing", {}).pop("frozen_run_contract_sha256", None)
     frozen_computed = _canonical_sha256(frozen_document)
+    frozen_digest_repaired = False
     if frozen_recorded != frozen_computed:
-        raise RuntimeError(
-            "SCHEMA_RECONCILIATION_AUTHORITY_ERROR: frozen run contract mismatch during recovery"
-        )
+        # Some legacy runs persisted the digest before the final immutable envelope was
+        # serialized. Repair is safe only before any durable phase record exists and only
+        # after every reconciliation, hash, inventory, fresh-readback, and empty-target
+        # gate above has passed. An established checkpoint makes the digest immutable.
+        if phases_completed:
+            raise RuntimeError(
+                "SCHEMA_RECONCILIATION_AUTHORITY_ERROR: frozen run contract mismatch "
+                "with established phase records"
+            )
+        checkpointing["frozen_run_contract_sha256"] = frozen_computed
+        frozen_recorded = frozen_computed
+        frozen_digest_repaired = True
     producer_bundle = checkpointing.get("producer_bundles", {}).get("create_data_layer")
     producer_prompt = producer_bundle.get("prompt") if isinstance(producer_bundle, dict) else None
     if (
@@ -550,6 +560,11 @@ if len(phase_records) == 0:
         "CHECKPOINT_RECOVERY: atomically restored reconcile_schema from authenticated PASS "
         "evidence, exact fresh readback, and empty targets"
     )
+    if frozen_digest_repaired:
+        print(
+            "CHECKPOINT_RECOVERY: repaired legacy frozen-run digest from the deterministic "
+            "immutable run-context envelope before creating the first phase record"
+        )
 elif len(phase_records) > 1:
     raise RuntimeError(
         "SCHEMA_RECONCILIATION_AUTHORITY_ERROR: exactly one reconcile_schema phase record is required"

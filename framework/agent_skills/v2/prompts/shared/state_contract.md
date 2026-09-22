@@ -349,6 +349,13 @@ frozen metadata without rerunning the owned deployment. This is checkpoint recov
 success inference: any existing malformed, `STALE`, duplicate, conflicting, or unverifiable record
 blocks recovery, and every normal phase-specific authority/readback gate must pass first.
 
+For a legacy run with an entirely empty `phases_completed` list, that same fully authenticated
+recovery may deterministically recompute and correct a stale/mis-sequenced
+`frozen_run_contract_sha256` before creating the first phase record. Persist the corrected envelope
+and recovered record in one atomic run-context write and verify readback. This exception never
+applies after any phase record exists; established checkpoint history keeps the frozen digest
+immutable.
+
 Stateless bootstrap phases (`load_config`, `load_inputs`, and `gather_artifacts`) are always
 re-read. They may report progress but MUST NOT create or reuse durable entries in
 `phases_completed`.

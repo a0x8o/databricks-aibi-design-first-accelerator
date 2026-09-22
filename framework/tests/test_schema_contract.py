@@ -534,6 +534,12 @@ class ContractTemplateTests(unittest.TestCase):
             self.data_template,
         )
 
+    def test_empty_legacy_run_can_repair_frozen_digest_before_first_checkpoint(self):
+        self.assertIn("frozen_digest_repaired = False", self.data_template)
+        self.assertIn('checkpointing["frozen_run_contract_sha256"] = frozen_computed', self.data_template)
+        self.assertIn("if phases_completed:", self.data_template)
+        self.assertIn("before creating the first phase record", self.data_template)
+
     def test_ddl_runtime_revalidates_erd_projection_before_catalog_mutation(self):
         validation_call = "_synchronize_erd_projection(erd_document, spec)"
         first_mutation = 'spark.sql(f"CREATE SCHEMA IF NOT EXISTS'
