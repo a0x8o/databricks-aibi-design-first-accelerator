@@ -126,3 +126,11 @@ any retry; append execution cannot safely resume over partially populated target
 Apply DL-G3 and shared G-19. Check notebook run status and persisted checkpoints;
 a UI label alone does not establish concurrent execution or completion. Missing
 completion events remain unverified; a halted active phase must not remain running.
+
+
+### TEMPLATE_BINDING_ERROR / Unreplaced TARGET_CATALOG or TARGET_SCHEMA
+
+Follow DL-G4 and shared G-16. Inspect the frozen template's placeholder names rather
+than reusing another stage's map. Bind exact target coordinates from the authenticated
+handoff. The failed deployment cannot authorize Metric Views; inspect whether a later
+successful retry and all producer gates exist before interpreting historical UI logs.

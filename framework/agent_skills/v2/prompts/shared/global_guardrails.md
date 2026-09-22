@@ -673,6 +673,16 @@ dbutils.library.restartPython()     # ← preflight rejects this cell
 
 ## G-16: Template Notebooks Use `deploy_from_template` Tool
 
+Template deployment is a mandatory admission barrier. Select the exact release-owned
+path and verify its frozen SHA-256; a legacy same-named template is not an alternative. Enumerate placeholders from
+the actual frozen template and bind every required value before calling the tool.
+A template read/render/import error means no successful deployment acknowledgement;
+HALT the current run and dependent stages, persist failure evidence, and return to
+the master. Do not treat tool failure as completion or proceed to another stage.
+Corrections are made in the owning phase on authenticated retry, never by skipping
+its producer. An old notebook at the intended output path does not prove success.
+
+
 When deploying via a template notebook (`ddl_notebook.py.template`, `metric_view_notebook.py.template`, `dbldatagen_notebook.py.template`, etc.), the LLM MUST use the `deploy_from_template` tool. This tool:
 
 1. Reads the template as a **single string**

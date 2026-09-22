@@ -33,6 +33,13 @@ from databricks.sdk.service.jobs import (
 logger = logging.getLogger(__name__)
 
 
+def _format_run_error(output):
+    """Preserve the Jobs API traceback, not just its one-line error summary."""
+    error = getattr(output, 'error', None) or ''
+    trace = getattr(output, 'error_trace', None) or ''
+    return '\n\n'.join(part for part in (error, trace) if part) or None
+
+
 # ---------------------------------------------------------------------------
 # Data Models
 # ---------------------------------------------------------------------------
@@ -189,8 +196,9 @@ class JobsService:
                                     task_output = self._client.jobs.get_run_output(
                                         run_id=task.run_id
                                     )
-                                    if task_output.error:
-                                        error_msg = task_output.error
+                                    detail = _format_run_error(task_output)
+                                    if detail:
+                                        error_msg = detail
                                     break
                     except Exception as detail_err:
                         logger.debug(f"Could not fetch run output detail: {detail_err}")

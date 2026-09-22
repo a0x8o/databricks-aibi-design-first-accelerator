@@ -193,3 +193,13 @@ execute_python with code: requests.post(...)   # no tokens
 ```
 
 ---
+
+
+### FileNotFoundError for dashboards/dashboard_design.yaml
+
+Apply DB-G1. Inspect the actual submitted notebook path and source, not its UI
+stage label. The legacy dashboard template uses local open(); the release-selected
+v2 template uses WorkspaceStore. Authenticate the template tuple, verify the design
+exists through the workspace API, and repair only the producing stage. Duplicate
+agent-loop and route log entries for the same run ID can describe one propagated
+failure, not two notebook executions.

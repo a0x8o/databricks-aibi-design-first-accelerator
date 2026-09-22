@@ -134,3 +134,12 @@ ALL tables must have rows > 0 after synthetic data generation. HALT with `SYNTHE
 | `AP-DL-9` | Populated Current-Version Schema Drift / `DATATYPE_MISMATCH_UNSAFE_TO_REPAIR` |
 
 Classify the failure from current evidence before loading a runbook section. The index is a routing aid, not authority to bypass the stage owner or retry policy.
+
+
+### GATE TEMPLATE-BINDING: Deployment acknowledgement (DL-G4)
+
+Enumerate all placeholders in the frozen template and verify complete, nonempty
+bindings before import. Require the deployment tool's success for the exact output
+path, followed by notebook terminal success and the existing phase readback gates.
+Any deployment error blocks dependent stages regardless of prior files or progress
+labels. Classify missing values as TEMPLATE_BINDING_ERROR and return to the master.

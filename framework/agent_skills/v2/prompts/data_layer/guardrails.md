@@ -155,3 +155,17 @@ completion event is not proof of success and must not be bypassed.
 Apply shared G-19 for checkpoint and progress-event integrity. On premature
 synthetic-data admission, return control to the master and authenticate the DDL and
 reconciliation checkpoints before any generation. UI labels alone never permit reuse.
+
+
+## DL-G4: DDL and synthetic notebook placeholder binding
+
+Apply shared G-16. Read the exact frozen template and enumerate its placeholders;
+do not reuse the Metric View placeholder map. Bind TARGET_CATALOG and TARGET_SCHEMA
+from the authenticated handoff's target catalog/schema for the current DDL and
+synthetic templates. These interface keys differ from the Metric View template's
+CATALOG and SCHEMA. No value may be missing, null, or empty. The template's actual
+interface is authoritative; examples do not replace inspecting it.
+
+Template deployment failure blocks generate_ddl or generate_synthetic_data and
+therefore blocks Metric Views. Require a successful import, terminal notebook
+success, and the phase's catalog/checkpoint validation before releasing consumers.

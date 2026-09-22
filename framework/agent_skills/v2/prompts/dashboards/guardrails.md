@@ -61,3 +61,19 @@ Any of these invalidate the dashboard and require re-execution:
 - Silently changes desired dashboard design to match a divergent deployed response
 - Loads a fixed-name/unpinned helper, accepts a stale cached module, or performs manual Dashboard validation because the canonical helper is unavailable
 - Consumes auto-planned Metric View identities without exact strategy-aware producer-checkpoint authentication
+
+
+## DB-G1: Template identity and design-file admission
+
+Apply shared G-16. Use only the dashboard template selected by the release manifest
+and frozen in `run_context.templates.dashboard_notebook` as a path/digest pair.
+Do not select `framework/templates/dashboard_notebook.py.template` by its familiar
+name when the release selects a different file. Do not execute an old notebook at
+an output path merely because it exists.
+
+Persist and verify the design at the exact run root plus
+`/dashboards/dashboard_design.yaml` before notebook submission. The selected v2
+runtime uses Workspace SDK reads, not local open() on a presumed mount. Missing
+design returns to this stage's producer; it is never a Metric View input failure.
+Deployment and execution progress must identify the dashboard stage and notebook
+path. Require upstream Metric View validation before admission.

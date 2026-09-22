@@ -485,6 +485,7 @@ class ToolExecutor:
                 or type(version) is not int or version < 1
                 or not isinstance(context.get('run_id'), str) or not context['run_id']):
             raise ValueError('RUN_SELECTION_AUTHORITY_ERROR: context identity mismatch')
+        self._run_context_path = path
         return dict(canonical_run_id=context['run_id'], run_context_path=path,
                     version=version, output_folder=context['output_folder'])
 
@@ -569,6 +570,36 @@ class ToolExecutor:
         if not template_content or not template_content.strip():
             return f"ERROR: Template at {template_path} is empty."
 
+        if getattr(self._config, 'agent_skills_version', None) == 'v2':
+            import hashlib
+            import posixpath
+            import yaml
+            release = yaml.safe_load(self._ws.read_file(
+                self._config.framework_root + '/agent_skills/v2/contracts/release.yaml'))
+            allowed = {posixpath.normpath(self._config.deploy_root+'/'+p)
+                       for p in release['templates'].values()}
+            if template_path not in allowed:
+                return 'ERROR: TEMPLATE_AUTHORITY_ERROR: template is not selected by the v2 release manifest'
+            context_path = getattr(self, '_run_context_path', None)
+            if not context_path:
+                return 'ERROR: TEMPLATE_AUTHORITY_ERROR: acknowledge persisted run selection before deployment'
+            context = yaml.safe_load(self._ws.read_file(context_path))
+            references = [ref for ref in context.get('templates', {}).values()
+                          if isinstance(ref, dict) and ref.get('path') == template_path]
+            digest = hashlib.sha256(template_content.encode('utf-8')).hexdigest()
+            if len(references) != 1 or references[0].get('sha256') != digest:
+                return 'ERROR: TEMPLATE_AUTHORITY_ERROR: template does not match the frozen path/digest'
+
+        # Validate the actual template interface before importing anything.
+        import re
+        required = set(re.findall(r'\{\{([A-Z_][A-Z0-9_]*)\}\}', template_content))
+        invalid = sorted(key for key in required if key not in placeholders
+                         or placeholders[key] is None or not str(placeholders[key]).strip())
+        if invalid:
+            return (f"ERROR: TEMPLATE_BINDING_ERROR: missing or empty placeholders: {invalid}. "
+                    f"Bind every placeholder from the authenticated handoff. "
+                    f"No notebook was imported. Template: {template_path}")
+
         # 2. Deterministic placeholder substitution
         result = template_content
         applied = []
@@ -583,7 +614,7 @@ class ToolExecutor:
 
         # 3. Check for unreplaced placeholders in the result
         import re
-        unreplaced = re.findall(r'\{\{([A-Z_]+)\}\}', result)
+        unreplaced = re.findall(r'\{\{([A-Z_][A-Z0-9_]*)\}\}', result)
         if unreplaced:
             unique_unreplaced = sorted(set(unreplaced))
             return (

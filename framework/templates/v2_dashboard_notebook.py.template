@@ -158,7 +158,10 @@ for fqn, cols in COLUMN_REGISTRY.items():
 # =============================================================================
 
 design_path = f"{OUTPUT_FOLDER}/dashboards/dashboard_design.yaml"
-design = runtime.decode(store.read(design_path))
+design_bytes = store.read(design_path)
+if design_bytes is None:
+    raise RuntimeError(f"DASHBOARD_DESIGN_NOT_FOUND: {design_path}. Persist and verify the design before notebook execution.")
+design = runtime.decode(design_bytes)
 
 assert "dashboards" in design, f"dashboard_design.yaml missing 'dashboards' key at {design_path}"
 assert len(design["dashboards"]) > 0, "dashboard_design.yaml has 0 dashboards"

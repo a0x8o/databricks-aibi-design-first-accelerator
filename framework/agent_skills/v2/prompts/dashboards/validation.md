@@ -243,3 +243,12 @@ dashboards:
 | `AP-DB-13` | Quality Target Used as a Structural Gate |
 
 Classify the failure from current evidence before loading a runbook section. The index is a routing aid, not authority to bypass the stage owner or retry policy.
+
+
+### GATE TEMPLATE-INPUT: Release and design admission (DB-G1)
+
+Before notebook import/run, authenticate the release-selected dashboard template's
+path and SHA-256 against the run context, then verify exact workspace design-file
+readback at `<output_folder>/dashboards/dashboard_design.yaml`. Missing design is
+DASHBOARD_DESIGN_NOT_FOUND; mismatched template is TEMPLATE_AUTHORITY_ERROR. Both
+block dashboard deployment. Never execute a legacy notebook as a fallback.

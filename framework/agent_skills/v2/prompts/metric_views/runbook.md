@@ -176,3 +176,15 @@ Using `format: "#,##0"` or `format: "$#,##0.00"` causes `METRIC_VIEW_INVALID_VIE
 Valid `format.type` values: `number` | `currency` | `percentage` | `date` | `date_time` | `byte`. Omit `format` entirely if no specific formatting is needed. **For date/timestamp dimensions, omitting `format` is strongly recommended** — dashboards auto-detect and format date columns correctly.
 
 ---
+
+
+### METRIC_VIEW_INPUT_NOT_FOUND / FileNotFoundError under /Workspace
+
+Follow MV-G1 and validation GATE 8.SPEC-IO. Capture the full missing path and failing
+statement. Compare it with the frozen handoff run root plus the canonical spec
+relative path. If SDK readback succeeds but a local open fails, the notebook relied
+on a compute-local mount; use the release-selected SDK-based template. If SDK
+readback also reports NotFound, return to the spec producer to persist and verify
+its output. Permission denial is not absence. Never search another version, invent
+a new path, or emit an empty spec. Template changes require the normal frozen-release
+admission rules; do not patch an already frozen notebook in place.

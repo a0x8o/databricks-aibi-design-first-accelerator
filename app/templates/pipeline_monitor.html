@@ -846,6 +846,29 @@ async function pollStatus(){
         }
         persistenceNotice.textContent=d.persistence_warning||'';
         persistenceNotice.hidden=!d.persistence_warning;
+        let errorDetails=document.getElementById('full-run-error');
+        if(d.error && !errorDetails){
+            errorDetails=document.createElement('details');
+            errorDetails.id='full-run-error';
+            errorDetails.open=true;
+            errorDetails.style.cssText='margin:12px;padding:12px;border:1px solid var(--danger);';
+            const summary=document.createElement('summary');
+            summary.textContent='Full error and traceback';
+            const copy=document.createElement('button');
+            copy.type='button'; copy.textContent='Copy full error';
+            const traceback=document.createElement('pre');
+            traceback.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;max-height:420px;overflow:auto;user-select:text;';
+            copy.onclick=async()=>{
+                try { await navigator.clipboard.writeText(traceback.textContent); copy.textContent='Copied'; }
+                catch (_) { copy.textContent='Select and copy the text below'; }
+            };
+            errorDetails.append(summary,copy,traceback);
+            document.body.prepend(errorDetails);
+        }
+        if(errorDetails){
+            errorDetails.hidden=!d.error;
+            errorDetails.querySelector('pre').textContent=d.error||'';
+        }
         console.log('[POLL] Status:', d.status, 'Steps:', d.steps?.length||0, 'Phases:', d.steps?.reduce((n,s)=>n+(s.phases?.length||0),0)||0);
 
         // Hydrate footer metadata bar from poll response (fills in values
@@ -1014,7 +1037,9 @@ async function pollStatus(){
             }
             if(d.error){
                 const now=new Date().toLocaleTimeString('en-US',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'});
-                activities.unshift({time:now,text:`<strong style="color:var(--danger)">\u274c Pipeline failed</strong><br>${d.error.slice(0,200)}`,milestone:true});
+                const errorPreview=document.createElement('span');
+                errorPreview.textContent=d.error.slice(0,200);
+                activities.unshift({time:now,text:`<strong style="color:var(--danger)">\u274c Pipeline failed</strong><br>${errorPreview.innerHTML}<br>See Full error and traceback above.`,milestone:true});
                 renderTab();
             }
         }

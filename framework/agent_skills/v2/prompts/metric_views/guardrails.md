@@ -4,6 +4,27 @@
 
 ## Prohibited Actions
 
+### MV-G1: Workspace artifact handoff
+
+The deployment notebook consumes exactly
+`<step_handoff.output_folder>/metric_views/metric_view_spec.yaml`. Its OUTPUT_FOLDER
+placeholder is the run root, not the metric_views subdirectory. Resolve it from the
+authenticated handoff, not the current notebook directory or a guessed version path.
+
+Before submission, persist the complete spec through workspace tools/SDK and verify
+its exact byte readback at that path. Record the digest in the existing producer
+checkpoint. Gate 8.SPEC-IO must pass before deployment progress starts. A design or plan
+file is not a substitute for the executable spec.
+
+The notebook must read workspace artifacts via authenticated SDK file operations;
+do not assume `/Workspace` is mounted on its compute. Apply shared G-8 for file
+transport and verified output writes. Missing input returns to its producer; access
+denials remain permission failures. Do not switch paths, search prior versions, copy
+local files as a silent fallback, or create an empty spec. All file preflight occurs
+before Metric View DDL. These rules apply equally in the App and Genie Code.
+
+### Existing stage prohibitions
+
 0. DO NOT classify enrollment/secondary-grain KPIs as NOT_IMPLEMENTED without creating their metric view
 1. DO NOT skip schema profiling
 2. DO NOT skip relationship verification

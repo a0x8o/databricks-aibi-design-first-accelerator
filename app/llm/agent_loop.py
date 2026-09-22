@@ -60,6 +60,7 @@ CRITICAL_TOOLS = {
     "execute_python",         # Python code generates artifacts (YAML, configs) needed downstream
     "execute_notebook",       # Notebook execution (data generation, ETL) = missing data
     "create_notebook",        # Can't create the notebook = can't proceed
+    "deploy_from_template",   # A missing producer cannot unlock downstream stages
     "write_file",             # File writes produce artifacts required by later phases
 }
 # NOTE: create_dashboard removed — now disabled, uses template notebook pattern
@@ -416,6 +417,8 @@ class AgentLoop:
                                     is_critical = True
                                     break
 
+                    if tool_name == 'deploy_from_template':
+                        is_critical = True
                     if is_critical:
                         logger.error(
                             f"CRITICAL tool failure — halting immediately. "
@@ -424,12 +427,12 @@ class AgentLoop:
                         if callback:
                             callback("critical_failure", {
                                 "tool": tool_name,
-                                "error": result_str[:1000],
+                                "error": result_str,
                                 "iteration": iterations,
                             })
                         return AgentResult(
                             success=False,
-                            error=f"Critical failure in '{tool_name}': {result_str[:1000]}",
+                            error=f"Critical failure in '{tool_name}': {result_str}",
                             iterations=iterations,
                             tool_calls_made=tool_calls_made,
                         )
@@ -443,7 +446,7 @@ class AgentLoop:
                         )
                         return AgentResult(
                             success=False,
-                            error=f"Hard fail after {MAX_CONSECUTIVE_ERRORS} consecutive tool errors. Last: {result_str[:1000]}",
+                            error=f"Hard fail after {MAX_CONSECUTIVE_ERRORS} consecutive tool errors. Last: {result_str}",
                             iterations=iterations,
                             tool_calls_made=tool_calls_made,
                         )
@@ -454,7 +457,7 @@ class AgentLoop:
                         )
                         return AgentResult(
                             success=False,
-                            error=f"Hard fail: '{tool_name}' failed {per_tool_errors.get(tool_name, 0)} times. Last: {result_str[:1000]}",
+                            error=f"Hard fail: '{tool_name}' failed {per_tool_errors.get(tool_name, 0)} times. Last: {result_str}",
                             iterations=iterations,
                             tool_calls_made=tool_calls_made,
                         )
@@ -471,7 +474,7 @@ class AgentLoop:
                         "iteration": iterations,
                         "duration_ms": duration_ms,
                         "success": not is_error,
-                        "result_summary": result_str[:1000],  # Keep more for errors
+                        "result_summary": result_str if is_error else result_str[:1000],
                         "consecutive_errors": consecutive_errors,
                     })
 

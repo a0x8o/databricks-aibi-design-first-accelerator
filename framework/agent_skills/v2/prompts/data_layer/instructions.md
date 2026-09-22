@@ -774,7 +774,7 @@ type is incomplete or differs, regenerate it from the resolved ERD and record th
 4. Run programmatic GATE 4.0 with the digest-attested
    `validate_table_spec_projection(erd_tables, table_spec)` function. A failure routes to the
    owning ERD-reparse or table-spec-regeneration action and MUST occur before notebook deployment.
-5. **Deploy DDL notebook from template** — call the `deploy_from_template` tool with:
+5. **Apply guardrails DL-G4 and shared G-16, then deploy DDL notebook from template** — call the `deploy_from_template` tool with:
    - `template_path`: exact frozen `run_context.templates.ddl_notebook`
    - `output_path`: `{OUTPUT_FOLDER}/notebooks/ddl_{DOMAIN_NAME}.py`
    - `placeholders`: `{"DOMAIN_NAME": "...", "OUTPUT_FOLDER": "...", "TARGET_CATALOG": "...", "TARGET_SCHEMA": "..."}`
@@ -1274,7 +1274,7 @@ volume_targets:
 ### Process
 
 1. Produce `{OUTPUT_FOLDER}/synthetic_data_spec.yaml` — declarative specification of all tables, row counts, column domains, FK mappings, and PK columns. The LLM produces ONLY this spec.
-2. **Deploy dbldatagen notebook from template** — call `deploy_from_template` with:
+2. **Apply guardrails DL-G4 and shared G-16, then deploy dbldatagen notebook from template** — call `deploy_from_template` with:
    - `template_path`: exact frozen `run_context.templates.dbldatagen_notebook`
    - `output_path`: `{OUTPUT_FOLDER}/notebooks/synthetic_data_{DOMAIN_NAME}.py`
    - `placeholders`: `{"DOMAIN_NAME": "...", "OUTPUT_FOLDER": "...", "TARGET_CATALOG": "...", "TARGET_SCHEMA": "...", "ASSET_SUFFIX": "..."}`

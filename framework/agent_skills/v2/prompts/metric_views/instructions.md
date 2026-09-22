@@ -1364,7 +1364,9 @@ If the deployed template does not implement Gate 0 and the required manifest fie
 
 If `metric_view_plan.yaml` specifies intermediate views, create them FIRST via Statement Execution API (these are regular MATERIALIZED VIEWs, not metric views). The intermediate view DDL can still be executed directly by the LLM.
 
-**GATE 8.1**: `metric_view_spec.yaml` exists with all planned metric views. HALT if missing.
+**GATE 8.SPEC-IO**: Apply this step's `guardrails.md` MV-G1 and validation GATE 8.SPEC-IO.
+Persist and verify exact workspace byte readback of `metric_view_spec.yaml` with all
+planned views before notebook submission. Return a missing input to its producer.
 
 ---
 
@@ -1375,7 +1377,7 @@ If `metric_view_plan.yaml` specifies intermediate views, create them FIRST via S
 **CRITICAL: Use `deploy_from_template` tool.** The template is a complete, tested notebook. The tool reads it verbatim and performs ONLY placeholder substitution. DO NOT use `import_notebook` for this — it will reject template-based paths (G-16 enforcement).
 
 Call `deploy_from_template` with:
-- `template_path`: exact frozen `run_context.templates.metric_view_notebook`
+- `template_path`: exact frozen `run_context.templates.metric_view_notebook.path` (verify its paired SHA-256)
 - `output_path`: `{OUTPUT_FOLDER}/metric_views/metric_view_deployment.ipynb`
 - `placeholders`: `{"DOMAIN_NAME": "<run_context.domain.name>", "OUTPUT_FOLDER": "<handoff.output_folder>", "WAREHOUSE_ID": "<handoff.warehouse_id>", "CATALOG": "<handoff target catalog>", "SCHEMA": "<handoff target schema>", "VERSION_SUFFIX": "<handoff.version_suffix>", "ASSET_SUFFIX": "<handoff.asset_suffix>", "DEPLOY_ROOT": "<handoff.deploy_root>"}`
 

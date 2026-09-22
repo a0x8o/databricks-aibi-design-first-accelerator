@@ -46,7 +46,31 @@ import yaml
 import json
 import hashlib
 import time
-from pathlib import Path
+import posixpath
+from databricks.sdk import WorkspaceClient
+
+w = WorkspaceClient()
+
+
+def read_workspace_bytes(client, path):
+    """Workspace paths are API locators, not guaranteed notebook-local mounts."""
+    from databricks.sdk.errors import NotFound
+    try:
+        with client.workspace.download(path) as stream:
+            return stream.read()
+    except NotFound as exc:
+        raise RuntimeError(
+            f"METRIC_VIEW_INPUT_NOT_FOUND: {path}. Persist and verify the current-run "
+            "spec before deployment; do not search other versions or create a placeholder."
+        ) from exc
+
+
+def write_workspace_bytes(client, path, payload):
+    from databricks.sdk.service.workspace import ImportFormat
+    client.workspace.mkdirs(posixpath.dirname(path))
+    client.workspace.upload(path, payload, format=ImportFormat.RAW, overwrite=True)
+    if read_workspace_bytes(client, path) != payload:
+        raise RuntimeError(f'METRIC_VIEW_OUTPUT_READBACK_ERROR: {path}')
 
 CATALOG = "{{CATALOG}}"
 SCHEMA = "{{SCHEMA}}"
@@ -73,12 +97,12 @@ print(f"Spec path:  {SPEC_PATH}")
 # Read metric_view_spec.yaml, validate schema, ensure all required fields exist.
 # =============================================================================
 
-with open(SPEC_PATH) as f:
-    spec_raw = f.read()
-    spec = yaml.safe_load(spec_raw)
+spec_bytes = read_workspace_bytes(w, SPEC_PATH)
+spec_raw = spec_bytes.decode('utf-8')
+spec = yaml.safe_load(spec_raw)
 
 # Compute source_hash (hash of the declarative spec — for manifest)
-SOURCE_HASH = hashlib.sha256(spec_raw.encode()).hexdigest()
+SOURCE_HASH = hashlib.sha256(spec_bytes).hexdigest()
 
 assert "metric_views" in spec, "metric_view_spec.yaml missing 'metric_views' key"
 MV_SPECS = spec["metric_views"]
@@ -124,10 +148,7 @@ READBACK_HASH = ""   # filled in Cell 6
 # Verify source tables exist and are accessible via Statement Execution API.
 # =============================================================================
 
-from databricks.sdk import WorkspaceClient
 from databricks.sdk.service.sql import StatementState
-
-w = WorkspaceClient()
 
 def execute_sql(stmt, timeout="50s"):
     """Execute SQL via Statement Execution API (required for metric views)."""
@@ -448,8 +469,7 @@ manifest = {
 }
 
 manifest_path = f"{OUTPUT_FOLDER}/metric_views/metric_view_manifest.json"
-with open(manifest_path, "w") as f:
-    json.dump(manifest, f, indent=2)
+write_workspace_bytes(w, manifest_path, json.dumps(manifest, indent=2).encode('utf-8'))
 
 print(f"Manifest written: {manifest_path}")
 print(f"  Source hash:     {SOURCE_HASH[:16]}...")

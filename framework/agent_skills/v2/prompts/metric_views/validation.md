@@ -4,6 +4,20 @@
 
 ## Gates
 
+### GATE 8.SPEC-IO: Spec handoff before notebook submission (MV-G1)
+
+Read the exact canonical spec path through workspace tools/SDK after its producer
+write. Require nonempty raw bytes, a YAML mapping with a nonempty `metric_views`
+list, and exact planned/handoff name coverage. Authenticate the producer checkpoint
+and spec digest before deployment. Verify OUTPUT_FOLDER equals the authenticated
+run root so the template appends `/metric_views/metric_view_spec.yaml` only once.
+
+The notebook must complete the SDK input read and structural checks before any
+Metric View mutation. Missing input is `METRIC_VIEW_INPUT_NOT_FOUND`; return it to
+spec generation without querying other output versions. Preserve permission errors
+as such. Manifest writes must use RAW format and exact byte readback; failure is
+`METRIC_VIEW_OUTPUT_READBACK_ERROR` and cannot be acknowledged as completion.
+
 ### GATE 2.1: Schema Profile Exists
 `schema_profile.yaml` must exist. HALT if missing.
 

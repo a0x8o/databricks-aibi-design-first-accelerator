@@ -3230,7 +3230,7 @@ pages[].layout[] = {
 The `create_dashboard` and `publish_dashboard` tools are DISABLED. Dashboard deployment MUST follow the template notebook pattern (same as metric views and Genie spaces):
 
 1. The LLM produces `dashboard_design.yaml` (declarative spec — pages, widgets, datasets, filters)
-2. The LLM populates `dashboard_notebook.py.template` Cell 1 with configuration from `step_handoff.yaml` and `dashboard_design.yaml`
+2. The LLM uses the exact `run_context.templates.dashboard_notebook.path` and paired SHA-256 (selected by contracts/release.yaml), and populates Cell 1 with configuration from `step_handoff.yaml` and `dashboard_design.yaml`
 3. The LLM copies Cells 2-N VERBATIM from the template (they handle compilation, deployment, readback, and manifest writing)
 4. The LLM saves the notebook to `{OUTPUT_FOLDER}/dashboards/dashboard_deployment.ipynb`
 5. The LLM executes the notebook
