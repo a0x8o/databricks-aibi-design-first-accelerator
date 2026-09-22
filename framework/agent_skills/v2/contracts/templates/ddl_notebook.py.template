@@ -1,0 +1,550 @@
+# Databricks notebook source
+# DBTITLE 1,DDL Compiler and Schema Reconciliation — {{DOMAIN_NAME}}
+#
+# Deterministic runtime:
+#   table_spec.yaml -> strict datatype validation -> CREATE TABLE IF NOT EXISTS
+#   -> exact deployed name/type reconciliation -> schema_reconciliation.yaml
+#
+# No datatype component is inferred. Synthetic data may run only after the
+# persisted reconciliation artifact is PASS and current readback still matches.
+
+# COMMAND ----------
+
+# DBTITLE 1,Load and Authenticate Inputs
+import hashlib
+import json
+import os
+import re
+import yaml
+
+OUTPUT_FOLDER = "{{OUTPUT_FOLDER}}"
+TARGET_CATALOG = "{{TARGET_CATALOG}}"
+TARGET_SCHEMA = "{{TARGET_SCHEMA}}"
+SPEC_PATH = f"{OUTPUT_FOLDER}/table_spec.yaml"
+ERD_PARSED_PATH = f"{OUTPUT_FOLDER}/erd_parsed.yaml"
+RUN_CONTEXT_PATH = f"{OUTPUT_FOLDER}/run_context.yaml"
+HANDOFF_PATH = f"{OUTPUT_FOLDER}/step_handoff.yaml"
+RECONCILIATION_PATH = f"{OUTPUT_FOLDER}/schema_reconciliation.yaml"
+MANIFEST_PATH = f"{OUTPUT_FOLDER}/ddl_manifest.json"
+POLICY_ID = "DEPLOYED_DATATYPE_REPAIR_V1"
+
+
+class _UniqueKeyLoader(yaml.SafeLoader):
+    pass
+
+
+def _construct_unique_mapping(loader, node, deep=False):
+    mapping = {}
+    for key_node, value_node in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        if key in mapping:
+            raise ValueError(f"Duplicate YAML key: {key}")
+        mapping[key] = loader.construct_object(value_node, deep=deep)
+    return mapping
+
+
+_UniqueKeyLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
+    _construct_unique_mapping,
+)
+
+
+def _load_yaml(path):
+    with open(path, encoding="utf-8") as handle:
+        value = yaml.load(handle, Loader=_UniqueKeyLoader)
+    if not isinstance(value, dict):
+        raise RuntimeError(f"Expected a YAML mapping at {path}")
+    return value
+
+
+def _atomic_write_yaml(path, value):
+    temp_path = f"{path}.tmp.{os.getpid()}"
+    with open(temp_path, "w", encoding="utf-8") as handle:
+        yaml.safe_dump(value, handle, sort_keys=False)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(temp_path, path)
+
+
+def _atomic_write_json(path, value):
+    temp_path = f"{path}.tmp.{os.getpid()}"
+    with open(temp_path, "w", encoding="utf-8") as handle:
+        json.dump(value, handle, indent=2, sort_keys=True)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(temp_path, path)
+
+
+def _raw_sha256(path):
+    with open(path, "rb") as handle:
+        return hashlib.sha256(handle.read()).hexdigest()
+
+
+def _canonical_sha256(value):
+    payload = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _quote_identifier(value):
+    if not isinstance(value, str) or not value or "`" in value:
+        raise RuntimeError(f"Unsafe or empty SQL identifier: {value!r}")
+    return f"`{value}`"
+
+
+def _fqn(catalog, schema, table):
+    return ".".join(_quote_identifier(part) for part in (catalog, schema, table))
+
+
+_SIMPLE_TYPE_ALIASES = {"integer": "int", "long": "bigint"}
+_SIMPLE_TYPES = {
+    "bigint", "int", "smallint", "tinyint", "float", "double",
+    "string", "boolean", "date", "timestamp", "timestamp_ntz", "binary",
+}
+
+
+def canonicalize_datatype(value):
+    """Normalize case/whitespace and explicitly approved aliases only."""
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("datatype is empty")
+    compact = re.sub(r"\s+", "", value).lower()
+    compact = _SIMPLE_TYPE_ALIASES.get(compact, compact)
+    if compact in _SIMPLE_TYPES:
+        return compact
+
+    decimal_match = re.fullmatch(r"(decimal|numeric)\((\d+),(\d+)\)", compact)
+    if decimal_match:
+        precision = int(decimal_match.group(2))
+        scale = int(decimal_match.group(3))
+        if not 1 <= precision <= 38:
+            raise ValueError(f"decimal precision {precision} is outside 1..38")
+        if not 0 <= scale <= precision:
+            raise ValueError(f"decimal scale {scale} is outside 0..{precision}")
+        return f"decimal({precision},{scale})"
+    if re.match(r"^(decimal|numeric)\b", compact):
+        raise ValueError(
+            f"decimal/numeric value {value!r} must include complete precision and scale as (p,s)"
+        )
+
+    length_match = re.fullmatch(r"(varchar|char|nvarchar)\((\d+)\)", compact)
+    if length_match:
+        length = int(length_match.group(2))
+        if length < 1:
+            raise ValueError("character length must be positive")
+        return f"{length_match.group(1)}({length})"
+    if re.match(r"^(varchar|char|nvarchar)\b", compact):
+        raise ValueError("varchar/char/nvarchar must include a complete positive length")
+    raise ValueError(f"unsupported or malformed datatype {value!r}")
+
+
+def _validate_erd_projection(erd_document, table_spec):
+    """Defense-in-depth GATE 4.0 before the first catalog mutation."""
+    erd_tables = erd_document.get("tables")
+    spec_tables = table_spec.get("tables")
+    if not isinstance(erd_tables, list) or not erd_tables:
+        raise RuntimeError("ERD_EXTRACTION_ERROR: erd_parsed.yaml has no tables")
+    if not isinstance(spec_tables, list) or not spec_tables:
+        raise RuntimeError("SCHEMA_CONTRACT_ERROR: table_spec.yaml has no tables")
+
+    erd_names = [table.get("name") for table in erd_tables]
+    spec_names = [table.get("name") for table in spec_tables]
+    if len(erd_names) != len(set(erd_names)):
+        raise RuntimeError("ERD_EXTRACTION_ERROR: duplicate table names in erd_parsed.yaml")
+    if len(spec_names) != len(set(spec_names)):
+        raise RuntimeError("SCHEMA_CONTRACT_ERROR: duplicate table names in table_spec.yaml")
+    if erd_names != spec_names:
+        raise RuntimeError(
+            f"SCHEMA_CONTRACT_ERROR: table inventory/order mismatch: "
+            f"ERD={erd_names!r}, table_spec={spec_names!r}"
+        )
+
+    for erd_table, spec_table in zip(erd_tables, spec_tables):
+        table_name = erd_table.get("name")
+        erd_columns = erd_table.get("observed", {}).get("columns")
+        spec_columns = spec_table.get("columns")
+        if not isinstance(erd_columns, list) or not erd_columns:
+            raise RuntimeError(
+                f"ERD_EXTRACTION_ERROR: {table_name} has no observed columns"
+            )
+        if not isinstance(spec_columns, list) or not spec_columns:
+            raise RuntimeError(
+                f"SCHEMA_CONTRACT_ERROR: {table_name} has no table-spec columns"
+            )
+        erd_column_names = [column.get("name") for column in erd_columns]
+        spec_column_names = [column.get("name") for column in spec_columns]
+        if len(erd_column_names) != len(set(erd_column_names)):
+            raise RuntimeError(
+                f"ERD_EXTRACTION_ERROR: duplicate column names in {table_name}"
+            )
+        if len(spec_column_names) != len(set(spec_column_names)):
+            raise RuntimeError(
+                f"SCHEMA_CONTRACT_ERROR: duplicate table-spec columns in {table_name}"
+            )
+        if erd_column_names != spec_column_names:
+            raise RuntimeError(
+                f"SCHEMA_CONTRACT_ERROR: {table_name} column inventory/order mismatch: "
+                f"ERD={erd_column_names!r}, table_spec={spec_column_names!r}"
+            )
+        for erd_column, spec_column in zip(erd_columns, spec_columns):
+            column_name = erd_column.get("name")
+            erd_type = erd_column.get("datatype")
+            spec_type = spec_column.get("type")
+            try:
+                canonical_erd_type = canonicalize_datatype(erd_type)
+            except ValueError as exc:
+                raise RuntimeError(
+                    f"ERD_EXTRACTION_ERROR: {table_name}.{column_name}: {exc}; "
+                    "reject any cached parse and perform targeted authoritative reparse"
+                ) from exc
+            try:
+                canonical_spec_type = canonicalize_datatype(spec_type)
+            except ValueError as exc:
+                raise RuntimeError(
+                    f"SCHEMA_CONTRACT_ERROR: {table_name}.{column_name}: {exc}"
+                ) from exc
+            if canonical_erd_type != canonical_spec_type:
+                raise RuntimeError(
+                    f"SCHEMA_CONTRACT_ERROR: {table_name}.{column_name}: "
+                    f"ERD datatype {erd_type!r} != table-spec datatype {spec_type!r}"
+                )
+
+
+for _name, _value in {
+    "OUTPUT_FOLDER": OUTPUT_FOLDER,
+    "TARGET_CATALOG": TARGET_CATALOG,
+    "TARGET_SCHEMA": TARGET_SCHEMA,
+}.items():
+    if not _value or "{{" in _value or "}}" in _value:
+        raise RuntimeError(f"Unresolved required template value: {_name}")
+
+spec = _load_yaml(SPEC_PATH)
+erd_document = _load_yaml(ERD_PARSED_PATH)
+run_context = _load_yaml(RUN_CONTEXT_PATH)
+step_handoff = _load_yaml(HANDOFF_PATH)
+
+CATALOG = spec.get("catalog")
+SCHEMA = spec.get("schema")
+ASSET_SUFFIX = spec.get("asset_suffix")
+legacy_version_suffix = spec.get("version_suffix")
+if ASSET_SUFFIX is None:
+    ASSET_SUFFIX = legacy_version_suffix
+if not isinstance(ASSET_SUFFIX, str) or not ASSET_SUFFIX:
+    raise RuntimeError("table_spec.yaml must contain a non-empty asset_suffix")
+if legacy_version_suffix is not None and legacy_version_suffix != ASSET_SUFFIX:
+    raise RuntimeError("table_spec version_suffix conflicts with asset_suffix")
+
+context_target = run_context.get("target", {})
+context_version = run_context.get("version", {})
+greenfield = run_context.get("data_source", {}).get("greenfield", {})
+run_id = run_context.get("run_id")
+if not isinstance(run_id, str) or not run_id:
+    raise RuntimeError("run_context.yaml is missing run_id")
+
+parity_checks = {
+    "spec.catalog": (CATALOG, TARGET_CATALOG),
+    "spec.schema": (SCHEMA, TARGET_SCHEMA),
+    "context.target.catalog": (context_target.get("catalog"), TARGET_CATALOG),
+    "context.target.schema": (context_target.get("schema"), TARGET_SCHEMA),
+    "context.asset_suffix": (context_version.get("asset_suffix"), ASSET_SUFFIX),
+    "context.output_folder": (run_context.get("output_folder"), OUTPUT_FOLDER),
+    "handoff.run_id": (step_handoff.get("run_id"), run_id),
+    "handoff.catalog": (step_handoff.get("catalog"), TARGET_CATALOG),
+    "handoff.schema": (step_handoff.get("schema"), TARGET_SCHEMA),
+    "handoff.asset_suffix": (step_handoff.get("asset_suffix"), ASSET_SUFFIX),
+    "handoff.output_folder": (step_handoff.get("output_folder"), OUTPUT_FOLDER),
+}
+for field, (actual, expected) in parity_checks.items():
+    if actual != expected:
+        raise RuntimeError(f"DDL_INPUT_AUTHORITY_ERROR: {field}={actual!r}, expected {expected!r}")
+if greenfield.get("enabled") is not True:
+    raise RuntimeError("DDL_INPUT_AUTHORITY_ERROR: generated DDL requires greenfield.enabled=true")
+
+TABLES = spec.get("tables")
+if not isinstance(TABLES, list) or not TABLES:
+    raise RuntimeError("table_spec.yaml has no tables")
+
+seen_tables = set()
+for table in TABLES:
+    table_name = table.get("name")
+    columns = table.get("columns")
+    if not isinstance(table_name, str) or not table_name:
+        raise RuntimeError("Table missing a non-empty name")
+    if table_name in seen_tables:
+        raise RuntimeError(f"Duplicate table name: {table_name}")
+    seen_tables.add(table_name)
+    if not isinstance(columns, list) or not columns:
+        raise RuntimeError(f"Table {table_name} has no columns")
+    seen_columns = set()
+    for column in columns:
+        column_name = column.get("name")
+        datatype = column.get("type")
+        if not isinstance(column_name, str) or not column_name:
+            raise RuntimeError(f"Column missing a non-empty name in {table_name}")
+        if column_name in seen_columns:
+            raise RuntimeError(f"Duplicate column {table_name}.{column_name}")
+        seen_columns.add(column_name)
+        try:
+            canonicalize_datatype(datatype)
+        except ValueError as exc:
+            raise RuntimeError(
+                f"SCHEMA_CONTRACT_ERROR: {table_name}.{column_name}: received "
+                f"{datatype!r}: {exc}; return to authoritative ERD evidence instead of guessing"
+            ) from exc
+
+_validate_erd_projection(erd_document, spec)
+spark.sql(f"CREATE SCHEMA IF NOT EXISTS {_quote_identifier(CATALOG)}.{_quote_identifier(SCHEMA)}")
+print(f"Gates 1-2 and 4.0 PASSED: {len(TABLES)} tables with exact complete ERD projection")
+
+# COMMAND ----------
+
+# DBTITLE 1,Compile and Execute DDL
+DDL_BY_TABLE = {}
+PREEXISTING = {}
+for table in TABLES:
+    deployed_name = f"{table['name']}{ASSET_SUFFIX}"
+    full_name = _fqn(CATALOG, SCHEMA, deployed_name)
+    try:
+        spark.sql(f"DESCRIBE TABLE {full_name}").collect()
+        PREEXISTING[deployed_name] = True
+    except Exception:
+        PREEXISTING[deployed_name] = False
+
+    column_definitions = []
+    for column in table["columns"]:
+        nullable = "" if column.get("nullable", True) else " NOT NULL"
+        column_definitions.append(
+            f"  {_quote_identifier(column['name'])} {column['type'].strip()}{nullable}"
+        )
+    comment = str(table.get("comment", "")).replace("'", "''")
+    ddl = (
+        f"CREATE TABLE IF NOT EXISTS {full_name} (\n"
+        + ",\n".join(column_definitions)
+        + f"\n) USING DELTA COMMENT '{comment}'"
+    )
+    DDL_BY_TABLE[deployed_name] = ddl
+
+for deployed_name, ddl in DDL_BY_TABLE.items():
+    spark.sql(ddl)
+    print(f"Created or confirmed: {CATALOG}.{SCHEMA}.{deployed_name}")
+
+print(f"Executed {len(DDL_BY_TABLE)} compiler-generated CREATE statements")
+
+# COMMAND ----------
+
+# DBTITLE 1,Exact Schema Reconciliation (GATE 4.1 + 4.2)
+def _read_deployed_schema(deployed_name):
+    rows = spark.sql(f"DESCRIBE TABLE {_fqn(CATALOG, SCHEMA, deployed_name)}").collect()
+    schema_rows = []
+    for row in rows:
+        column_name = str(row["col_name"]).strip()
+        datatype = str(row["data_type"]).strip()
+        if not column_name or column_name.startswith("#"):
+            break
+        schema_rows.append({
+            "column": column_name,
+            "datatype": datatype,
+            "canonical_datatype": canonicalize_datatype(datatype),
+        })
+    return schema_rows
+
+
+def _expected_schema(table):
+    return [
+        {
+            "column": column["name"],
+            "datatype": column["type"].strip(),
+            "canonical_datatype": canonicalize_datatype(column["type"]),
+        }
+        for column in table["columns"]
+    ]
+
+
+def _schema_differences(expected, observed):
+    differences = []
+    expected_names = [item["column"] for item in expected]
+    observed_names = [item["column"] for item in observed]
+    if expected_names != observed_names:
+        differences.append({
+            "mismatch_kind": "STRUCTURAL",
+            "expected_columns": expected_names,
+            "observed_columns": observed_names,
+        })
+        return differences
+    for expected_column, observed_column in zip(expected, observed):
+        if expected_column["canonical_datatype"] != observed_column["canonical_datatype"]:
+            differences.append({
+                "mismatch_kind": "DATATYPE",
+                "column": expected_column["column"],
+                "expected_datatype": expected_column["datatype"],
+                "observed_datatype": observed_column["datatype"],
+            })
+    return differences
+
+
+prior_attempts = {}
+if os.path.exists(RECONCILIATION_PATH):
+    prior = _load_yaml(RECONCILIATION_PATH)
+    if prior.get("run_id") == run_id and prior.get("asset_suffix") == ASSET_SUFFIX:
+        for attempt in prior.get("attempts", []):
+            table_fqn = attempt.get("table_fqn")
+            if attempt.get("action") == "DROP_RECREATE_FROM_TABLE_SPEC":
+                prior_attempts[table_fqn] = prior_attempts.get(table_fqn, 0) + 1
+
+attempts = []
+unresolved = []
+expected_inventory = []
+observed_inventory = []
+
+for table in TABLES:
+    deployed_name = f"{table['name']}{ASSET_SUFFIX}"
+    plain_fqn = f"{CATALOG}.{SCHEMA}.{deployed_name}"
+    expected = _expected_schema(table)
+    observed = _read_deployed_schema(deployed_name)
+    differences = _schema_differences(expected, observed)
+
+    if differences:
+        try:
+            row_count = spark.sql(
+                f"SELECT COUNT(*) AS row_count FROM {_fqn(CATALOG, SCHEMA, deployed_name)}"
+            ).collect()[0]["row_count"]
+            row_count = int(row_count)
+        except Exception:
+            row_count = None
+
+        eligible = (
+            row_count == 0
+            and prior_attempts.get(plain_fqn, 0) == 0
+            and greenfield.get("enabled") is True
+        )
+        attempt = {
+            "table_fqn": plain_fqn,
+            "mismatch_kind": "DATATYPE" if any(
+                item["mismatch_kind"] == "DATATYPE" for item in differences
+            ) else "STRUCTURAL",
+            "expected_schema": expected,
+            "observed_schema": observed,
+            "canonical_comparison": "MISMATCH",
+            "ownership": "CURRENT_VERSION_GENERATED_TARGET",
+            "row_count_before": row_count,
+            "attempt": prior_attempts.get(plain_fqn, 0),
+        }
+
+        if eligible:
+            spark.sql(f"DROP TABLE {_fqn(CATALOG, SCHEMA, deployed_name)}")
+            spark.sql(DDL_BY_TABLE[deployed_name])
+            repaired_observed = _read_deployed_schema(deployed_name)
+            repaired_differences = _schema_differences(expected, repaired_observed)
+            attempt.update({
+                "action": "DROP_RECREATE_FROM_TABLE_SPEC",
+                "attempt": 1,
+                "post_repair_schema": repaired_observed,
+                "status": "PASS" if not repaired_differences else "FAIL",
+                "error_code": None if not repaired_differences else "DATATYPE_MISMATCH_UNSAFE_TO_REPAIR",
+            })
+            attempts.append(attempt)
+            observed = repaired_observed
+            differences = repaired_differences
+        else:
+            attempt.update({
+                "action": "HALT_NO_MUTATION",
+                "post_repair_schema": [],
+                "status": "FAIL",
+                "error_code": (
+                    "DATATYPE_MISMATCH_UNSAFE_TO_REPAIR"
+                    if any(item["mismatch_kind"] == "DATATYPE" for item in differences)
+                    else "SCHEMA_CONTRACT_ERROR"
+                ),
+            })
+            attempts.append(attempt)
+
+        for difference in differences:
+            unresolved.append({"table_fqn": plain_fqn, **difference})
+
+    expected_inventory.append({"table_fqn": plain_fqn, "schema": expected})
+    observed_inventory.append({"table_fqn": plain_fqn, "schema": observed})
+
+status = "PASS" if not unresolved else "FAIL"
+failure_code = None
+if status == "FAIL":
+    failure_code = (
+        "DATATYPE_MISMATCH_UNSAFE_TO_REPAIR"
+        if any(item.get("mismatch_kind") == "DATATYPE" for item in unresolved)
+        else "SCHEMA_CONTRACT_ERROR"
+    )
+reconciliation = {
+    "artifact_type": "schema_reconciliation",
+    "contract_version": 1,
+    "run_id": run_id,
+    "asset_suffix": ASSET_SUFFIX,
+    "catalog": CATALOG,
+    "schema": SCHEMA,
+    "output_folder": OUTPUT_FOLDER,
+    "producer_step": "create_data_layer",
+    "producer_phase": "reconcile_schema",
+    "policy_id": POLICY_ID,
+    "status": status,
+    "failure_code": failure_code,
+    "table_spec_path": SPEC_PATH,
+    "table_spec_sha256": _raw_sha256(SPEC_PATH),
+    "expected_schema_sha256": _canonical_sha256(expected_inventory),
+    "observed_schema_sha256": _canonical_sha256(observed_inventory),
+    "canonical_comparison": "MATCH" if status == "PASS" else "MISMATCH",
+    "expected_schema_inventory": expected_inventory,
+    "observed_schema_inventory": observed_inventory,
+    "datatype_policy": "EMPTY_CURRENT_VERSION_TABLE_RECREATE_ONLY",
+    "tables_expected": len(TABLES),
+    "tables_checked": len(observed_inventory),
+    "preexisting_tables": sorted(name for name, existed in PREEXISTING.items() if existed),
+    "created_this_run": sorted(name for name, existed in PREEXISTING.items() if not existed),
+    "attempts": attempts,
+    "unresolved_mismatches": unresolved,
+}
+_atomic_write_yaml(RECONCILIATION_PATH, reconciliation)
+
+if status != "PASS":
+    print(f"GATE 4.2 FAILED: {len(unresolved)} unresolved schema mismatch(es)")
+    raise RuntimeError(
+        f"{failure_code}: persisted schema_reconciliation.yaml; "
+        "synthetic data generation is blocked"
+    )
+
+print(f"GATE 4.1 PASSED: all {len(TABLES)} exact expected tables resolve")
+print("GATE 4.2 PASSED: deployed column names and datatypes exactly reconcile")
+print(f"Reconciliation evidence: {RECONCILIATION_PATH}")
+
+# COMMAND ----------
+
+# DBTITLE 1,Write DDL Manifest After Reconciliation PASS
+source_hash = _raw_sha256(SPEC_PATH)
+generated_hash = hashlib.sha256(
+    "\n\n---\n\n".join(DDL_BY_TABLE[name] for name in sorted(DDL_BY_TABLE)).encode("utf-8")
+).hexdigest()
+reconciliation_hash = _raw_sha256(RECONCILIATION_PATH)
+
+manifest = {
+    "artifact_type": "ddl",
+    "domain": "{{DOMAIN_NAME}}",
+    "run_id": run_id,
+    "asset_suffix": ASSET_SUFFIX,
+    "validation_source": "catalog_describe",
+    "source_hash": source_hash,
+    "generated_hash": generated_hash,
+    "readback_hash": reconciliation["observed_schema_sha256"],
+    "schema_reconciliation_path": RECONCILIATION_PATH,
+    "schema_reconciliation_sha256": reconciliation_hash,
+    "state_comparison": "match",
+    "catalog": CATALOG,
+    "schema": SCHEMA,
+    "tables": [
+        {
+            "name": f"{table['name']}{ASSET_SUFFIX}",
+            "fqn": f"{CATALOG}.{SCHEMA}.{table['name']}{ASSET_SUFFIX}",
+            "column_count": len(table["columns"]),
+            "comment": table.get("comment", ""),
+        }
+        for table in TABLES
+    ],
+    "total_tables": len(TABLES),
+    "total_tables_deployed": len(observed_inventory),
+}
+_atomic_write_json(MANIFEST_PATH, manifest)
+print(f"DDL deployment complete: {len(TABLES)} tables, exact schema reconciliation PASS")
