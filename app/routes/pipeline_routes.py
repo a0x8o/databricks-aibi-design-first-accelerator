@@ -1229,10 +1229,15 @@ def get_run_status(run_id):
     for step_name, step_info in run.get('step_data', {}).items():
         step_status = step_info.get('status', 'pending')
         phases = step_info.get('phases', [])
-        # Normalize: if step is completed, ALL its phases must be completed too.
-        # Lakebase may have stale 'running'/'pending' phase records from the
-        # original execution (auto-close doesn't always flush to Lakebase).
-        if step_status == 'completed':
+        # v2 parent completion is not evidence for each reported phase.
+        if step_status == 'completed' and run.get('agent_skills_version') == 'v2':
+            phases = [
+                {**ph, 'status': 'unverified',
+                 'current_task': 'Step ended without a phase completion event; checkpoint verification required.'}
+                if ph.get('status') in ('started', 'update', 'running') else ph
+                for ph in phases
+            ]
+        elif step_status == 'completed':
             phases = [
                 {**ph, 'status': 'completed'} if ph.get('status') not in ('completed', 'failed') else ph
                 for ph in phases

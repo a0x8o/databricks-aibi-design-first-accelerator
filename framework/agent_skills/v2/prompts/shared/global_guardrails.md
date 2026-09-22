@@ -422,6 +422,20 @@ proof of success: display it as unverified and authenticate the checkpoint befor
 reuse. On a failure, close active UI activity as failed; do not leave it running or
 promote it to success. Progress display never determines execution eligibility.
 
+When progress tools are available, emit `started` for the exact owning phase before
+its first tool call, then `completed` only after its checkpoint/readback gate. Finish
+Parse ERD reporting before starting Generate DDL; finish DDL and reconciliation
+before starting Generate Synthetic Data. Do not leave the phase at `parse_erd`
+while deploying/executing a synthetic-data notebook. If an event was omitted,
+authenticate the existing checkpoint before reporting completion; never fabricate
+success to clean up the UI. Without progress tools, retain the same checkpoint
+barriers and communicate the current phase through the host's available channel.
+
+Hosts must preserve unverified phase status even when the parent step is complete.
+A later step's activity does not prove preceding steps completed. Tool activity
+without explicit phase attribution belongs at step level, not under a stale phase.
+These display rules do not add Lakebase or App telemetry as execution dependencies.
+
 ---
 
 ## G-7: Python 3.11 Compatibility

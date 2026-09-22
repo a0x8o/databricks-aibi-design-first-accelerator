@@ -52,6 +52,24 @@ class MirrorTests(unittest.TestCase):
         self.assertEqual(info['status'], 'failed')
         self.assertEqual(info['phases'][0]['status'], 'failed')
         self.assertEqual(info['tool_calls'][0]['status'], 'failed')
+    def test_first_seen_completion_closes_stale_phase_without_inventing_success(self):
+        for phase_id, status in [('parse_erd', 'started'), ('generate_ddl', 'completed'),
+                                 ('reconcile_schema', 'completed')]:
+            self.adapter.event('phase_update', dict(step_name='create_data_layer',
+                phase_id=phase_id, status=status))
+        phases = self.run['step_data']['create_data_layer']['phases']
+        self.assertEqual([p['status'] for p in phases], ['unverified', 'completed', 'completed'])
+        self.adapter.event('tool_call', dict(tool='execute_notebook', args_summary='synthetic notebook'))
+        self.assertEqual(phases[0]['status'], 'unverified')
+
+    def test_delayed_completion_preserves_current_phase_and_original_order(self):
+        for phase_id, status in [('parse_erd', 'started'), ('generate_ddl', 'started'),
+                                 ('parse_erd', 'completed')]:
+            self.adapter.event('phase_update', dict(step_name='create_data_layer',
+                phase_id=phase_id, status=status))
+        phases = self.run['step_data']['create_data_layer']['phases']
+        self.assertEqual([p['phase_id'] for p in phases], ['parse_erd', 'generate_ddl'])
+        self.assertEqual([p['status'] for p in phases], ['completed', 'running'])
     def test_outage_retries_and_retains_outbox(self):
         self.store.persist_app_snapshot.side_effect = RuntimeError('offline')
         with patch.object(mirror.time, 'sleep'):
@@ -175,6 +193,16 @@ class RouteRecoveryTests(unittest.TestCase):
         response = self.client.get('/api/pipeline/run/r/status')
         self.assertEqual(response.status_code,200)
         self.assertEqual(response.json['status'],'running')
+    def test_completed_step_does_not_promote_unverified_phases(self):
+        self.snapshot['step_data'] = {'load_configuration': dict(status='completed', phases=[
+            dict(phase_id='load', status='unverified', current_task='No completion event'),
+            dict(phase_id='old', status='running'),
+            dict(phase_id='run_selected', status='completed')])}
+        self.ws.files[self.path] = json.dumps(self.snapshot)
+        response = self.client.get('/api/pipeline/run/r/status')
+        self.assertEqual(response.status_code, 200)
+        phases = response.json['steps'][0]['phases']
+        self.assertEqual([p['status'] for p in phases], ['unverified', 'unverified', 'completed'])
     def test_disconnected_worker_recovers_as_retryable_failure(self):
         self.store.app_execution_active.return_value = False
         response = self.client.get('/api/pipeline/run/r/status')

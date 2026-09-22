@@ -490,7 +490,7 @@ function renderAccordion(){
                 if(ph.status==='running'){
                     // Running phases always show detail (user can collapse via toggle)
                     const phaseVisible = userPhasePref !== undefined ? userPhasePref : true;
-                    detailPanel = `<div class="phase-inline-detail" id="${phaseDetailId}" style="display:${phaseVisible?'block':'none'};">${renderPhaseDetail(ph, stepRecentTools[s.id]||[])}</div>`;
+                    detailPanel = `<div class="phase-inline-detail" id="${phaseDetailId}" style="display:${phaseVisible?'block':'none'};">${renderPhaseDetail(ph)}</div>`;
                 } else if(hasDetail && ph.status!=='pending'){
                     // Completed/failed phases: hidden by default, but respect user toggle
                     const phaseVisible = userPhasePref !== undefined ? userPhasePref : false;
@@ -522,6 +522,7 @@ function renderAccordion(){
             </div>
             <div class="accordion-body ${isOpen?'open':''}" id="accordion-body-${i}">
                 <div class="substep-list">${body}</div>
+                ${(stepRecentTools[s.id]||[]).length ? `<div class="phase-inline-detail">${renderPhaseDetail({currentTask:'Recent tool activity for this step; phase attribution unavailable.'}, stepRecentTools[s.id])}</div>` : ''}
             </div>
         </div>`;
     }).join('');
@@ -740,18 +741,8 @@ function formatDuration(s){
 
 function updateStepStatus(order, status){
     if(order<1||order>STEPS.length) return;
-    for(let i=0;i<order-1;i++){
-        if(STEPS[i].status!=='failed'&&STEPS[i].status!=='skipped') STEPS[i].status='completed';
-    }
     STEPS[order-1].status=status;
-    if(status==='failed'){
-        for(let i=order;i<STEPS.length;i++) STEPS[i].status='skipped';
-    }
-    const pct=Math.round((order/STEPS.length)*100);
-    const pb=document.getElementById('global-progress');
-    const pl=document.getElementById('global-pct');
-    if(pb) pb.style.width=pct+'%';
-    if(pl) pl.textContent=pct+'%';
+    // Other steps and overall progress come from server evidence, not UI order.
 }
 
 /* ─── Cancel / Resume ─── */
@@ -927,9 +918,7 @@ async function pollStatus(){
                 const stepId=STEP_ID_FROM_ORDER[order]||'';
 
                 // Update step status
-                if(stepData.status==='running') updateStepStatus(order,'running');
-                else if(stepData.status==='completed') updateStepStatus(order,'completed');
-                else if(stepData.status==='failed') updateStepStatus(order,'failed');
+                updateStepStatus(order, stepData.status || 'pending');
 
                 // Set duration
                 if(stepData.duration_s) STEPS[order-1].duration=formatDuration(stepData.duration_s);
@@ -998,7 +987,7 @@ async function pollStatus(){
                 const fullCounts = {};
                 for(const tc of toolCalls){ if(tc.tool_name) fullCounts[tc.tool_name] = (fullCounts[tc.tool_name]||0)+1; }
                 stepToolCounts[stepId] = fullCounts;
-                // Keep last 5 tool calls for "What's happening" live context in phase detail
+                // Keep last 5 tool calls at step level; these records have no phase identity.
                 stepRecentTools[stepId] = toolCalls.slice(-5).map(tc=>{
                     let label = TOOL_LABELS[tc.tool_name]||tc.tool_name;
                     // Enrich with model name for LLM-related tools

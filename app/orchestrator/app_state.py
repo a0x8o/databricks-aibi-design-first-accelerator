@@ -70,9 +70,15 @@ class AppStateMirror:
                 dict(step_name=step, status='running', phases=[], tool_calls=[]))
             phase = dict(data)
             phase.pop('_validated_run_selection', None)
+            phases = info['phases']
+            existing = next((p for p in phases if p.get('phase_id') == phase.get('phase_id')), None)
             if phase.get('status') in ('started', 'update'):
                 phase['status'] = 'running'
                 info['status'] = 'running'
+            # A first-seen completion is also evidence that activity moved on.
+            # An old phase's delayed completion must not close the current one.
+            if phase.get('status') == 'running' or (
+                    existing is None and phase.get('status') in ('completed', 'failed')):
                 for stage in self.run.get('step_data', {}).values():
                     for previous in stage.get('phases', []):
                         if previous.get('status') == 'running' and not (
@@ -80,9 +86,10 @@ class AppStateMirror:
                         ):
                             previous.update(status='unverified',
                                 current_task='Phase ended without a completion event; checkpoint verification required.')
-            phases = info['phases']
-            phases[:] = [p for p in phases if p.get('phase_id') != phase.get('phase_id')]
-            phases.append(phase)
+            if existing is None:
+                phases.append(phase)
+            else:
+                existing.update(phase)
             if phase.get('status') == 'failed':
                 info['status'] = 'failed'
         elif name in ('tool_call', 'tool_result'):
