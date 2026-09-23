@@ -444,7 +444,7 @@ class ToolExecutor:
                 return (
                     f"ERROR: WORKSPACE_UPLOAD_FORMAT_REQUIRED at line {node.lineno}. "
                     "Use the attested WorkspaceStore.write() for lifecycle files. "
-                    "For other plain files pass format=ImportFormat.RAW explicitly, "
+                    "For other plain files use explicit RAW transport with the older-SDK fallback in agent_transport.md, "
                     "with UTF-8 bytes for upload (base64 text for import_). "
                     "Notebook imports require their explicit SOURCE/language or JUPYTER format. "
                     "No Python code was executed."
@@ -468,7 +468,7 @@ class ToolExecutor:
                     stderr += (
                         "\nWORKSPACE_UPLOAD_FORMAT_ERROR: inspect the failing upload's path, bytes, "
                         "and format. Plain YAML/JSON/SQL/Markdown files require explicit "
-                        "ImportFormat.RAW; do not upload them as SOURCE/DBC or omit format. "
+                        "RAW transport (see agent_transport.md for SDK enum compatibility); do not use SOURCE/DBC or omit format. "
                         "Use the attested WorkspaceStore.write() for lifecycle files. "
                         "Inspect earlier writes before retrying the script."
                     )

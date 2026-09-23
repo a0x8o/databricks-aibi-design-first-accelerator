@@ -73,8 +73,15 @@ Names in stage prompts denote OPERATIONS, not a required installed tool registry
 
 No stage requires Flask, app/shared imports, an app event bridge, or Lakebase.
 Use the attested WorkspaceStore for lifecycle writes; do not invent a `put()` wrapper
-that omits upload format. Plain-file writes use explicit ImportFormat.RAW, UTF-8
-bytes, and verified readback. Notebook deployment uses its explicit notebook format.
+that omits upload format. Plain-file writes use explicit RAW semantics, UTF-8 bytes, and verified readback.
+Use the attested WorkspaceStore: when the installed SDK exposes `ImportFormat.RAW`,
+it uses that enum; otherwise it sends authenticated Workspace import JSON with
+`format: "RAW"`, base64 content, and the same overwrite flag through `w.api_client.do`.
+This capability branch is selected before writing. Never use `ImportFormat("RAW")`,
+a bare string passed to SDK upload, AUTO, or a silent SOURCE fallback. Never retry an
+SDK/API write failure using a second transport. Server/permission errors propagate.
+Probe installed SDK capabilities in each execution host; App and notebook environments
+may have different SDK versions. Do not upgrade libraries mid-run to bypass admission. Notebook deployment uses its explicit notebook format.
 Templates and Python helpers may run in a notebook. If runtime filesystem access to
 /Workspace files is required by a selected Spark template, verify that exact mount
 is readable/writable in its execution environment before deployment. Do not assume

@@ -164,7 +164,17 @@ class WorkspaceStore(LocalStore):
         from databricks.sdk.service.workspace import ImportFormat
         _validate_context_write(path, raw)
         self.client.workspace.mkdirs(posixpath.dirname(path))
-        self.client.workspace.upload(path, raw, format=ImportFormat.RAW, overwrite=overwrite)
+        raw_format = getattr(ImportFormat, 'RAW', None)
+        if raw_format is not None:
+            self.client.workspace.upload(path, raw, format=raw_format, overwrite=overwrite)
+        else:
+            # Older notebook SDK enums omit RAW; preserve explicit wire semantics.
+            # Select transport before writing, never retry an ambiguous failed upload.
+            import base64
+            self.client.api_client.do('POST', '/api/2.0/workspace/import', body={
+                'path': path, 'format': 'RAW', 'overwrite': overwrite,
+                'content': base64.b64encode(raw).decode('ascii'),
+            })
         if self.read(path) != raw:
             raise RuntimeError(f'WORKSPACE_IO_ERROR: write readback differs: {path}')
 

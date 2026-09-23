@@ -485,7 +485,7 @@ f"{joined}"
 
 Use the attested `WorkspaceStore.write()` for lifecycle files; do not invent an
 untyped `put()` helper. For plain YAML, JSON, Markdown, SQL text, lock, and Python
-helper files, explicitly use `ImportFormat.RAW`. SDK upload takes UTF-8 bytes;
+helper files, explicitly use RAW transport through the attested WorkspaceStore, including the older-SDK enum fallback in `agent_transport.md`. SDK upload takes UTF-8 bytes;
 REST/import_ takes base64 content. Verify byte readback. Never omit the format or
 send these payloads as SOURCE/DBC. A Python helper stored as a file is distinct
 from an executable notebook: notebooks use SOURCE with its language, or JUPYTER.

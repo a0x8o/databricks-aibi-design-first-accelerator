@@ -249,12 +249,14 @@ class WorkspaceService:
                 self.mkdirs(parent)
 
             encoded = base64.b64encode(content.encode("utf-8")).decode("utf-8")
-            self._client.workspace.import_(
-                path=path,
-                content=encoded,
-                format=ImportFormat.RAW,
-                overwrite=overwrite
-            )
+            raw_format = getattr(ImportFormat, "RAW", None)
+            if raw_format is not None:
+                self._client.workspace.import_(
+                    path=path, content=encoded, format=raw_format, overwrite=overwrite)
+            else:
+                self._client.api_client.do("POST", "/api/2.0/workspace/import", body={
+                    "path": path, "content": encoded, "format": "RAW", "overwrite": overwrite,
+                })
             logger.debug(f"Written: {path} ({len(content)} chars)")
         except Exception as e:
             raise WorkspaceError(str(e), path=path, operation="write_file") from e

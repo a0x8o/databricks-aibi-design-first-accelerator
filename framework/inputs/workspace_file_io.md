@@ -45,6 +45,7 @@ Paths must start with `/Workspace/` (or `/Users/` on some APIs — prefer full `
 Use when generating reusable Python (e.g. a one-off setup cell). Default auth (`WorkspaceClient()` picks up notebook/job identity or env).
 
 ```python
+import base64
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.service.workspace import ImportFormat
 
@@ -57,12 +58,18 @@ def workspace_mkdirs(path: str) -> None:
 
 def workspace_write_text(path: str, text: str, overwrite: bool = True) -> None:
     workspace_mkdirs(path)
-    w.workspace.upload(
-        path,
-        text.encode("utf-8"),
-        format=ImportFormat.RAW,
-        overwrite=overwrite,
-    )
+    raw = text.encode("utf-8")
+    raw_format = getattr(ImportFormat, "RAW", None)
+    if raw_format is not None:
+        w.workspace.upload(path, raw, format=raw_format, overwrite=overwrite)
+    else:
+        w.api_client.do("POST", "/api/2.0/workspace/import", body={
+            "path": path, "format": "RAW", "overwrite": overwrite,
+            "content": base64.b64encode(raw).decode("ascii"),
+        })
+    with w.workspace.download(path) as stream:
+        if stream.read() != raw:
+            raise RuntimeError(f"Workspace file readback mismatch: {path}")
 
 def workspace_delete_recursive(path: str) -> None:
     try:
@@ -120,3 +127,13 @@ Resolve paths from `accelerator.yaml` `paths.*` relative to **EXAMPLE_DIR** only
 ## Fail-fast
 
 If a file operation fails, report the **API used**, **full workspace path**, and **error body**. Do not retry with `dbutils.fs` on `/Workspace/`.
+
+
+### Older SDKs without ImportFormat.RAW
+
+Prefer the attested `WorkspaceStore.write` in v2. Do not evaluate `ImportFormat.RAW`
+without checking availability on the actual execution host. If absent, use the same
+authenticated client's `api_client.do("POST", "/api/2.0/workspace/import", body=...)`
+with `path`, `format: "RAW"`, base64-encoded bytes as `content`, and the exact boolean
+`overwrite`. Verify exact readback. Select this branch before issuing any write;
+never use AUTO/SOURCE or retry an API error through another transport.

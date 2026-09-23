@@ -68,7 +68,15 @@ def read_workspace_bytes(client, path):
 def write_workspace_bytes(client, path, payload):
     from databricks.sdk.service.workspace import ImportFormat
     client.workspace.mkdirs(posixpath.dirname(path))
-    client.workspace.upload(path, payload, format=ImportFormat.RAW, overwrite=True)
+    raw_format = getattr(ImportFormat, "RAW", None)
+    if raw_format is not None:
+        client.workspace.upload(path, payload, format=raw_format, overwrite=True)
+    else:
+        import base64
+        client.api_client.do("POST", "/api/2.0/workspace/import", body={
+            "path": path, "format": "RAW", "overwrite": True,
+            "content": base64.b64encode(payload).decode("ascii"),
+        })
     if read_workspace_bytes(client, path) != payload:
         raise RuntimeError(f'METRIC_VIEW_OUTPUT_READBACK_ERROR: {path}')
 
