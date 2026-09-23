@@ -309,3 +309,22 @@ require the master's invalidation and authenticated recommit; never silently cha
 fingerprints or run the missing-record-only recovery on an existing record. An older
 producer manifest lacking this list must follow the already documented exact schema
 and all readback gates, not synthesize provenance or bypass the frozen template digest.
+
+
+### Checkpoint writer and helper-attestation prohibitions
+
+Never infer phase validity from `authenticate_context` success. Run the owning phase's
+artifact and live-readback gates first, construct its exact stage-defined fingerprints,
+then commit through the attested WorkspaceStore and verify readback. Generic checkpoint
+helpers must accept the authenticated producer fingerprint list; they must not apply
+CANONICAL_JSON uniformly to all output files. Reconciliation's list is owned by DL-G7.
+
+Never fabricate a PASS `ddl_preflight.yaml` when a read fails, even if catalog tables
+exist. Preserve the actual error and return to the producer owner. Missing output,
+permission denial, and invalid YAML are not successful DDL evidence.
+
+After context freezing, helper expected hashes come from the frozen path/hash tuple.
+Computing `expected = sha256(downloaded_bytes)` and comparing those same bytes is not
+attestation. Load the lifecycle helper using its existing frozen reference; preserve
+source/copy verification and stop on mismatch. Do not recompute frozen identity to
+legitimize changed configuration or substitute a current helper for the frozen one.

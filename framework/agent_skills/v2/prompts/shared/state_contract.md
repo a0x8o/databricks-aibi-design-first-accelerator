@@ -305,6 +305,20 @@ A reusable record has exactly these keys; aliases and additional keys are invali
       sha256: "<lowercase 64-hex>"
 ```
 
+The example `CANONICAL_JSON` output kind above is illustrative, not a default for
+all phases. Stage-defined exact IDs, kinds, and locators take precedence. In particular,
+`create_data_layer/reconcile_schema` requires these two outputs, sorted in this order:
+
+- `schema_reconciliation_artifact`, `RAW_BYTES`, `{output_folder}/schema_reconciliation.yaml`.
+- `schema_reconciliation_catalog_readback`, `CATALOG_READBACK`, `table_spec:{catalog}.{schema}:{asset_suffix}`.
+
+Use the authenticated DDL-manifest `reconcile_schema_output_fingerprints` and the Data
+Layer DL-G7 live-evidence validation. Never write a generic one-file CANONICAL_JSON
+checkpoint for this phase. The attested store rejects that shape before writing a
+context with a VALID reconciliation checkpoint. `authenticate_context` validates frozen
+identity and supported checkpoint shapes; it does not execute phase gates, read live
+catalogs, or authorize a PASS. Full phase validation remains required before commit.
+
 Both fingerprint arrays are non-empty for a reusable phase, sorted ascending by `id`, and contain
 unique IDs. Every item has exactly `id`, `kind`, `locator`, and `sha256`. `RAW_BYTES` hashes exact
 file bytes. `CANONICAL_JSON` parses with duplicate-key rejection and hashes the canonical JSON

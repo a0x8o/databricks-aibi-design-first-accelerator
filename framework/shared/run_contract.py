@@ -48,6 +48,48 @@ def _path(path):
     return path
 
 
+def validate_phase_checkpoint_shapes(context):
+    """Validate stage-specific record structure; this is not live evidence verification."""
+    phases = context.get('phases_completed', [])
+    if not isinstance(phases, list):
+        raise RuntimeError('CHECKPOINT_PERSISTENCE_ERROR: phases_completed must be a list')
+    for record in phases:
+        if not isinstance(record, dict):
+            raise RuntimeError('CHECKPOINT_PERSISTENCE_ERROR: phase record must be a mapping')
+        if (record.get('step'), record.get('phase'), record.get('checkpoint_status')) != (
+                'create_data_layer', 'reconcile_schema', 'VALID'):
+            continue
+        target, version = context.get('target', {}), context.get('version', {})
+        output = context.get('output_folder')
+        if (not isinstance(target, dict) or not isinstance(version, dict)
+                or not all(isinstance(v, str) and v for v in
+                           (output, target.get('catalog'), target.get('schema'), version.get('asset_suffix')))):
+            raise RuntimeError('CHECKPOINT_PERSISTENCE_ERROR: reconciliation identity bindings missing')
+        expected = [
+            ('schema_reconciliation_artifact', 'RAW_BYTES', output + '/schema_reconciliation.yaml'),
+            ('schema_reconciliation_catalog_readback', 'CATALOG_READBACK',
+             f"table_spec:{target['catalog']}.{target['schema']}:{version['asset_suffix']}"),
+        ]
+        outputs = record.get('output_fingerprints')
+        import re
+        if (not isinstance(outputs, list) or len(outputs) != len(expected)
+                or any(not isinstance(item, dict)
+                       or set(item) != {'id', 'kind', 'locator', 'sha256'}
+                       or (item.get('id'), item.get('kind'), item.get('locator')) != identity
+                       or not isinstance(item.get('sha256'), str)
+                       or not re.fullmatch(r'[0-9a-f]{64}', item['sha256'])
+                       for item, identity in zip(outputs, expected))):
+            raise RuntimeError('CHECKPOINT_PERSISTENCE_ERROR: reconcile_schema VALID requires exact '
+                               f'output identities {expected!r}; observed={outputs!r}. '
+                               'Use authenticated DDL-manifest fingerprints and verify live evidence; '
+                               'frozen context authentication alone is not phase validation.')
+
+
+def _validate_context_write(path, raw):
+    if posixpath.basename(path) == 'run_context.yaml':
+        validate_phase_checkpoint_shapes(decode(raw))
+
+
 class LocalStore:
     def list(self, path):
         try:
@@ -62,6 +104,7 @@ class LocalStore:
             return None
 
     def write(self, path, raw, *, overwrite=True):
+        _validate_context_write(path, raw)
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         if not overwrite:
             with open(path, 'xb') as handle:
@@ -119,6 +162,7 @@ class WorkspaceStore(LocalStore):
 
     def write(self, path, raw, *, overwrite=True):
         from databricks.sdk.service.workspace import ImportFormat
+        _validate_context_write(path, raw)
         self.client.workspace.mkdirs(posixpath.dirname(path))
         self.client.workspace.upload(path, raw, format=ImportFormat.RAW, overwrite=overwrite)
         if self.read(path) != raw:
@@ -331,4 +375,5 @@ def authenticate_context(store, path):
         raise RuntimeError('HANDOFF_AUTHORITY_ERROR: frozen context mismatch')
     if store.read(context['registry_path'] + '.lock') is not None or store.read(context['output_folder'] + '/.lifecycle/retry_transition.yaml') is not None:
         raise RuntimeError('RUN_LIFECYCLE_AUTHORITY_ERROR: active lifecycle transition')
+    validate_phase_checkpoint_shapes(context)
     return context
