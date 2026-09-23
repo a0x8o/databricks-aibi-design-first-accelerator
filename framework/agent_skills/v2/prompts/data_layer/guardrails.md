@@ -132,8 +132,20 @@ Use the actual authenticated names, rows, domains, and relationships for this ru
 `parent_pk` is mandatory; do not substitute `parent_column`, `referenced_column`, or
 other aliases, and never infer a missing key from the child column's name. Both
 columns must match the reconciled deployed schema. Parents precede children. The
-current sampler supports single-column parent primary keys; composite keys and
-cycles must halt with an explicit unsupported-generation diagnostic.
+legacy `pk_columns` field controls independently unique generated columns: the
+runtime generates each listed column uniquely. It is NOT a declaration that those
+columns form one composite database primary key. Include the semantic primary key
+and each authenticated single-column parent reference needing unique generation.
+`parent_pk` names that exact referenced column, which may be an alternate/business
+key. Preserve the true primary key and relationship grain in the semantic model;
+never replace an alternate reference with a surrogate merely to pass preflight.
+
+The sampler checks actual parent values for nonempty, nonnull, independent uniqueness
+before sampling. It must not hide duplicates with DISTINCT. Multiple unique columns
+are supported. A genuine multi-column relationship cannot be split into independent
+scalar mappings: return an explicit tuple-generation capability error before deployment.
+Cycles remain unsupported. No domain-specific key names or fallback substitutions
+are permitted.
 
 Before notebook deployment, run the exact frozen template's
 `validate_synthetic_spec(spec, table_spec_tables)` against the **entire** spec using

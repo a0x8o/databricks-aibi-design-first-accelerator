@@ -785,6 +785,15 @@ def validate_fk_replacements(table_name: str, fk_replacements: dict) -> dict:
     return corrected
 
 
+def validate_parent_key_values(values, location):
+    """Scalar FK sampling requires a nonempty, nonnull, independently unique key."""
+    if not values or any(value is None for value in values):
+        raise RuntimeError(f"SYNTHETIC_SPEC_ERROR: parent key domain {location} is empty or contains nulls; child write not started")
+    if len(set(values)) != len(values):
+        raise RuntimeError(f"SYNTHETIC_SPEC_ERROR: parent reference {location} is not independently unique; composite relationships require tuple-aware sampling; child write not started")
+    return values
+
+
 def generate_table(
     table_name: str,
     rows: int,
@@ -941,10 +950,11 @@ def generate_table(
         df = df.withColumn("_row_num", F.row_number().over(w))
         for fk_col, (parent_table, parent_pk_col) in fk_replacements.items():
             parent_fqn = f"{CATALOG}.{SCHEMA}.{parent_table}"
-            parent_pks = [row[0] for row in
-                spark.table(parent_fqn).select(parent_pk_col).distinct().collect()]
-            if not parent_pks or any(value is None for value in parent_pks):
-                raise RuntimeError(f"SYNTHETIC_SPEC_ERROR: parent key domain {parent_fqn}.{parent_pk_col} is empty or contains nulls")
+            # Do not DISTINCT away duplicates: that hides invalid parent cardinality.
+            parent_pks = validate_parent_key_values(
+                [row[0] for row in spark.table(parent_fqn).select(parent_pk_col).collect()],
+                f"{parent_fqn}.{parent_pk_col}",
+            )
             if parent_pks:
                 # Cast to target type to avoid DELTA_METADATA_MISMATCH
                 target_type = col_types.get(fk_col, "bigint").lower()
@@ -1047,8 +1057,8 @@ def validate_synthetic_spec(spec, table_spec_tables):
             require(isinstance(parent, str) and parent in columns, location+'.parent_table', 'unknown logical parent table')
             require(isinstance(key, str) and key in columns[parent], location+'.parent_pk', 'unknown parent key column')
             parent_entry = tables[names.index(parent)]
-            require(parent_entry.get('pk_columns') == [key], location+'.parent_pk',
-                    'this sampler requires a single-column parent primary key; composite keys need a tuple-aware generator')
+            require(key in parent_entry.get('pk_columns', []), location+'.parent_pk',
+                    'referenced column must be included in the parent independently-unique generation columns (pk_columns); preserve the semantic primary key separately')
             require(parent in seen, location, 'parent must precede child; cycles/self references are unsupported')
         seen.add(name)
     return spec

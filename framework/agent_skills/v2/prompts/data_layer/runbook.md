@@ -157,3 +157,19 @@ On master-admitted retry, run GATE 4.0's bounded projection from the authenticat
 resolved ERD, persist only a passing candidate with replacement evidence, and validate
 readback before deployment. Do not reparse a valid ERD, invent datatypes, disable the
 gate, or blindly rerun an earlier script that might have performed other mutations.
+
+
+### Scalar parent reference rejected as a composite primary key
+
+Under DL-G2, distinguish the semantic primary key from the synthetic runtime's
+legacy `pk_columns` list of independently unique generation columns. Multiple entries
+in that list do not prove a composite relationship. Authenticate the exact parent
+reference from the semantic relationship and reconciled schema, retain its column,
+and ensure it has an independent unique-value strategy. Do not switch it to the
+surrogate primary key or remove valid alternate-key generation. Genuine tuple
+relationships still require a tuple-aware generator and cannot use this scalar spec.
+
+Use the corrected release template only after frozen path/digest admission. Never
+bypass the hash for an existing run. Authenticate prior execution and empty-target
+checks before any master-admitted retry; runtime key-domain failures can occur after
+parent tables have been written and must not trigger a blind append rerun.
