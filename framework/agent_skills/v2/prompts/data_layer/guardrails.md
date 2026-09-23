@@ -264,3 +264,14 @@ producer's manifest hash and perform the full admission gate. If mismatched, ret
 both snapshots and identify the operation window where the change occurred. A change
 across a tool call identifies a time window, not proof of an exclusive writer. No
 mutation rerun is authorized merely to collect diagnostics.
+
+
+A change to existing runtime-owned reconciliation bytes across a non-producer
+operation is `RECONCILIATION_PRODUCER_VIOLATION`. Stop immediately before checkpoint
+acceptance or consumer execution; preserve both versions. App tool transport enforces
+this boundary around its tool calls. Other agent hosts apply the same before/after
+hash check using Workspace reads. An authorized DDL producer rerun must still pass
+master recovery and existing mutation gates. Never copy prior-version reconciliation,
+validation results, or checkpoints into a new run; those are evidence, not reusable
+specifications. An earlier declarative specification may only be reused under its
+existing current-run revalidation rules and cannot authorize copying evidence.

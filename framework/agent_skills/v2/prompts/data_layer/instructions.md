@@ -932,7 +932,13 @@ and empty-target gates have already passed. Atomically persist the corrected env
 the first recovered phase record and re-read both. Once any phase record exists, a frozen-digest
 mismatch is immutable authority conflict and still halts.
 
-**Algorithm:**
+**DDL-runtime algorithm (already executed inside the notebook):**
+
+The following describes runtime behavior, not a second agent-authored Python script.
+After notebook success, apply read-only GATE 4.2 validation: compare the artifact's
+raw hash to the DDL manifest, validate the complete producer contract, perform fresh
+catalog readback, and commit only the checkpoint. Never replace reconciliation with
+a new summary or prior-version artifact. Write separate diagnostics for any drift.
 
 ```text
 For each table in table_spec.yaml:

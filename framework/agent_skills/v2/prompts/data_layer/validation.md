@@ -99,9 +99,18 @@ schema equality. `ALTER COLUMN`, casts, `TRY_CAST`, CTAS, overwrite, post-freeze
 `erd_parsed.yaml`/`table_spec.yaml`, and adoption of the observed type are prohibited drift-repair
 mechanisms. This does not prohibit the authenticated pre-DDL datatype-resolution phase above.
 
-If ownership is ambiguous, the table is non-empty, row count cannot be proven, the object is source/live/unversioned, the operation lacks permission, or post-repair readback still differs, write failure evidence and HALT with `DATATYPE_MISMATCH_UNSAFE_TO_REPAIR`. Do not delete or coerce data. Missing/unexpected/renamed-column mismatches use the same empty-current-version-table eligibility gate and otherwise halt with `SCHEMA_CONTRACT_ERROR`.
+Within the DDL runtime: if ownership is ambiguous, the table is non-empty, row count cannot be proven, the object is source/live/unversioned, the operation lacks permission, or post-repair readback still differs, write failure evidence and HALT with `DATATYPE_MISMATCH_UNSAFE_TO_REPAIR`. Do not delete or coerce data. Missing/unexpected/renamed-column mismatches use the same empty-current-version-table eligibility gate and otherwise halt with `SCHEMA_CONTRACT_ERROR`.
 
-Before any synthetic specification or write, atomically record every decision in `{OUTPUT_FOLDER}/schema_reconciliation.yaml`: current run/target/suffix binding, raw `table_spec.yaml` digest, expected/observed schema fingerprints, policy identifier, expected/observed schemas, canonical comparison, ownership checks, row count, action, attempt count, post-repair readback, unresolved mismatches, and terminal status. Persist both PASS and FAIL outcomes. Only PASS with zero unresolved mismatches creates a `VALID` `reconcile_schema` checkpoint. FAIL halts immediately and must not run later data-quality checks.
+Inside the frozen DDL runtime only, before any synthetic specification or write, atomically record every decision in `{OUTPUT_FOLDER}/schema_reconciliation.yaml`: current run/target/suffix binding, raw `table_spec.yaml` digest, expected/observed schema fingerprints, policy identifier, expected/observed schemas, canonical comparison, ownership checks, row count, action, attempt count, post-repair readback, unresolved mismatches, and terminal status. Persist both PASS and FAIL outcomes. Only PASS with zero unresolved mismatches creates a `VALID` `reconcile_schema` checkpoint. FAIL halts immediately and must not run later data-quality checks.
+
+The agent's post-notebook GATE 4.2 is read-only with respect to this file. Read the
+DDL manifest and require its `schema_reconciliation_sha256` to match exact current
+bytes, then execute GATE RECONCILIATION-PROVENANCE and fresh schema comparisons.
+Do not run a second Python reconciliation writer, copy a prior-version reconciliation,
+or translate the runtime schema into a summary. Any separate agent observations go
+under `diagnostics/reconciliation/`; they never replace runtime-owned evidence.
+If fresh readback fails, return failure evidence to the master without rewriting PASS
+as FAIL in the producer artifact. Mark the consumer checkpoint invalid instead.
 
 Steps 5 and 6 must re-authenticate this artifact and freshly recompute catalog name/type equality before work. The final `data_layer_validation.yaml` records the reconciliation artifact's exact path/raw digest and embeds the same outcome; it does not first create or reinterpret reconciliation evidence.
 

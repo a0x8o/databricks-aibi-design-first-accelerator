@@ -136,6 +136,8 @@ def classify_error(error_str: str) -> str:
     Returns one of: LLM_REPAIRABLE, DETERMINISTIC_FAIL, RETRY, DEPLOYMENT_POLICY, UNKNOWN
     """
     error_upper = error_str.upper()
+    if "RECONCILIATION_PRODUCER_VIOLATION" in error_upper:
+        return "DETERMINISTIC_FAIL"
     for category, patterns in ERROR_CLASSIFICATION.items():
         for pattern in patterns:
             if pattern.upper() in error_upper:

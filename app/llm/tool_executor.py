@@ -60,14 +60,14 @@ class ToolExecutor:
         result = None
         try:
             result = handler(arguments)
-            return result
         except Exception as e:
             error_msg = f"ERROR executing {tool_name}: {type(e).__name__}: {str(e)}"
             logger.error(error_msg, exc_info=True)
             result = error_msg
-            return error_msg
-        finally:
-            self._record_producer_diagnostic(tool_name, arguments, before, result)
+        violation = self._record_producer_diagnostic(tool_name, arguments, before, result)
+        if violation:
+            return violation + ("\nOriginal tool error: " + result if isinstance(result, str) and result.startswith('ERROR') else '')
+        return result
 
     def _reconciliation_observation(self):
         if not self._diagnostic_run:
@@ -88,8 +88,18 @@ class ToolExecutor:
         import hashlib
         import uuid
         from datetime import datetime, timezone
+        violation = None
         try:
             after = self._reconciliation_observation()
+            if (tool != 'execute_notebook' and (before or {}).get('state') == 'present'
+                    and (after or {}).get('state') == 'present'
+                    and before['sha256'] != after['sha256']):
+                violation = (
+                    f"ERROR: RECONCILIATION_PRODUCER_VIOLATION: runtime-owned evidence changed across {tool}; "
+                    f"path={after['path']}; before={before['sha256']}; after={after['sha256']}. "
+                    "Stop checkpoint admission and downstream execution. Preserve evidence and investigate; "
+                    "do not restore, rewrite, or rehash the artifact to manufacture VALID state."
+                )
             event_id = uuid.uuid4().hex
             root = self._diagnostic_run['output_folder'] + '/diagnostics/reconciliation/'
             def evidence(observation, label):
@@ -111,7 +121,7 @@ class ToolExecutor:
                 attribution='change observed across tool call; not proof of exclusive writer',
                 before=evidence(before, 'before') if changed else {k:v for k,v in (before or {}).items() if k!='raw'},
                 after=evidence(after, 'after') if changed else {k:v for k,v in (after or {}).items() if k!='raw'},
-                execution=self._diagnostic_details)
+                execution=self._diagnostic_details, producer_violation=violation)
             # Do not retain arbitrary Python/SQL text, payloads, or credentials.
             record['paths'] = {k: arguments[k] for k in ('path', 'template_path', 'output_path')
                                if isinstance(arguments.get(k), str)}
@@ -124,6 +134,7 @@ class ToolExecutor:
         except Exception:
             # Diagnostic transport cannot replace the tool's original outcome.
             logger.warning('RECONCILIATION_DIAGNOSTIC_UNAVAILABLE tool=%s', tool, exc_info=True)
+        return violation
 
     # SQL statements that are unsupported or dangerous in Databricks SQL / UC
     _SQL_BLOCKED_PATTERNS = [

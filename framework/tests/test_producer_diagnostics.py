@@ -29,7 +29,8 @@ class ProducerDiagnosticTests(unittest.TestCase):
             return 'SUCCESS'
         self.executor._handle_execute_python = handler
         source = 'sensitive_code_payload'
-        self.assertEqual(self.executor.execute('execute_python', {'code': source}), 'SUCCESS')
+        self.assertIn('RECONCILIATION_PRODUCER_VIOLATION',
+                      self.executor.execute('execute_python', {'code': source}))
         record = self.records()[0]
         self.assertTrue(record['change_observed'])
         self.assertEqual(record['tool'], 'execute_python')
@@ -38,6 +39,34 @@ class ProducerDiagnosticTests(unittest.TestCase):
         self.assertEqual(record['argument_source_sha256']['code'], hashlib.sha256(source.encode()).hexdigest())
         self.assertNotIn(source, json.dumps(record))
         self.assertEqual(self.ws.files[self.path], replacement)
+
+    def test_replacement_stops_agent_before_queued_synthetic_notebook(self):
+        from test_v2_master_host import AgentLoop
+        self.ws.files[self.path] = 'producer_step: create_data_layer\n'
+        def replace(args):
+            self.ws.files[self.path] = 'policy: abbreviated-summary\n'
+            return 'SUCCESS'
+        self.executor._handle_execute_python = replace
+        self.executor._handle_execute_notebook = Mock(return_value='SUCCESS')
+        llm = Mock()
+        llm.chat_with_tools.return_value = {'content': '', 'tool_calls': [
+            {'id': str(i), 'type': 'function', 'function': {'name': name, 'arguments': '{}'}}
+            for i, name in enumerate(('execute_python', 'execute_notebook'))]}
+        result = AgentLoop(llm, self.executor, SimpleNamespace()).run('master', {'STEP_NAME': 'master'})
+        self.assertFalse(result.success)
+        self.assertIn('RECONCILIATION_PRODUCER_VIOLATION', result.error)
+        self.executor._handle_execute_notebook.assert_not_called()
+
+    def test_known_violation_still_blocks_when_diagnostic_storage_fails(self):
+        self.ws.files[self.path] = 'original'
+        def replace(args):
+            self.ws.files[self.path] = 'replacement'
+            return 'SUCCESS'
+        self.executor._handle_execute_python = replace
+        with patch.object(self.ws, 'write_file', side_effect=PermissionError('denied')):
+            with self.assertLogs(level='WARNING'):
+                result = self.executor.execute('execute_python', {})
+        self.assertIn('RECONCILIATION_PRODUCER_VIOLATION', result)
 
     def test_notebook_production_records_actual_source_and_job_id(self):
         notebook = self.root + '/notebooks/ddl.py'
