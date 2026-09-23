@@ -4,6 +4,68 @@
 
 ## Gates
 
+### GATE 2.1: Canonical ERD structure (mandatory before datatype resolution)
+
+Execute `validate_erd_structure` below on the fresh vision candidate, every cache/resume
+candidate, and the exact persisted readback before completing `parse_erd`. Repeat on the
+persisted ERD before GATE 4.0 and DDL deployment. A nonempty table list alone is not PASS.
+This gate validates structure only; datatype, source completeness, provenance, and projection
+gates remain mandatory. Never use `table_spec.yaml` or inferred business knowledge to fill
+missing observed columns.
+
+```python
+def validate_erd_structure(document):
+    errors = []
+    tables = document.get("tables") if isinstance(document, dict) else None
+    if not isinstance(tables, list) or not tables:
+        raise RuntimeError("ERD_EXTRACTION_ERROR: tables must be a nonempty list")
+    table_names = set()
+    for index, table in enumerate(tables):
+        location = f"tables[{index}]"
+        if not isinstance(table, dict):
+            errors.append(f"{location}: expected mapping")
+            continue
+        name = table.get("name")
+        if not isinstance(name, str) or not name.strip():
+            errors.append(f"{location}.name: missing identity")
+        elif name.casefold() in table_names:
+            errors.append(f"{location}.name: duplicate {name!r}")
+        else:
+            table_names.add(name.casefold())
+        location += f" ({name!r})"
+        observed = table.get("observed")
+        columns = observed.get("columns") if isinstance(observed, dict) else None
+        if not isinstance(columns, list) or not columns:
+            errors.append(f"{location}.observed.columns: expected nonempty list; table fields={sorted(map(str, table))}")
+            continue
+        column_names = set()
+        for ci, column in enumerate(columns):
+            cname = column.get("name") if isinstance(column, dict) else None
+            if not isinstance(cname, str) or not cname.strip():
+                errors.append(f"{location}.observed.columns[{ci}].name: missing identity")
+            elif cname.casefold() in column_names:
+                errors.append(f"{location}.observed.columns[{ci}].name: duplicate {cname!r}")
+            else:
+                column_names.add(cname.casefold())
+    if errors:
+        raise RuntimeError("ERD_EXTRACTION_ERROR: " + "; ".join(errors))
+    return document
+```
+
+During candidate analysis, catch this gate's `ERD_EXTRACTION_ERROR` and apply instructions
+§2.5a: accumulate findings, continue independent extraction within `parse_erd`, and perform
+bounded source-based recovery. The function aggregates structural defects across all tables;
+its exception is not permission to skip the remaining source analysis or fabricate PASS.
+For a cache candidate, treat structural failure as a cache miss. Preserve rejected candidates
+as diagnostics, never as accepted canonical outputs. Correct serialization only from exact
+original vision evidence; never silently reinterpret missing observations in the DDL runtime.
+
+After the analysis/recovery pass, unresolved structural findings block parse completion and
+all dependent deployment. Persist all findings and diagnostic paths, report `failed`, and
+return to the master for existing-checkpoint invalidation. Re-run the gate on the complete
+recovered candidate and canonical readback before admitting DDL. See §2.5a for portable
+findings persistence, retry accounting, and progress semantics.
+
 ### GATE 2.1a: Generated target names (DL-G1)
 
 Before completing `parse_erd`, verify the source→target mapping required by this
@@ -35,7 +97,9 @@ defect remains and the run is ERD-driven with both `greenfield.enabled` and
 decision in `schema_assumptions.yaml`, and rerun strict validation. This resolver is total for
 datatype defects: recover visible components, prefer strict-majority semantic peers, apply the
 release-pinned semantic policy, then use non-truncating `STRING`. Source/live, retained-data, and
-structural defects remain `ERD_EXTRACTION_ERROR` hard stops.
+structural defects remain `ERD_EXTRACTION_ERROR` deployment blockers. Structural findings
+follow §2.5a collection/recovery before the final admission decision; they never qualify
+for datatype-only inference.
 
 This gate applies equally to a fresh vision response, a prior-version ERD cache candidate, and a
 resume candidate. Matching ERD image hash, parseable YAML, non-empty tables, or an old phase status

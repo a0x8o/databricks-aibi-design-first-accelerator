@@ -643,11 +643,58 @@ Only mark UNRESOLVED after Step 3.4 has run and the relationship still cannot be
 
 **HALT** if unresolved item blocks a required fact→dimension join, a PK referenced by an FK, or a KPI-referenced column. **WARN** otherwise.
 
+## 2.5a Collect extraction findings before deployment admission
+
+An unreadable table or unusable `observed.columns` list is a finding to investigate
+within `parse_erd`; it is not permission to invent columns or immediately abandon
+analysis of the remaining ERD. Apply this protocol for fresh, cached, and resumed input:
+
+1. Keep the complete source table inventory, including unreadable tables. For each defect,
+   append a finding to the current `parse_erd` findings using the existing shared progress
+   and persistence contract. Include the table identity (or source location if unreadable),
+   exact failing field, frozen source path and image region, observed evidence, attempted
+   recovery/count, affected joins/KPIs when known, and the next action. Clearly distinguish
+   missing source evidence from a serialization defect. Do not expose guesses as observations.
+2. Continue extracting other readable tables and collecting their columns, relationships,
+   and uncertainty within the same `parse_erd` phase. Keep analysis involving the unreadable
+   table unresolved. Do not start `build_semantic_model`, DDL, synthetic generation, or any
+   dependent stage; this is continued analysis, not parallel phase execution.
+3. Attempt a targeted source crop for each affected table at most twice, tracking attempts
+   across the current recovery/resume so repeated validation cannot reset the budget. If
+   the original vision evidence already contains exact column identities and values, correct
+   their serialization to §2.5 and record the evidence/mapping instead of inventing values.
+   Update each finding with the recovery result; retain the attempt history. Datatype-only
+   issues follow GATE 2.1b after structural recovery.
+4. Persist the rejected/draft candidate and accumulated findings as diagnostic evidence under
+   the current run's output folder using the shared transport. Label drafts incomplete and
+   report their exact paths; never overwrite an accepted canonical artifact with a draft or
+   register diagnostic files as successful parse outputs. With no `report_progress` tool,
+   use the shared portable persistence path and include the same findings in the master handoff;
+   no Lakebase dependency is introduced. Progress remains `update` while analysis continues.
+5. After all independently readable tables have been analyzed and bounded recovery is exhausted,
+   execute the complete structural and existing datatype/provenance gates. If defects remain,
+   report `parse_erd` as `failed` with all unresolved blockers and diagnostic paths, then return
+   to the master. Describe the schema as incomplete/blocked in the finding text; do not invent
+   a new progress/checkpoint status. The master marks any existing parse checkpoint and its
+   dependents `STALE`; no new `VALID` checkpoint or completion event is allowed. Do not deploy
+   a subset, drop unreadable tables, or advance downstream. Request the specific missing source
+   detail after collecting findings, rather than stopping at the first unreadable table.
+6. If recovery succeeds, validate the complete candidate, persist the canonical artifacts,
+   re-read and authenticate them, and only then complete `parse_erd` using the existing
+   checkpoint contract. Preserve resolved findings as history.
+
+Catch the structural gate's `ERD_EXTRACTION_ERROR` within this analysis/recovery protocol
+and record it as a finding; do not let an expected candidate-validation exception escape
+an analysis tool as an unhandled critical failure before the remaining tables are examined.
+This does not suppress transport, authentication, or runtime failures and never converts
+failed validation into PASS. A structural failure discovered by the DDL runtime still halts
+that notebook; return to the master for parse-owned recovery rather than continuing DDL.
+
 ## 2.6 Structural Contract Rules
 
 Once written, `erd_parsed.yaml` is authoritative for intended tables, columns, and datatypes. `table_spec.yaml` MUST reproduce that physical schema exactly. Downstream MUST NOT invent/remove columns, change datatypes, create surrogate keys, or reinterpret the ERD.
 
-**GATE 2.1**: `erd_parsed.yaml` exists with non-empty `tables:` array. HALT if missing.
+**GATE 2.1**: Execute `validate_erd_structure` from `validation.md` on the candidate and persisted `erd_parsed.yaml` readback. Require every table to have a nonempty `observed.columns` list with unique, nonempty identities; a nonempty `tables` array alone is insufficient. Apply the bounded source-based recovery in that gate on failure. Do not complete `parse_erd` or deploy DDL until structural, datatype, provenance, and projection validation pass.
 
 ---
 
@@ -1780,7 +1827,7 @@ defects are self-corrected and do not trigger a terminal halt.
 
 | Artifact | Location | Validation |
 |----------|----------|-----------|
-| erd_parsed.yaml | `{OUTPUT_FOLDER}/` | `tables:` array matches ERD count |
+| erd_parsed.yaml | `{OUTPUT_FOLDER}/` | Complete source inventory; GATE 2.1 structure and GATE 2.1b datatypes passed on persisted readback; no unresolved structural blockers |
 | schema_assumptions.yaml | `{OUTPUT_FOLDER}/` | Always present; policy `GREENFIELD_SYNTHETIC_DATATYPE_RESOLUTION_V1`; current run/target/suffix; authenticated raw/resolved ERD hashes; ordered evidence/confidence rows; zero unresolved datatypes |
 | table_spec.yaml | `{OUTPUT_FOLDER}/` | Exact expected-schema projection of `erd_parsed.yaml`; GATE 4.0 passed |
 | ddl_preflight.yaml | `{OUTPUT_FOLDER}/` | Current-run pre-mutation GATE 4.0 evidence; assumptions digest, raw/resolved ERD hashes, table-spec hashes, policy resolutions, exact type regenerations, action, status/failure code, and `catalog_mutation_started: false` |

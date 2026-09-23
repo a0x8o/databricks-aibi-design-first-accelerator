@@ -328,3 +328,22 @@ Computing `expected = sha256(downloaded_bytes)` and comparing those same bytes i
 attestation. Load the lifecycle helper using its existing frozen reference; preserve
 source/copy verification and stop on mismatch. Do not recompute frozen identity to
 legitimize changed configuration or substitute a current helper for the frozen one.
+
+### DL-G8: ERD structure admission
+
+Apply validation GATE 2.1 before datatype resolution, parse completion, and DDL deployment,
+including cache/resume readbacks. ERD columns belong at `tables[].observed.columns`;
+DDL-spec `tables[].columns` is a different interface. Missing/empty/misplaced observed
+columns are structural defects, never datatype-policy inputs. Route recovery through
+the master to the parse owner using original vision evidence or bounded source re-extraction.
+Do not invent columns, use table-spec data as observed source evidence, or bypass the
+runtime rejection. No domain-specific table or key exceptions are permitted.
+
+During `parse_erd`, apply instructions §2.5a: record every extraction defect in current
+findings, continue analyzing independent readable tables in the same phase, and exhaust
+bounded evidence-based recovery before reporting the accumulated blockers. Catch candidate
+structural validation errors for findings collection; never swallow authentication/transport
+failures or report PASS after rejection. Keep incomplete drafts in diagnostics. Unresolved
+structure blocks canonical parse completion and all dependent deployment, not independent
+source analysis. Report `update` during analysis and `failed` on unresolved admission; use
+only existing shared status/checkpoint values. No partial deployment or silent table omission.
