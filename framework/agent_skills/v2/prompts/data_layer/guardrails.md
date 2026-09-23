@@ -220,3 +220,47 @@ initial repairable projection report before performing this owned correction: in
 App an execute_python exception terminates the master. Structural mismatch or invalid
 ERD datatype still halts and returns to its existing owner. Never catch unrelated
 SDK, permission, or runtime failures as a projection repair.
+
+
+## DL-G6: Reconciliation producer provenance
+
+`schema_reconciliation.yaml` is owned by the exact frozen DDL runtime. The agent
+reads/authenticates it and commits its checkpoint; it must not summarize, reconstruct,
+or overwrite that file from SQL results or progress text. Required producer metadata:
+`artifact_type: schema_reconciliation`, `contract_version: 1`,
+`producer_step: create_data_layer`, `producer_phase: reconcile_schema`.
+These fields are mandatory, including during checkpoint-only recovery. The limited
+legacy exception for catalog/schema/output_folder does not apply to provenance.
+
+Execute GATE RECONCILIATION-PROVENANCE before committing reconcile_schema VALID and
+again before synthetic deployment. Missing provenance is an invalid producer artifact,
+not a missing checkpoint. Do not insert constants into an existing file to manufacture
+provenance or merely update its hash. Authenticate the frozen DDL template, executed
+notebook and producer result, and exact artifact path to determine whether the runtime
+is outdated or its output was replaced. Return to the master for producer recovery;
+any DDL rerun remains subject to existing ownership, data-retention, and lifecycle gates.
+
+
+### DL-G6 diagnostic capture for producer discrepancies
+
+Before and after each operation that can produce or replace reconciliation evidence,
+record the current artifact's raw SHA-256, exact path, canonical run ID, operation,
+notebook path and Jobs run ID when applicable. Preserve changed before/after bytes
+under the current run's `diagnostics/reconciliation/` directory; never overwrite the
+canonical artifact to collect evidence. Record the frozen template SHA-256, rendered
+notebook source SHA-256, and pre-execution exported source SHA-256 with their respective
+operations. Export normalization may affect source hashes; inspect differences before
+attributing them to a different notebook. Capture errors as unknown, never as absence.
+
+The App transport captures this timeline after an authenticated selection or deployment
+context read. On other hosts use the same evidence fields through the approved Workspace
+transport and notebook runner. This is diagnostic evidence, not an alternate checkpoint
+or permission to bypass producer validation. If diagnostics cannot be saved, disclose
+that gap and preserve the original tool outcome. Never log credentials or arbitrary
+Python/SQL payloads: use their SHA-256 to correlate with host tool history.
+
+Before accepting reconcile_schema VALID, compare runtime-owned evidence with the
+producer's manifest hash and perform the full admission gate. If mismatched, retain
+both snapshots and identify the operation window where the change occurred. A change
+across a tool call identifies a time window, not proof of an exclusive writer. No
+mutation rerun is authorized merely to collect diagnostics.

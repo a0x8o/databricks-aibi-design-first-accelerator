@@ -79,7 +79,7 @@ class SelectionProgressTests(unittest.TestCase):
         self.assertIn('nonempty plain string', result)
         result = json.loads(self.executor.execute('report_progress', self.args))
         self.assertEqual(result['_validated_run_selection']['canonical_run_id'], 'canonical')
-        self.assertEqual(self.ws.files, before)
+        self.assertEqual({k:v for k,v in self.ws.files.items() if '/diagnostics/' not in k}, before)
     def test_agent_can_repair_early_completion_in_same_run(self):
         def response(tool,args,index):
             return {'content':'','tool_calls':[{'id':str(index),'type':'function',

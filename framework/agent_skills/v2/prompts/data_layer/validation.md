@@ -219,3 +219,48 @@ def project_table_spec_types(erd_tables, table_spec, validate_projection):
 
 Missing or invalid source datatypes remain ERD_EXTRACTION_ERROR, following existing
 ERD reparse/resolution policy. Never use this function to manufacture source evidence.
+
+
+### GATE RECONCILIATION-PROVENANCE (DL-G6)
+
+Run against duplicate-key-rejecting readback of the exact current-run reconciliation
+file before checkpoint admission and before synthetic deployment. This supplements,
+not replaces, run/target/suffix/hash, inventory, assumptions, and fresh catalog checks.
+
+```python
+def validate_reconciliation_provenance(reconciliation):
+    import re
+    expected = {"artifact_type": "schema_reconciliation", "contract_version": 1,
+                "producer_step": "create_data_layer", "producer_phase": "reconcile_schema",
+                "policy_id": "DEPLOYED_DATATYPE_REPAIR_V1", "status": "PASS",
+                "datatype_resolution_policy_id": "GREENFIELD_SYNTHETIC_DATATYPE_RESOLUTION_V1",
+                "canonical_comparison": "MATCH", "unresolved_mismatches": []}
+    if not isinstance(reconciliation, dict):
+        raise RuntimeError("SCHEMA_RECONCILIATION_AUTHORITY_ERROR: expected a mapping")
+    errors = []
+    for field, value in expected.items():
+        actual = reconciliation.get(field)
+        if type(actual) is not type(value) or actual != value:
+            errors.append(f"reconciliation.{field}={actual!r}, expected {value!r}")
+    for field in ("table_spec_sha256", "schema_assumptions_sha256",
+                  "expected_schema_sha256", "observed_schema_sha256"):
+        if not isinstance(reconciliation.get(field), str) or not re.fullmatch(r"[0-9a-f]{64}", reconciliation[field]):
+            errors.append(f"reconciliation.{field}: canonical SHA-256 required")
+    for field in ("run_id", "asset_suffix", "table_spec_path", "schema_assumptions_path"):
+        if not isinstance(reconciliation.get(field), str) or not reconciliation[field].strip():
+            errors.append(f"reconciliation.{field}: nonempty string required")
+    for field in ("expected_schema_inventory", "observed_schema_inventory"):
+        if not isinstance(reconciliation.get(field), list) or not reconciliation[field]:
+            errors.append(f"reconciliation.{field}: nonempty inventory required")
+    if errors:
+        raise RuntimeError("SCHEMA_RECONCILIATION_AUTHORITY_ERROR: " + "; ".join(errors))
+    return reconciliation
+
+```
+
+This gate reports all structural defects together. Alternate keys such as `policy`,
+`expected_schema_hash`, `observed_schema_hash`, and `deployed_tables` are not the runtime
+contract. A count `0` does not replace the required empty mismatch list `[]`. Passing
+this shape gate alone is not admission: compare actual file hashes, run identity,
+canonical inventories, and fresh catalog readback under the existing gates before
+committing VALID. Never backfill fields into an unverified artifact to make it pass.

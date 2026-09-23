@@ -32,6 +32,8 @@ class ToolExecutor:
         # Artifact-gated phase skip: set of absolute paths that are
         # frozen (completed phases). Writes to these paths return early.
         self._frozen_artifacts: set = set()
+        self._diagnostic_run = None  # Observational only; never deployment authority.
+        self._diagnostic_details = {}
 
     def set_frozen_artifacts(self, paths: set):
         """Set the frozen artifact paths for artifact-gated phase skip.
@@ -53,12 +55,75 @@ class ToolExecutor:
         if not handler:
             return f"ERROR: Unknown tool"
 
+        before = self._reconciliation_observation()
+        self._diagnostic_details = {}
+        result = None
         try:
-            return handler(arguments)
+            result = handler(arguments)
+            return result
         except Exception as e:
             error_msg = f"ERROR executing {tool_name}: {type(e).__name__}: {str(e)}"
             logger.error(error_msg, exc_info=True)
+            result = error_msg
             return error_msg
+        finally:
+            self._record_producer_diagnostic(tool_name, arguments, before, result)
+
+    def _reconciliation_observation(self):
+        if not self._diagnostic_run:
+            return None
+        import hashlib
+        path = self._diagnostic_run['output_folder'] + '/schema_reconciliation.yaml'
+        try:
+            raw = self._ws.read_file(path)
+            raw = raw.encode('utf-8') if isinstance(raw, str) else raw
+            return dict(state='present', path=path, sha256=hashlib.sha256(raw).hexdigest(), raw=raw)
+        except Exception as exc:
+            # Preserve uncertainty; never turn a permission/transport error into absence.
+            return dict(state='unreadable', path=path, error_type=type(exc).__name__)
+
+    def _record_producer_diagnostic(self, tool, arguments, before, result):
+        if not self._diagnostic_run:
+            return
+        import hashlib
+        import uuid
+        from datetime import datetime, timezone
+        try:
+            after = self._reconciliation_observation()
+            event_id = uuid.uuid4().hex
+            root = self._diagnostic_run['output_folder'] + '/diagnostics/reconciliation/'
+            def evidence(observation, label):
+                if observation is None:
+                    return {'state': 'not_observed'}
+                item = {k: v for k, v in observation.items() if k != 'raw'}
+                if 'raw' in observation:
+                    snapshot = root + event_id + '-' + label + '.yaml'
+                    self._ws.write_file(snapshot, observation['raw'].decode('utf-8'))
+                    item['snapshot_path'] = snapshot
+                return item
+            before_hash = (before or {}).get('sha256')
+            after_hash = (after or {}).get('sha256')
+            changed = before_hash != after_hash
+            # Save exact bytes on transitions; retain hashes for the entire timeline.
+            record = dict(event_id=event_id, observed_at=datetime.now(timezone.utc).isoformat(),
+                run_id=self._diagnostic_run['run_id'], tool=tool,
+                change_observed=changed,
+                attribution='change observed across tool call; not proof of exclusive writer',
+                before=evidence(before, 'before') if changed else {k:v for k,v in (before or {}).items() if k!='raw'},
+                after=evidence(after, 'after') if changed else {k:v for k,v in (after or {}).items() if k!='raw'},
+                execution=self._diagnostic_details)
+            # Do not retain arbitrary Python/SQL text, payloads, or credentials.
+            record['paths'] = {k: arguments[k] for k in ('path', 'template_path', 'output_path')
+                               if isinstance(arguments.get(k), str)}
+            record['argument_source_sha256'] = {k: hashlib.sha256(arguments[k].encode()).hexdigest()
+                for k in ('code', 'statement', 'content') if isinstance(arguments.get(k), str)}
+            record['tool_failed'] = isinstance(result, str) and result.startswith(('ERROR', 'NOTEBOOK ERROR', 'SQL ERROR'))
+            location = root + event_id + '.json'
+            self._ws.write_file(location, json.dumps(record, sort_keys=True))
+            logger.info('RECONCILIATION_DIAGNOSTIC tool=%s changed=%s evidence=%s', tool, changed, location)
+        except Exception:
+            # Diagnostic transport cannot replace the tool's original outcome.
+            logger.warning('RECONCILIATION_DIAGNOSTIC_UNAVAILABLE tool=%s', tool, exc_info=True)
 
     # SQL statements that are unsupported or dangerous in Databricks SQL / UC
     _SQL_BLOCKED_PATTERNS = [
@@ -503,6 +568,7 @@ class ToolExecutor:
                 or type(version) is not int or version < 1
                 or not isinstance(context.get('run_id'), str) or not context['run_id']):
             raise ValueError('RUN_SELECTION_AUTHORITY_ERROR: context identity mismatch')
+        self._diagnostic_run = dict(run_id=context['run_id'], output_folder=context['output_folder'])
         return dict(canonical_run_id=context['run_id'], run_context_path=path,
                     version=version, output_folder=context['output_folder'])
 
@@ -661,6 +727,9 @@ class ToolExecutor:
             )
 
         # 4. Import as notebook
+        import hashlib
+        self._diagnostic_details.update(template_sha256=hashlib.sha256(template_content.encode()).hexdigest(),
+            rendered_source_sha256=hashlib.sha256(result.encode()).hexdigest())
         try:
             self._ws.import_notebook(output_path, result, language=language)
         except Exception as e:
@@ -733,6 +802,14 @@ class ToolExecutor:
             return "ERROR: Jobs service not configured (no jobs client available)"
 
         try:
+            if self._diagnostic_run:
+                try:
+                    import hashlib
+                    source = self._ws.read_file(path)
+                    self._diagnostic_details['executed_source_sha256'] = hashlib.sha256(
+                        source.encode() if isinstance(source, str) else source).hexdigest()
+                except Exception as exc:
+                    self._diagnostic_details['source_read_error_type'] = type(exc).__name__
             # Determine language from file extension
             language = "PYTHON"
             if path.endswith(".sql"):
@@ -746,6 +823,9 @@ class ToolExecutor:
 
             # Submit the run
             run_id = self._jobs.run_notebook(path, language=language)
+            self._diagnostic_details['notebook_run_id'] = run_id
+            logger.info('NOTEBOOK_SUBMITTED path=%s run_id=%s source_sha256=%s', path, run_id,
+                        self._diagnostic_details.get('executed_source_sha256'))
 
             # Wait for completion
             result = self._jobs.wait_for_run(run_id, timeout_s=timeout_minutes * 60)
@@ -753,7 +833,7 @@ class ToolExecutor:
             if result.result_state == "SUCCESS":
                 duration_str = f" ({result.duration_s:.1f}s)" if result.duration_s else ""
                 output = result.output or "No output captured."
-                return f"SUCCESS: Notebook executed{duration_str}. Output: {output}"
+                return f"SUCCESS: Notebook executed (run_id={run_id}){duration_str}. Output: {output}"
             else:
                 error_detail = result.error or "Unknown error"
                 return f"NOTEBOOK ERROR (run_id={run_id}): {error_detail}"

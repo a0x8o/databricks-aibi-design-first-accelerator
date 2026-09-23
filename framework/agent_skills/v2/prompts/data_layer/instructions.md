@@ -893,12 +893,17 @@ COMMENT '{table description}';
 
 ### GATE 4.2 / `reconcile_schema`: Schema Reconciliation (MANDATORY after DDL execution)
 
+Apply DL-G6 diagnostic capture starting with DDL deployment/execution, before any
+agent-authored reconciliation or checkpoint operation. Preserve producer output;
+validate it instead of replacing it. Include diagnostic evidence paths when returning
+a producer-contract failure to the master.
+
 After GATE 4.1 passes, verify that each table's **actual deployed schema** from `DESCRIBE TABLE` matches the **expected generated schema** in `table_spec.yaml`. GATE 4.0 already proves that `table_spec.yaml` is an exact projection of `erd_parsed.yaml`. This ensures `CREATE TABLE IF NOT EXISTS` cannot hide schema drift when an object already exists.
 
 This is a distinct reusable phase and a hard execution boundary. Call `report_progress` with
 `phase_id: reconcile_schema` before readback. The deterministic DDL runtime MUST atomically write
 `{OUTPUT_FOLDER}/schema_reconciliation.yaml` on both PASS and FAIL before any Step 5 work. Mark the
-phase `VALID` only after a persisted PASS artifact authenticates the current run, asset suffix,
+phase `VALID` only after DL-G6 / GATE RECONCILIATION-PROVENANCE passes and a persisted PASS artifact authenticates the current run, asset suffix,
 target, raw `table_spec.yaml` SHA-256, expected/readback schema fingerprints, policy ID, attempts,
 and an empty `unresolved_mismatches` list. A FAIL artifact is durable diagnostic evidence, never
 permission to continue.
@@ -906,7 +911,7 @@ permission to continue.
 After a PASS, apply the shared Reusable-Phase Completion Commit before Step 5: atomically upsert
 the exact `create_data_layer` / `reconcile_schema` `VALID` record into `run_context.yaml`, re-read
 and verify exactly one matching record, emit a schema-valid structured JSON progress object, and
-in App mode wait for matching Lakebase persistence/readback. Immediately before launching the
+let the App adapter mirror progress without making Lakebase readback a portable admission gate. Immediately before launching the
 synthetic-data notebook, re-read `run_context.yaml` and require that same record to remain `VALID`.
 A PASS `schema_reconciliation.yaml` with a missing/unacknowledged phase record is
 `CHECKPOINT_PERSISTENCE_ERROR`; do not launch synthetic data and do not repeat reconciliation or
@@ -1016,7 +1021,7 @@ admit a write.
 
 Run only when `run_context.data_source.greenfield.synthetic_data: true`.
 
-**Hard admission gate:** authenticate the current `reconcile_schema` phase record and exact
+**Hard admission gate:** execute DL-G6 / GATE RECONCILIATION-PROVENANCE on the runtime-owned artifact without rewriting it, then authenticate the current `reconcile_schema` phase record and exact
 `schema_reconciliation.yaml` bytes. Require policy `DEPLOYED_DATATYPE_REPAIR_V1`, `status: PASS`,
 zero unresolved mismatches, matching run/target/suffix/table-spec hashes, and a fresh `DESCRIBE`
 fingerprint equal to the persisted readback fingerprint. Exactly zero phase records may enter only

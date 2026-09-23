@@ -173,3 +173,15 @@ Use the corrected release template only after frozen path/digest admission. Neve
 bypass the hash for an existing run. Authenticate prior execution and empty-target
 checks before any master-admitted retry; runtime key-domain failures can occur after
 parent tables have been written and must not trigger a blind append rerun.
+
+
+### SCHEMA_RECONCILIATION_AUTHORITY_ERROR / Missing producer_step or producer_phase
+
+Apply DL-G6. Read the exact reconciliation file and compare the run's frozen DDL
+path/digest with the executed notebook. The current DDL runtime writes both fields;
+missing/null provenance can indicate older producer output or a replacement artifact.
+Do not claim which without evidence. Do not repair this by adding metadata, borrowing
+another run's file, or treating it as checkpoint-only recovery. Retain the failing
+artifact as evidence and return to the master for authenticated producer recovery.
+Synthetic execution remains blocked until the producer contract and all existing
+schema/identity/checkpoint gates pass.
