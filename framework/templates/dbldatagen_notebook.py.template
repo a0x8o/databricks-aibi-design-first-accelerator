@@ -605,7 +605,12 @@ readback_fingerprint_ok = any(
 if not artifact_fingerprint_ok or not readback_fingerprint_ok:
     raise RuntimeError(
         "SCHEMA_RECONCILIATION_AUTHORITY_ERROR: reconcile_schema phase fingerprints do not "
-        "authenticate the persisted artifact and current catalog readback"
+        "authenticate the persisted artifact and current catalog readback; "
+        f"artifact_fingerprint_ok={artifact_fingerprint_ok}; "
+        f"readback_fingerprint_ok={readback_fingerprint_ok}; "
+        f"expected={expected_output_fingerprints!r}; observed={output_fingerprints!r}; "
+        f"run_context_path={RUN_CONTEXT_PATH}. "
+        "Do not rewrite reconciliation evidence or rerun append generation to repair a checkpoint."
     )
 
 print(

@@ -290,3 +290,22 @@ sandbox for arbitrary Python: before/after hash enforcement still detects replac
 through SDK calls and blocks consumers, but cannot undo the mutation. Do not claim
 that every possible writer is prevented. The read-only post-DDL workflow and frozen
 producer admission remain the primary cross-host contract.
+
+
+## DL-G7: Exact reconciliation checkpoint fingerprints
+
+The current DDL manifest emits `reconcile_schema_output_fingerprints` for the
+checkpoint writer. Require exactly one `schema_reconciliation_artifact` / `RAW_BYTES`
+entry and one `schema_reconciliation_catalog_readback` / `CATALOG_READBACK` entry.
+Copy this runtime-produced list only after its artifact hash and current catalog
+readback authenticate. Read back the committed checkpoint and validate again before
+launching synthetic generation. `schema_reconciliation`, `catalog_tables`, and
+`CANONICAL_JSON` are not aliases for these fields. Readback location is exactly
+`table_spec:{catalog}.{schema}:{asset_suffix}`; its digest uses the ordered runtime
+observed inventory, not a new summary of table names or simplified column types.
+
+Use GATE RECONCILIATION-FINGERPRINTS. Existing malformed/stale checkpoint records
+require the master's invalidation and authenticated recommit; never silently change
+fingerprints or run the missing-record-only recovery on an existing record. An older
+producer manifest lacking this list must follow the already documented exact schema
+and all readback gates, not synthesize provenance or bypass the frozen template digest.

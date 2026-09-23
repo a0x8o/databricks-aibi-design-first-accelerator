@@ -1026,6 +1026,13 @@ manifest = {
     "readback_hash": reconciliation["observed_schema_sha256"],
     "schema_reconciliation_path": RECONCILIATION_PATH,
     "schema_reconciliation_sha256": reconciliation_hash,
+    "reconcile_schema_output_fingerprints": [
+        {"id": "schema_reconciliation_artifact", "kind": "RAW_BYTES",
+         "locator": RECONCILIATION_PATH, "sha256": reconciliation_hash},
+        {"id": "schema_reconciliation_catalog_readback", "kind": "CATALOG_READBACK",
+         "locator": f"table_spec:{CATALOG}.{SCHEMA}:{ASSET_SUFFIX}",
+         "sha256": _canonical_sha256(observed_inventory)},
+    ],
     "ddl_preflight_path": DDL_PREFLIGHT_PATH,
     "ddl_preflight_sha256": _raw_sha256(DDL_PREFLIGHT_PATH),
     "schema_assumptions_path": SCHEMA_ASSUMPTIONS_PATH,

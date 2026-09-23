@@ -273,3 +273,32 @@ contract. A count `0` does not replace the required empty mismatch list `[]`. Pa
 this shape gate alone is not admission: compare actual file hashes, run identity,
 canonical inventories, and fresh catalog readback under the existing gates before
 committing VALID. Never backfill fields into an unverified artifact to make it pass.
+
+
+### GATE RECONCILIATION-FINGERPRINTS (DL-G7)
+
+After complete DL-G6 admission, compare the DDL-manifest list and checkpoint list
+against these independently recomputed entries. Call once before checkpoint commit
+and again on persisted checkpoint readback before synthetic deployment. Supply the
+actual artifact bytes and fresh observed inventory in the runtime's exact ordered
+`[{table_fqn, schema: [{column, datatype, canonical_datatype}]}]` representation.
+Do not replace it with an expected inventory or a table-name-only catalog listing.
+
+```python
+def validate_reconciliation_fingerprints(entries, artifact_bytes, observed_inventory,
+                                        output_folder, catalog, schema, asset_suffix):
+    import hashlib
+    import json
+    expected = [
+        {"id": "schema_reconciliation_artifact", "kind": "RAW_BYTES",
+         "locator": output_folder + "/schema_reconciliation.yaml",
+         "sha256": hashlib.sha256(artifact_bytes).hexdigest()},
+        {"id": "schema_reconciliation_catalog_readback", "kind": "CATALOG_READBACK",
+         "locator": f"table_spec:{catalog}.{schema}:{asset_suffix}",
+         "sha256": hashlib.sha256(json.dumps(observed_inventory, sort_keys=True,
+                     separators=(",", ":"), ensure_ascii=False).encode("utf-8")).hexdigest()},
+    ]
+    if entries != expected:
+        raise RuntimeError(f"SCHEMA_RECONCILIATION_AUTHORITY_ERROR: checkpoint fingerprint mismatch; expected={expected!r}; observed={entries!r}")
+    return expected
+```

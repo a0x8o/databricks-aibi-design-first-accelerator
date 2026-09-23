@@ -989,6 +989,13 @@ On PASS, persist the `reconcile_schema` checkpoint with the raw artifact digest 
 readback fingerprint. On FAIL, persist the classified failure and HALT immediately; do not build
 `synthetic_data_spec.yaml`, run PK/FK/domain checks, or execute dbldatagen.
 
+Apply DL-G7: read the current DDL manifest's `reconcile_schema_output_fingerprints`.
+After authenticating its artifact digest and fresh readback, copy that exact list into
+the new checkpoint; do not reconstruct IDs, kinds, locators, or inventory shapes from
+memory. Re-read the persisted checkpoint and compare every field before deployment.
+A prior malformed checkpoint follows master invalidation/recommit rules, not missing-only
+checkpoint recovery. Never modify the producer artifact to make a checkpoint match.
+
 The phase's sorted `output_fingerprints` are exactly:
 
 ```yaml
@@ -999,7 +1006,7 @@ The phase's sorted `output_fingerprints` are exactly:
 - id: schema_reconciliation_catalog_readback
   kind: CATALOG_READBACK
   locator: "table_spec:{catalog}.{schema}:{asset_suffix}"
-  sha256: <canonical expected-inventory DESCRIBE name/type fingerprint>
+  sha256: <canonical CURRENT_OBSERVED_INVENTORY fingerprint, same ordered structure as the DDL runtime>
 ```
 
 The dbldatagen runtime MUST authenticate both exact entries before checking that every append target
