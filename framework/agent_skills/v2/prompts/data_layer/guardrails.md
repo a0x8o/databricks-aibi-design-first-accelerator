@@ -256,8 +256,15 @@ The App transport captures this timeline after an authenticated selection or dep
 context read. On other hosts use the same evidence fields through the approved Workspace
 transport and notebook runner. This is diagnostic evidence, not an alternate checkpoint
 or permission to bypass producer validation. If diagnostics cannot be saved, disclose
-that gap and preserve the original tool outcome. Never log credentials or arbitrary
-Python/SQL payloads: use their SHA-256 to correlate with host tool history.
+that gap and preserve the original tool outcome. Never log credentials, process environment, or arbitrary tool output. To diagnose
+agent-authored writers, preserve generated Python source before execution under the
+current run's `diagnostics/python/`, with a content hash and unique invocation ID.
+Keep source in the same access-controlled Workspace as run artifacts; do not print
+it into application logs. Generated scripts must obtain authentication through the
+approved SDK/environment, never embed secret values. Record only the source path and
+hash in the reconciliation timeline. On hosts without automatic capture, the master
+performs this capture through approved Workspace file operations. Capture failure is
+reported explicitly and never misrepresented as a recoverable source record.
 
 Before accepting reconcile_schema VALID, compare runtime-owned evidence with the
 producer's manifest hash and perform the full admission gate. If mismatched, retain
@@ -275,3 +282,11 @@ master recovery and existing mutation gates. Never copy prior-version reconcilia
 validation results, or checkpoints into a new run; those are evidence, not reusable
 specifications. An earlier declarative specification may only be reused under its
 existing current-run revalidation rules and cannot authorize copying evidence.
+
+
+Direct Workspace write/copy tools must reject writes to the authenticated current-run
+`schema_reconciliation.yaml`. The App applies this before the write. This is not a
+sandbox for arbitrary Python: before/after hash enforcement still detects replacement
+through SDK calls and blocks consumers, but cannot undo the mutation. Do not claim
+that every possible writer is prevented. The read-only post-DDL workflow and frozen
+producer admission remain the primary cross-host contract.

@@ -57,9 +57,18 @@ class ToolExecutor:
 
         before = self._reconciliation_observation()
         self._diagnostic_details = {}
+        if tool_name == 'execute_python':
+            self._capture_python_source(arguments.get('code'))
         result = None
         try:
-            result = handler(arguments)
+            destination = (arguments.get('path') if tool_name == 'write_workspace_file'
+                           else arguments.get('dst') if tool_name == 'copy_workspace_file' else None)
+            if self._runtime_owned_reconciliation(destination):
+                result = ('ERROR: RECONCILIATION_PRODUCER_VIOLATION: direct write/copy to '
+                          'runtime-owned schema_reconciliation.yaml is prohibited by DL-G6. '
+                          'No write performed. Validate existing producer output; save separate diagnostics.')
+            else:
+                result = handler(arguments)
         except Exception as e:
             error_msg = f"ERROR executing {tool_name}: {type(e).__name__}: {str(e)}"
             logger.error(error_msg, exc_info=True)
@@ -68,6 +77,32 @@ class ToolExecutor:
         if violation:
             return violation + ("\nOriginal tool error: " + result if isinstance(result, str) and result.startswith('ERROR') else '')
         return result
+
+    def _runtime_owned_reconciliation(self, path):
+        if not self._diagnostic_run or not isinstance(path, str):
+            return False
+        import posixpath
+        return posixpath.normpath(path) == self._diagnostic_run['output_folder'] + '/schema_reconciliation.yaml'
+
+    def _capture_python_source(self, source):
+        """Capture generated code before execution, never process environment or output."""
+        if not self._diagnostic_run or not isinstance(source, str):
+            return
+        import hashlib
+        import uuid
+        digest = hashlib.sha256(source.encode('utf-8')).hexdigest()
+        path = (self._diagnostic_run['output_folder'] + '/diagnostics/python/'
+                + digest + '-' + uuid.uuid4().hex + '.py')
+        try:
+            self._ws.write_file(path, source)
+            if self._ws.read_file(path) != source:
+                raise RuntimeError('Python diagnostic source readback mismatch')
+            self._diagnostic_details.update(python_source_path=path, python_source_sha256=digest)
+            logger.info('PYTHON_SOURCE_CAPTURED run_id=%s sha256=%s path=%s',
+                        self._diagnostic_run['run_id'], digest, path)
+        except Exception:
+            self._diagnostic_details['python_source_capture'] = 'unavailable'
+            logger.warning('PYTHON_SOURCE_CAPTURE_UNAVAILABLE sha256=%s', digest, exc_info=True)
 
     def _reconciliation_observation(self):
         if not self._diagnostic_run:

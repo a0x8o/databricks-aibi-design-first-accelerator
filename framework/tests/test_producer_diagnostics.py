@@ -38,7 +38,32 @@ class ProducerDiagnosticTests(unittest.TestCase):
         self.assertEqual(self.ws.files[record['after']['snapshot_path']], replacement)
         self.assertEqual(record['argument_source_sha256']['code'], hashlib.sha256(source.encode()).hexdigest())
         self.assertNotIn(source, json.dumps(record))
+        self.assertEqual(self.ws.files[record['execution']['python_source_path']], source)
         self.assertEqual(self.ws.files[self.path], replacement)
+
+    def test_source_is_saved_before_execution_even_if_tool_raises(self):
+        source = 'raise RuntimeError("example")'
+        def fail(args):
+            paths = [p for p in self.ws.files if '/diagnostics/python/' in p]
+            self.assertEqual(len(paths), 1)
+            self.assertEqual(self.ws.files[paths[0]], source)
+            raise RuntimeError('example')
+        self.executor._handle_execute_python = fail
+        with self.assertLogs(level='ERROR'):
+            result = self.executor.execute('execute_python', {'code': source})
+        self.assertIn('RuntimeError: example', result)
+        self.assertIn('python_source_path', self.records()[0]['execution'])
+
+    def test_direct_write_and_copy_are_rejected_before_canonical_mutation(self):
+        self.ws.files[self.path] = 'valid producer evidence'
+        self.ws.files['/Workspace/older.yaml'] = 'invalid older evidence'
+        for tool, args in (
+                ('write_workspace_file', {'path': self.path, 'content': 'bad'}),
+                ('copy_workspace_file', {'src': '/Workspace/older.yaml', 'dst': self.path})):
+            with self.subTest(tool=tool):
+                result = self.executor.execute(tool, args)
+                self.assertIn('No write performed', result)
+                self.assertEqual(self.ws.files[self.path], 'valid producer evidence')
 
     def test_replacement_stops_agent_before_queued_synthetic_notebook(self):
         from test_v2_master_host import AgentLoop
